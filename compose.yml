@@ -1,0 +1,74 @@
+services:
+  download-core-tools:
+    image: alpine/curl
+    environment:
+      KEYCLOAK_PLUGIN_VERSION: "0.1.5"
+      OPENAPI_GENERATOR_VERSION: "7.19.0"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e;
+        rm -rf /data/*
+        mkdir -p /data/bin
+        mkdir -p /data/kc-plugins
+        
+        echo "Download OpenAPI generator (we're using it to generate code from OpenAPI specs";
+        curl -zLo /data/bin/openapi-generator-cli.jar "https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/$$OPENAPI_GENERATOR_VERSION/openapi-generator-cli-$$OPENAPI_GENERATOR_VERSION.jar"
+        
+        echo "Download OpenAPI for Keycloak";
+        curl -zLo /data/keycloak-interface.openapi.yaml "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/backend.open-api.yml"
+        echo "Downloaded OpenAPI for Keycloak";
+        
+        echo "Download keybound";
+        curl -zLo /data/kc-plugins/keycloak-keybound-all.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-all-$$KEYCLOAK_PLUGIN_VERSION-all.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-api-gateway-http.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-api-gateway-http-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-authenticator-enrollment.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-authenticator-enrollment-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-credentials-device-key.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-credentials-device-key-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-custom-endpoint.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-custom-endpoint-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-grant-device-key.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-grant-device-key-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-protocol-mapper.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-protocol-mapper-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-theme.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-theme-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        curl -zLo /data/kc-plugins/keycloak-keybound-user-storage-backend.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-user-storage-backend-$$KEYCLOAK_PLUGIN_VERSION.jar"
+        echo "Downloaded keybound";
+
+    volumes:
+      - downloaded_data:/data
+
+  generate-code:
+    image: amazoncorretto:21
+    depends_on:
+      download-core-tools:
+        condition: service_completed_successfully
+    configs:
+      - source: kc_server_interface_gen
+        target: /tmp/kc_server_interface_gen.json
+        uid: "1001"
+        gid: "1001"
+        mode: 0600
+    volumes:
+      - downloaded_data:/data
+      - ./crates:/work
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        set -e;
+        
+        rm -rf /work/gen-kc-server-api
+        java -jar /data/bin/openapi-generator-cli.jar generate \
+          -c /tmp/kc_server_interface_gen.json \
+          -o /work/gen-kc-server-api
+
+volumes:
+  downloaded_data:
+
+configs:
+  kc_server_interface_gen:
+    content: |
+      {
+        "inputSpec": "/data/keycloak-interface.openapi.yaml",
+        "generatorName": "rust-server",
+        "packageName": "gen-kc-server-api",
+        "packageVersion": "9.9.9"
+      }

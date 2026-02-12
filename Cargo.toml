@@ -1,0 +1,67 @@
+[workspace]
+members = [
+    "app/backend",
+    "crates/backend-auth",
+    "crates/backend-cli",
+    "crates/backend-core",
+    "crates/backend-metrics",
+    "crates/backend-otlp",
+    "crates/backend-server",
+    "crates/gen-kc-server-api",
+]
+resolver = "3"
+
+[workspace.dependencies]
+backend-auth = { path = "./crates/backend-auth" }
+backend-cli = { path = "./crates/backend-cli" }
+backend-metrics = { path = "./crates/backend-metrics" }
+backend-otlp = { path = "./crates/backend-otlp" }
+backend-server = { path = "./crates/backend-server" }
+
+gen-kc-server-api = { path = "./crates/gen-kc-server-api" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+jsonwebtoken = { version = "10.3" }
+jwks = "0.5"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "tracing", "net"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "serde", "serde_json"] }
+axum = { version = "0.8", features = ["macros", "tracing"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
+async-trait = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+dotenvy = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+cuid = { version = "1" }
+getrandom = "0.4"
+goose = "0.18"
+reqwest = { version = "0.13", features = ["json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "json", "macros"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+utoipa = { version = "5", features = ["macros", "chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+
+mimalloc = "0"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+incremental = false
+strip = true
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+authors = [
+    "Stephane Segning <sse@adorsys.com>",
+]
