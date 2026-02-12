@@ -110,6 +110,28 @@
               "type": "string"
             },
             "description": "Customer external ID."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            },
+            "description": "Page number for documents list (default 1)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1
+            },
+            "description": "Page size for documents list (default 20)."
           }
         ],
         "responses": {
@@ -378,6 +400,15 @@
           },
           "reviewNotes": {
             "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "totalDocuments": {
+            "type": "integer"
           }
         }
       },

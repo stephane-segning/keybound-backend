@@ -14,6 +14,8 @@ use std::convert::Infallible;
 use std::time::Duration;
 use tracing::error;
 
+use crate::services::BackendService;
+
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     pub aws: Aws,
@@ -28,6 +30,7 @@ pub struct HttpCache {
 #[derive(Clone)]
 pub struct AppState {
     pub repository: PgRepository,
+    pub service: BackendService,
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
     pub config: RuntimeConfig,
@@ -38,6 +41,7 @@ impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
             .field("repository", &"<PgRepository>")
+            .field("service", &"<BackendService>")
             .field("s3", &"<S3Client>")
             .field("sns", &"<SnsClient>")
             .field("config", &self.config)
@@ -85,8 +89,12 @@ impl AppState {
                 .build(),
         };
 
+        let repository = PgRepository::new(db.clone());
+        let service = BackendService::new(repository.clone());
+
         Ok(Self {
-            repository: PgRepository::new(db.clone()),
+            repository,
+            service,
             s3,
             sns,
             config: RuntimeConfig {

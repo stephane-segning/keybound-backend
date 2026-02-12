@@ -18,6 +18,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "getrandom 0.3.4",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -842,6 +855,7 @@ dependencies = [
  "moka",
  "serde_json",
  "sqlx",
+ "sqlx-data",
 ]
 
 [[package]]
@@ -871,6 +885,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "sqlx-data",
  "swagger",
  "tokio",
  "tower",
@@ -941,6 +956,21 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+
+[[package]]
+name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec",
+]
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitflags"
@@ -1366,6 +1396,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "der"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1645,6 +1689,17 @@ dependencies = [
  "quote",
  "syn 1.0.109",
  "synstructure 0.12.6",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -2201,6 +2256,12 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hashbrown"
@@ -4362,6 +4423,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlparser"
+version = "0.60.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "505aa16b045c4c1375bf5f125cce3813d0176325bfe9ffc4a903f423de7774ff"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "sqlx"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4407,6 +4477,70 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "sqlx-data"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cd48a4f2572fa3f430373747a9e8e847815c223a4a82158cd0a038db419adf3"
+dependencies = [
+ "sqlx-data-integration",
+ "sqlx-data-macros",
+ "sqlx-data-params",
+ "sqlx-data-parser",
+]
+
+[[package]]
+name = "sqlx-data-integration"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62138eb2f816fb0b7e109ebbc489c32f33225df192f4f9b64b1853b6b22aafdc"
+dependencies = [
+ "sqlx",
+]
+
+[[package]]
+name = "sqlx-data-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91ccd7b3664d777d52bceacaa89b8e6fa8c75bd0a29d04acbe074cc347fc093c"
+dependencies = [
+ "fancy-regex",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "sqlparser",
+ "sqlx-data-parser",
+ "syn 2.0.115",
+]
+
+[[package]]
+name = "sqlx-data-params"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa1fae2ec696cea1c4eb32fd28610c89636ebb94f49910977d376cabb0d1d37b"
+dependencies = [
+ "log",
+ "serde",
+ "sqlx-data-integration",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sqlx-data-parser"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "807fc8de66af0aa1f03816546d668c48d6e685a7dc1f8aa09d61a24d0a19648e"
+dependencies = [
+ "ahash",
+ "dashmap",
+ "log",
+ "moka",
+ "sqlparser",
+ "sqlx-data-params",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

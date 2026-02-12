@@ -1,6 +1,7 @@
 use backend_model::db;
 use backend_model::{kc as kc_map, staff as staff_map};
 use chrono::{DateTime, Utc};
+use sqlx_data::Serial;
 pub type RepoResult<T> = backend_core::Result<T>;
 
 pub trait InsertRepo<T, R> {
@@ -33,12 +34,6 @@ pub struct KycSubmissionsQuery {
     pub search: Option<String>,
     pub page: i32,
     pub limit: i32,
-}
-
-#[derive(Debug, Clone)]
-pub struct KycSubmissionsPage {
-    pub total: i32,
-    pub items: Vec<db::KycProfileRow>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,7 +101,9 @@ pub trait BffRepo: Send + Sync {
     fn list_kyc_documents(
         &self,
         external_id: &str,
-    ) -> impl std::future::Future<Output = RepoResult<Vec<db::KycDocumentRow>>> + Send;
+        page: i32,
+        limit: i32,
+    ) -> impl std::future::Future<Output = RepoResult<Serial<db::KycDocumentRow>>> + Send;
 
     fn get_kyc_tier(
         &self,
@@ -118,7 +115,7 @@ pub trait StaffRepo: Send + Sync {
     fn list_kyc_submissions(
         &self,
         query: KycSubmissionsQuery,
-    ) -> impl std::future::Future<Output = RepoResult<KycSubmissionsPage>> + Send;
+    ) -> impl std::future::Future<Output = RepoResult<Serial<db::KycProfileRow>>> + Send;
 
     fn get_kyc_submission(
         &self,

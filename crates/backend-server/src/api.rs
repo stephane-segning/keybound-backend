@@ -4,8 +4,7 @@ use backend_auth::{KcContext, ServiceContext};
 use backend_core::Error;
 use backend_model::{bff as bff_map, kc as kc_map, staff as staff_map};
 use backend_repository::{
-    ApprovalCreated, BffRepo, KcRepo, KycDocumentInsert, KycSubmissionsQuery, SmsPendingInsert,
-    StaffRepo,
+    ApprovalCreated, KycDocumentInsert, KycSubmissionsQuery, SmsPendingInsert,
 };
 use chrono::Utc;
 use gen_oas_server_bff::{
@@ -44,6 +43,12 @@ impl BackendApi {
     fn require_external_id(x_external_id: Option<String>) -> std::result::Result<String, ApiError> {
         x_external_id.ok_or_else(|| ApiError("Missing X-External-Id".to_owned()))
     }
+
+    fn normalize_page_limit(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
+        let page = page.unwrap_or(1).max(1);
+        let limit = limit.unwrap_or(20).clamp(1, 100);
+        (page, limit)
+    }
 }
 
 fn kc_error(code: &str, message: &str) -> gen_oas_server_kc::models::Error {
@@ -81,14 +86,14 @@ impl BffApi<ServiceContext> for BackendApi {
         let s3_key = format!("kyc/{external_id}/{object_id}/{}", req.file_name);
 
         self.state
-            .repository
+            .service
             .ensure_kyc_profile(&external_id)
             .await
             .map_err(repo_err)?;
 
         let doc_row = self
             .state
-            .repository
+            .service
             .insert_kyc_document_intent(KycDocumentInsert {
                 external_id: external_id.clone(),
                 document_type: req.document_type.clone(),
@@ -147,18 +152,25 @@ impl BffApi<ServiceContext> for BackendApi {
     async fn api_registration_kyc_status_get(
         &self,
         x_external_id: Option<String>,
+        page: Option<i32>,
+        limit: Option<i32>,
         _context: &ServiceContext,
     ) -> std::result::Result<ApiRegistrationKycStatusGetResponse, ApiError> {
         let external_id = Self::require_external_id(x_external_id)?;
-        if let Some(cached) = self.state.http_cache.kyc_status.get(&external_id).await {
-            return Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(
-                cached,
-            ));
+        let (page, limit) = Self::normalize_page_limit(page, limit);
+
+        let use_default_cache = page == 1 && limit == 20;
+        if use_default_cache {
+            if let Some(cached) = self.state.http_cache.kyc_status.get(&external_id).await {
+                return Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(
+                    cached,
+                ));
+            }
         }
 
         let profile = self
             .state
-            .repository
+            .service
             .get_kyc_profile(&external_id)
             .await
             .map_err(repo_err)?;
@@ -169,12 +181,14 @@ impl BffApi<ServiceContext> for BackendApi {
 
         let docs = self
             .state
-            .repository
-            .list_kyc_documents(&external_id)
+            .service
+            .list_kyc_documents(&external_id, page, limit)
             .await
             .map_err(repo_err)?;
+        let total_documents = docs.total_items as i32;
 
         let documents = docs
+            .data
             .into_iter()
             .map(bff_map::KycStatusDocumentStatusDto::from)
             .map(Into::into)
@@ -186,14 +200,19 @@ impl BffApi<ServiceContext> for BackendApi {
             documents: Some(documents),
             required_documents: Some(vec![]),
             missing_documents: Some(vec![]),
+            page: Some(page),
+            page_size: Some(limit),
+            total_documents: Some(total_documents),
         };
 
         let response: gen_oas_server_bff::models::KycStatusResponse = dto.into();
-        self.state
-            .http_cache
-            .kyc_status
-            .insert(external_id, response.clone())
-            .await;
+        if use_default_cache {
+            self.state
+                .http_cache
+                .kyc_status
+                .insert(external_id, response.clone())
+                .await;
+        }
         Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(
             response,
         ))
@@ -213,7 +232,7 @@ impl BffApi<ServiceContext> for BackendApi {
 
         let kyc_tier = self
             .state
-            .repository
+            .service
             .get_kyc_tier(&external_id)
             .await
             .map_err(repo_err)?;
@@ -269,13 +288,16 @@ impl StaffApi<ServiceContext> for BackendApi {
         };
         let data = self
             .state
-            .repository
+            .service
             .list_kyc_submissions(query.clone())
             .await
             .map_err(repo_err)?;
+        let total_items = data.total_items as i32;
+        let page = data.page as i32;
+        let page_size = data.size as i32;
 
         let items = data
-            .items
+            .data
             .into_iter()
             .map(staff_map::KycSubmissionSummaryDto::from)
             .map(Into::into)
@@ -283,9 +305,9 @@ impl StaffApi<ServiceContext> for BackendApi {
 
         let dto = staff_map::KycSubmissionsResponseDto {
             items: Some(items),
-            total: Some(data.total),
-            page: Some(query.page),
-            page_size: Some(query.limit),
+            total: Some(total_items),
+            page: Some(page),
+            page_size: Some(page_size),
         };
 
         Ok(ApiKycStaffSubmissionsGetResponse::PageOfKYCSubmissions(
@@ -296,11 +318,14 @@ impl StaffApi<ServiceContext> for BackendApi {
     async fn api_kyc_staff_submissions_external_id_get(
         &self,
         external_id: String,
+        page: Option<i32>,
+        limit: Option<i32>,
         _context: &ServiceContext,
     ) -> std::result::Result<ApiKycStaffSubmissionsExternalIdGetResponse, ApiError> {
+        let (page, limit) = Self::normalize_page_limit(page, limit);
         let profile = self
             .state
-            .repository
+            .service
             .get_kyc_submission(&external_id)
             .await
             .map_err(repo_err)?;
@@ -310,18 +335,23 @@ impl StaffApi<ServiceContext> for BackendApi {
 
         let docs = self
             .state
-            .repository
-            .list_kyc_documents(&external_id)
+            .service
+            .list_kyc_documents(&external_id, page, limit)
             .await
             .map_err(repo_err)?;
+        let total_documents = docs.total_items as i32;
 
         let mut dto = staff_map::KycSubmissionDetailResponseDto::from_profile(profile);
         dto.documents = Some(
-            docs.into_iter()
+            docs.data
+                .into_iter()
                 .map(staff_map::KycDocumentDto::from)
                 .map(Into::into)
                 .collect(),
         );
+        dto.page = Some(page);
+        dto.page_size = Some(limit);
+        dto.total_documents = Some(total_documents);
 
         Ok(ApiKycStaffSubmissionsExternalIdGetResponse::DetailedSubmission(dto.into()))
     }
@@ -335,7 +365,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         let req: staff_map::KycApprovalRequest = kyc_approval_request.into();
         let updated = self
             .state
-            .repository
+            .service
             .update_kyc_approved(&external_id, &req)
             .await
             .map_err(repo_err)?;
@@ -355,7 +385,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         let req: staff_map::KycRejectionRequest = kyc_rejection_request.into();
         let updated = self
             .state
-            .repository
+            .service
             .update_kyc_rejected(&external_id, &req)
             .await
             .map_err(repo_err)?;
@@ -376,7 +406,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         let req: staff_map::KycRequestInfoRequest = kyc_request_info_request.into();
         let updated = self
             .state
-            .repository
+            .service
             .update_kyc_request_info(&external_id, &req)
             .await
             .map_err(repo_err)?;
@@ -398,7 +428,7 @@ impl KcApi<KcContext> for BackendApi {
         _context: &KcContext,
     ) -> std::result::Result<CreateUserResponse, ApiError> {
         let req: kc_map::UserUpsert = user_upsert_request.into();
-        match self.state.repository.create_user(&req).await {
+        match self.state.service.create_user(&req).await {
             Ok(row) => Ok(CreateUserResponse::Created(
                 kc_map::UserRecordDto::from(row).into(),
             )),
@@ -417,7 +447,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<GetUserResponse, ApiError> {
         let row = self
             .state
-            .repository
+            .service
             .get_user(&user_id)
             .await
             .map_err(repo_err)?;
@@ -441,7 +471,7 @@ impl KcApi<KcContext> for BackendApi {
         let req: kc_map::UserUpsert = user_upsert_request.into();
         let row = self
             .state
-            .repository
+            .service
             .update_user(&user_id, &req)
             .await
             .map_err(repo_err)?;
@@ -463,7 +493,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<DeleteUserResponse, ApiError> {
         let affected = self
             .state
-            .repository
+            .service
             .delete_user(&user_id)
             .await
             .map_err(repo_err)?;
@@ -484,7 +514,7 @@ impl KcApi<KcContext> for BackendApi {
         let req: kc_map::UserSearch = user_search_request.into();
         let users = self
             .state
-            .repository
+            .service
             .search_users(&req)
             .await
             .map_err(repo_err)?;
@@ -516,7 +546,7 @@ impl KcApi<KcContext> for BackendApi {
 
         let row = self
             .state
-            .repository
+            .service
             .lookup_device(&req)
             .await
             .map_err(repo_err)?;
@@ -546,7 +576,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<ListUserDevicesResponse, ApiError> {
         let rows = self
             .state
-            .repository
+            .service
             .list_user_devices(&user_id, include_revoked.unwrap_or(false))
             .await
             .map_err(repo_err)?;
@@ -568,7 +598,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<gen_oas_server_kc::DisableUserDeviceResponse, ApiError> {
         let row = self
             .state
-            .repository
+            .service
             .get_user_device(&user_id, &device_id)
             .await
             .map_err(repo_err)?;
@@ -586,7 +616,7 @@ impl KcApi<KcContext> for BackendApi {
         }
         let updated = self
             .state
-            .repository
+            .service
             .update_device_status(&row.id, "REVOKED")
             .await
             .map_err(repo_err)?;
@@ -610,7 +640,7 @@ impl KcApi<KcContext> for BackendApi {
 
         let existing = self
             .state
-            .repository
+            .service
             .find_device_binding(&req.device_id, &req.jkt)
             .await
             .map_err(repo_err)?;
@@ -632,7 +662,7 @@ impl KcApi<KcContext> for BackendApi {
 
         let existing = self
             .state
-            .repository
+            .service
             .find_device_binding(&req.device_id, &req.jkt)
             .await
             .map_err(repo_err)?;
@@ -651,13 +681,13 @@ impl KcApi<KcContext> for BackendApi {
             return Ok(EnrollmentBindResponse::Bound(resp));
         }
 
-        let insert = self.state.repository.bind_device(&req).await;
+        let insert = self.state.service.bind_device(&req).await;
         let device_record_id = match insert {
             Ok(id) => id,
             Err(err) if is_unique_violation(&err) => {
                 let checked = self
                     .state
-                    .repository
+                    .service
                     .find_device_binding(&req.device_id, &req.jkt)
                     .await
                     .map_err(repo_err)?;
@@ -696,7 +726,7 @@ impl KcApi<KcContext> for BackendApi {
         let req: kc_map::ApprovalCreateRequest = approval_create_request.into();
         let created: ApprovalCreated = match self
             .state
-            .repository
+            .service
             .create_approval(&req, idempotency_key)
             .await
         {
@@ -728,7 +758,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<GetApprovalResponse, ApiError> {
         let row = self
             .state
-            .repository
+            .service
             .get_approval(&request_id)
             .await
             .map_err(repo_err)?;
@@ -752,7 +782,7 @@ impl KcApi<KcContext> for BackendApi {
         let statuses = status.map(|v| v.iter().map(ToString::to_string).collect::<Vec<_>>());
         let rows = self
             .state
-            .repository
+            .service
             .list_user_approvals(&user_id, statuses)
             .await
             .map_err(repo_err)?;
@@ -775,7 +805,7 @@ impl KcApi<KcContext> for BackendApi {
         let req: kc_map::ApprovalDecisionRequest = approval_decision_request.into();
         let row = self
             .state
-            .repository
+            .service
             .decide_approval(&request_id, &req)
             .await
             .map_err(repo_err)?;
@@ -797,7 +827,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<CancelApprovalResponse, ApiError> {
         let affected = self
             .state
-            .repository
+            .service
             .cancel_approval(&request_id)
             .await
             .map_err(repo_err)?;
@@ -819,7 +849,7 @@ impl KcApi<KcContext> for BackendApi {
         let realm = phone_resolve_request.realm;
         let user = self
             .state
-            .repository
+            .service
             .resolve_user_by_phone(&realm, &phone)
             .await
             .map_err(repo_err)?;
@@ -827,7 +857,7 @@ impl KcApi<KcContext> for BackendApi {
         let has_user = user.is_some();
         let has_device_credentials = if let Some(user) = &user {
             self.state
-                .repository
+                .service
                 .count_user_devices(&user.user_id)
                 .await
                 .map_err(repo_err)?
@@ -856,7 +886,7 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<ResolveOrCreateUserByPhoneResponse, ApiError> {
         let (user, created) = self
             .state
-            .repository
+            .service
             .resolve_or_create_user_by_phone(
                 &phone_resolve_or_create_request.realm,
                 &phone_resolve_or_create_request.phone_number,
@@ -890,7 +920,7 @@ impl KcApi<KcContext> for BackendApi {
 
         let queued = self
             .state
-            .repository
+            .service
             .queue_sms(SmsPendingInsert {
                 realm: req.realm,
                 client_id: req.client_id,
@@ -918,7 +948,7 @@ impl KcApi<KcContext> for BackendApi {
         let req: kc_map::SmsConfirmRequest = sms_confirm_request.into();
         let row = self
             .state
-            .repository
+            .service
             .get_sms_by_hash(&req.hash)
             .await
             .map_err(repo_err)?;
@@ -947,7 +977,7 @@ impl KcApi<KcContext> for BackendApi {
         }
 
         self.state
-            .repository
+            .service
             .mark_sms_confirmed(&req.hash)
             .await
             .map_err(repo_err)?;

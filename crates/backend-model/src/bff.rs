@@ -58,4 +58,7 @@ pub struct KycStatusResponseDto {
     pub documents: Option<Vec<gen_oas_server_bff::models::KycStatusResponseDocumentStatus>>,
     pub required_documents: Option<Vec<String>>,
     pub missing_documents: Option<Vec<String>>,
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+    pub total_documents: Option<i32>,
 }

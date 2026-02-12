@@ -102,6 +102,9 @@ pub struct KycSubmissionDetailResponseDto {
     pub reviewed_by: Option<String>,
     pub rejection_reason: Option<String>,
     pub review_notes: Option<String>,
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+    pub total_documents: Option<i32>,
 }
 
 impl KycSubmissionDetailResponseDto {
@@ -122,6 +125,9 @@ impl KycSubmissionDetailResponseDto {
             reviewed_by: profile.reviewed_by,
             rejection_reason: profile.rejection_reason,
             review_notes: profile.review_notes,
+            page: None,
+            page_size: None,
+            total_documents: None,
         }
     }
 }

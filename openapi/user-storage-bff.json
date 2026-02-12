@@ -99,6 +99,28 @@
               "type": "string"
             },
             "description": "External ID (JWT usually carries it)."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            },
+            "description": "Page number for document list (default 1)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1
+            },
+            "description": "Page size for document list (default 20)."
           }
         ],
         "responses": {
@@ -278,6 +300,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "totalDocuments": {
+            "type": "integer"
           }
         }
       },

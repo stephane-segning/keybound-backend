@@ -3,6 +3,7 @@ use backend_model::db;
 use backend_model::{kc as kc_map, staff as staff_map};
 use moka::future::Cache;
 use sqlx::{PgPool, Postgres, QueryBuilder};
+use sqlx_data::{Pagination, Params, ParamsBuilder, Serial, SerialParams};
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -30,6 +31,24 @@ impl PgRepository {
 
     fn phone_cache_key(realm: &str, phone: &str) -> String {
         format!("{realm}:{phone}")
+    }
+
+    fn serial_params(page: i32, limit: i32) -> (Params, SerialParams) {
+        let page = page.max(1) as u32;
+        let limit = limit.clamp(1, 100) as u32;
+
+        let params = ParamsBuilder::new()
+            .serial()
+            .page(page, limit)
+            .done()
+            .build();
+
+        let serial = match params.pagination.clone() {
+            Some(Pagination::Serial(serial)) => serial,
+            _ => SerialParams::new(page, limit),
+        };
+
+        (params, serial)
     }
 }
 
@@ -119,7 +138,20 @@ impl BffRepo for PgRepository {
         Ok(row)
     }
 
-    async fn list_kyc_documents(&self, external_id: &str) -> RepoResult<Vec<db::KycDocumentRow>> {
+    async fn list_kyc_documents(
+        &self,
+        external_id: &str,
+        page: i32,
+        limit: i32,
+    ) -> RepoResult<Serial<db::KycDocumentRow>> {
+        let (params, serial) = Self::serial_params(page, limit);
+
+        let (total_count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*)::int8 FROM kyc_documents WHERE external_id = $1")
+                .bind(external_id)
+                .fetch_one(&self.pool)
+                .await?;
+
         let rows = sqlx::query_as(
             r#"
             SELECT
@@ -140,13 +172,17 @@ impl BffRepo for PgRepository {
             FROM kyc_documents
             WHERE external_id = $1
             ORDER BY created_at DESC
+            LIMIT $2
+            OFFSET $3
             "#,
         )
         .bind(external_id)
+        .bind(serial.limit() as i64)
+        .bind(serial.offset() as i64)
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows)
+        Ok(Serial::new(rows, &params, total_count.max(0)))
     }
 
     async fn get_kyc_tier(&self, external_id: &str) -> RepoResult<Option<i32>> {
@@ -163,9 +199,11 @@ impl StaffRepo for PgRepository {
     async fn list_kyc_submissions(
         &self,
         query: KycSubmissionsQuery,
-    ) -> RepoResult<KycSubmissionsPage> {
+    ) -> RepoResult<Serial<db::KycProfileRow>> {
+        let (params, serial) = Self::serial_params(query.page, query.limit);
+
         let mut count_qb: QueryBuilder<Postgres> =
-            QueryBuilder::new("SELECT COUNT(*)::int4 FROM kyc_profiles WHERE 1=1");
+            QueryBuilder::new("SELECT COUNT(*)::int8 FROM kyc_profiles WHERE 1=1");
         if let Some(status) = &query.status {
             count_qb.push(" AND kyc_status::text = ");
             count_qb.push_bind(status.clone());
@@ -180,7 +218,7 @@ impl StaffRepo for PgRepository {
             count_qb.push_bind(like);
             count_qb.push(")");
         }
-        let total: i32 = count_qb.build_query_scalar().fetch_one(&self.pool).await?;
+        let total: i64 = count_qb.build_query_scalar().fetch_one(&self.pool).await?;
 
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
@@ -221,12 +259,12 @@ impl StaffRepo for PgRepository {
         }
         qb.push(" ORDER BY submitted_at DESC NULLS LAST, created_at DESC");
         qb.push(" LIMIT ");
-        qb.push_bind(query.limit);
+        qb.push_bind(serial.limit() as i64);
         qb.push(" OFFSET ");
-        qb.push_bind((query.page - 1) * query.limit);
+        qb.push_bind(serial.offset() as i64);
 
         let items: Vec<db::KycProfileRow> = qb.build_query_as().fetch_all(&self.pool).await?;
-        Ok(KycSubmissionsPage { total, items })
+        Ok(Serial::new(items, &params, total.max(0)))
     }
 
     async fn get_kyc_submission(&self, external_id: &str) -> RepoResult<Option<db::KycProfileRow>> {

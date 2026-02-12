@@ -12,5 +12,6 @@ backend-id.workspace = true
 backend-model.workspace = true
 chrono.workspace = true
 moka = { version = "0.12", features = ["future"] }
+sqlx-data = { version = "0.1.5", features = ["postgres", "chrono", "json"] }
 serde_json.workspace = true
 sqlx.workspace = true

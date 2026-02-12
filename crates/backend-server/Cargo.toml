@@ -27,6 +27,7 @@ sha2.workspace = true
 serde_json.workspace = true
 swagger = "7"
 moka = { version = "0.12", features = ["future"] }
+sqlx-data = { version = "0.1.5", features = ["postgres", "chrono", "json"] }
 
 aws-config = "1"
 aws-sdk-s3 = "1"
