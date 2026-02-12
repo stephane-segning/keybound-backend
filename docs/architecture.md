@@ -1,258 +1,153 @@
 # Architecture
 
-This project is a Rust workspace that exposes three OpenAPI (OA3) server surfaces (KC, BFF, Staff) using `axum`, with a strict MVC-style layering:
+This workspace runs a native `axum` backend for KC, BFF, and Staff APIs.  
+Generated OA3 crates are used for DTO/model contracts, not runtime request dispatch.
 
-- **Controllers** (HTTP/OpenAPI boundary) live in `crates/backend-server`
-- **Services** (business logic) live in `crates/backend-server`
-- **Repositories** (SQL only) live in `crates/backend-repository`
-- **DB models** (SQL row structs + DTO mapping) live in `crates/backend-model`
-- **Config + errors + shared utilities** live in `crates/backend-core`
-
-Generated crates in `crates/gen_*` are **never edited manually**; changes come from `openapi/*` + regeneration.
-
-## Project Structure (Directories)
+## Structure
 
 ```mermaid
 flowchart TB
   root["repo/"]
   root --> app["app/backend (binary)"]
-  root --> crates["crates/ (workspace libs + generated)"]
-  root --> openapi["openapi/*.json (OA3 sources)"]
-  root --> migrations["migrations/*.sql (schema + changes)"]
-  root --> compose["compose*.yml + compose/*.yml (runtime deps)"]
+  root --> crates["crates/*"]
+  root --> openapi["openapi/*.json"]
+  root --> migrations["migrations/*.sql"]
   root --> docs["docs/*.md"]
+  root --> compose["compose*.yml + compose/*.yml"]
 
   crates --> core["backend-core"]
+  crates --> auth["backend-auth"]
   crates --> server["backend-server"]
   crates --> repo["backend-repository"]
   crates --> model["backend-model"]
   crates --> idc["backend-id"]
-  crates --> auth["backend-auth"]
-  crates --> otlp["backend-otlp"]
   crates --> migrate["backend-migrate"]
-  crates --> cli["backend-cli"]
-
-  crates --> genKC["gen_oas_server_kc (generated)"]
-  crates --> genBFF["gen_oas_server_bff (generated)"]
-  crates --> genStaff["gen_oas_server_staff (generated)"]
-  crates --> genClient["gen_oas_client_cuss_registration (generated)"]
+  crates --> gen["gen_oas_* (generated)"]
 ```
 
-## Runtime Request Flow (MVC)
+## Runtime Flow (Controller → Service → Repository)
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant C as Client
-  participant A as axum Router (backend-server)
-  participant G as gen_oas_server_* dispatch
+  participant R as axum Router
   participant Ctrl as Controllers (backend-server/api.rs)
   participant Svc as Services (backend-server/services.rs)
-  participant Repo as Repositories (backend-repository)
+  participant Rep as PgRepository (inherent methods)
+  participant SQL as PgSqlRepo #[repo]/#[dml]
   participant DB as Postgres
 
-  C->>A: HTTP request (KC/BFF/Staff)
-  A->>G: Prefix dispatch (/v1, /api/registration, /api/kyc/staff)
-  G->>Ctrl: Call generated Api trait impl
-  Ctrl->>Svc: Validate + orchestrate
-  Svc->>Repo: Persist/fetch (SQL)
-  Repo->>DB: Queries (sqlx + sqlx-data)
-  DB-->>Repo: Rows
-  Repo-->>Svc: Domain structs
-  Svc-->>Ctrl: DTOs
-  Ctrl-->>C: HTTP response (generated DTOs)
+  C->>R: HTTP request
+  R->>Ctrl: Matched handler
+  Ctrl->>Svc: Orchestrate use-case
+  Svc->>Rep: Call repository method
+  Rep->>SQL: Execute SQLx-Data DML
+  SQL->>DB: SQL query
+  DB-->>SQL: Rows
+  SQL-->>Rep: FromRow structs
+  Rep-->>Svc: Domain/db structs
+  Svc-->>Ctrl: Response model
+  Ctrl-->>C: HTTP status + JSON
 ```
 
-## Crate Relationships (Layered)
-
-```mermaid
-flowchart LR
-  subgraph App["app/backend (binary)"]
-    BackendMain["main.rs"]
-  end
-
-  subgraph Server["crates/backend-server (library)"]
-    Axum["axum + axum-server"]
-    Controllers["Controllers (Api trait impls)"]
-    Services["Services"]
-    State["State + LRU caches"]
-    Aws["AWS clients (S3/SNS)"]
-  end
-
-  subgraph Repo["crates/backend-repository"]
-    RepoTraits["Repo traits"]
-    PgRepo["Postgres impl (SQL only)"]
-    SqlxData["sqlx-data (pagination/params)"]
-  end
-
-  subgraph Model["crates/backend-model"]
-    DbRows["DB row structs (sqlx::FromRow)"]
-    DtoMap["o2o mappings (gen DTO <-> domain/db)"]
-  end
-
-  subgraph Core["crates/backend-core"]
-    Config["Config loader + schema"]
-    Error["backend_core::Error"]
-    Shared["shared utils (hashing, etc.)"]
-  end
-
-  subgraph Gen["crates/gen_* (generated)"]
-    GenKC["gen_oas_server_kc"]
-    GenBFF["gen_oas_server_bff"]
-    GenStaff["gen_oas_server_staff"]
-  end
-
-  subgraph Infra["External"]
-    PG["Postgres"]
-    Redis["Redis (compose service)"]
-    S3["S3-compatible storage"]
-    SNS["SNS"]
-  end
-
-  BackendMain --> Config
-  BackendMain --> Server
-  BackendMain --> otlp["backend-otlp (tracing init)"]
-  BackendMain --> migrate["backend-migrate (migrations)"]
-
-  Server --> Axum
-  Server --> Controllers
-  Controllers --> Services
-  Services --> Repo
-  Repo --> PgRepo
-  PgRepo --> PG
-
-  Server --> Aws
-  Aws --> S3
-  Aws --> SNS
-
-  Server --> Model
-  Repo --> Model
-  Model --> Gen
-  Server --> Gen
-
-  Server --> Core
-  Repo --> Core
-  Model --> Core
-  idc["backend-id"] --> Core
-
-  Redis -. optional .- Server
-```
-
-## Crates Node Graph (Workspace Dependency Sketch)
-
-This is the intended dependency direction (lower layers never depend on upper layers):
+## Crate Relationship Graph
 
 ```mermaid
 flowchart TD
-  Core["backend-core"]
-  Id["backend-id"]
-  Model["backend-model"]
-  Repo["backend-repository"]
-  Server["backend-server"]
-  Otlp["backend-otlp"]
-  Migrate["backend-migrate"]
-  Cli["backend-cli"]
   App["app/backend"]
-
+  Core["backend-core"]
+  Auth["backend-auth"]
+  Server["backend-server"]
+  Repo["backend-repository"]
+  Model["backend-model"]
+  Id["backend-id"]
+  Migrate["backend-migrate"]
+  Otlp["backend-otlp"]
   GenKC["gen_oas_server_kc"]
   GenBFF["gen_oas_server_bff"]
   GenStaff["gen_oas_server_staff"]
 
-  Id --> Core
-  Model --> Core
-  Repo --> Core
-  Repo --> Id
-  Repo --> Model
+  App --> Core
+  App --> Server
+  App --> Migrate
+  App --> Otlp
+
   Server --> Core
-  Server --> Id
-  Server --> Model
+  Server --> Auth
   Server --> Repo
+  Server --> Model
+  Server --> Id
   Server --> GenKC
   Server --> GenBFF
   Server --> GenStaff
+
+  Repo --> Core
+  Repo --> Id
+  Repo --> Model
+
   Model --> GenKC
   Model --> GenBFF
   Model --> GenStaff
+  Model --> Core
 
-  Otlp --> Core
-  Migrate --> Core
-
-  App --> Cli
-  App --> Core
-  App --> Migrate
-  App --> Otlp
-  App --> Server
+  Auth --> Id
 ```
 
-## Library Usage (Where/How)
+## Libraries and Usage
 
 ```mermaid
 flowchart LR
-  subgraph HTTP["HTTP + OA3 Hosting"]
-    Axum["axum / axum-server"]
-    Swagger["swagger (openapi generator runtime)"]
-    Tower["tower (service glue)"]
+  subgraph HTTP
+    axum["axum / axum-server"]
   end
 
-  subgraph DB["Database"]
-    Sqlx["sqlx (Postgres, FromRow)"]
-    SqlxData["sqlx-data (params + pagination)"]
-    Migrations["migrations/*.sql"]
+  subgraph Data
+    sqlx["sqlx (pool + FromRow)"]
+    sqlxdata["sqlx-data #[repo]/#[dml]"]
+    postgres["Postgres"]
   end
 
-  subgraph Mapping["DTO Mapping"]
-    O2O["o2o (derive mapping)"]
+  subgraph Mapping
+    o2o["o2o (DTO mapping)"]
   end
 
-  subgraph IDs["IDs"]
-    Cuid["cuid (prefix + cuid)"]
+  subgraph Cache
+    lru["lru (in-process)"]
+    redis["redis:latest (compose)"]
   end
 
-  subgraph Cache["Caching"]
-    Lru["lru (in-process caches)"]
-    Redis["redis:latest (compose; optional integration)"]
+  subgraph AWS
+    s3["aws-sdk-s3 (presign PUT)"]
+    sns["aws-sdk-sns (publish/retry)"]
+    awscfg["aws-config"]
   end
 
-  subgraph AWS["AWS Integrations"]
-    S3["aws-sdk-s3 (presign PUT)"]
-    SNS["aws-sdk-sns (publish + retry worker)"]
-    AwsCfg["aws-config (provider chain)"]
+  subgraph Errors
+    coreerr["backend-core::Error"]
   end
 
-  subgraph Obs["Observability"]
-    Tracing["tracing + tracing-subscriber"]
-  end
+  servercrate["backend-server"] --> axum
+  servercrate --> lru
+  servercrate --> s3
+  servercrate --> sns
+  servercrate --> awscfg
+  servercrate --> coreerr
 
-  Server["backend-server"] --> Axum
-  Server --> Swagger
-  Server --> Tower
-  Server --> Lru
-  Server --> S3
-  Server --> SNS
-  Server --> AwsCfg
-  Server --> Tracing
+  repocrate["backend-repository"] --> sqlxdata
+  repocrate --> sqlx
+  sqlxdata --> postgres
 
-  Repo["backend-repository"] --> Sqlx
-  Repo --> SqlxData
-  Repo --> Lru
-
-  Model["backend-model"] --> Sqlx
-  Model --> O2O
-
-  Core["backend-core"] --> Cuid
-
-  MigrateCrate["backend-migrate"] --> Sqlx
-  MigrateCrate --> Migrations
+  modelcrate["backend-model"] --> o2o
+  modelcrate --> sqlx
 ```
 
-## OpenAPI Regeneration Workflow
-
-All API surface changes start in `openapi/*.json` and flow into generated crates:
+## OpenAPI to Runtime Path
 
 ```mermaid
 flowchart LR
-  Spec["openapi/*.json"] --> Gen["docker compose run generate-code"]
-  Gen --> Crates["crates/gen_*"]
-  Crates --> Server["backend-server controllers"]
-  Crates --> Model["backend-model mappings"]
+  spec["openapi/*.json"] --> gen["generate-code"]
+  gen --> gencrates["crates/gen_oas_*"]
+  gencrates --> model["backend-model (o2o DTO mapping)"]
+  gencrates --> server["backend-server handlers (request/response types)"]
 ```

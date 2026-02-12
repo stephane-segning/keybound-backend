@@ -21,6 +21,8 @@ async-trait.workspace = true
 axum = { workspace = true, optional = true }
 utoipa.workspace = true
 sqlx-data-parser = "0.1.0"
+aws-sdk-s3 = "1"
+aws-sdk-sns = "1"
 
 [features]
 default = []

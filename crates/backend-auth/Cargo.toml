@@ -7,5 +7,6 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
+axum.workspace = true
+backend-id.workspace = true
 http = "1"
-swagger = "7"

@@ -766,39 +766,40 @@ impl PgSqlRepo for PgRepository {
     }
 }
 
-impl BffRepo for PgRepository {
-    async fn ensure_kyc_profile(&self, external_id: &str) -> RepoResult<()> {
+impl PgRepository {
+    pub async fn ensure_kyc_profile(&self, external_id: &str) -> RepoResult<()> {
         self.ensure_kyc_profile_db(external_id.to_owned()).await?;
         Ok(())
     }
 
-    async fn insert_kyc_document_intent(
+    pub async fn insert_kyc_document_intent(
         &self,
         input: KycDocumentInsert,
     ) -> RepoResult<db::KycDocumentRow> {
         let id = backend_id::kyc_document_id()?;
 
-        self.insert_kyc_document_intent_db(
-            id,
-            input.external_id,
-            input.document_type,
-            input.file_name,
-            input.mime_type,
-            input.content_length,
-            input.s3_bucket,
-            input.s3_key,
-            input.presigned_expires_at,
-        )
-        .await
-        .map_err(Into::into)
+        let row = self
+            .insert_kyc_document_intent_db(
+                id,
+                input.external_id,
+                input.document_type,
+                input.file_name,
+                input.mime_type,
+                input.content_length,
+                input.s3_bucket,
+                input.s3_key,
+                input.presigned_expires_at,
+            )
+            .await?;
+        Ok(row)
     }
 
-    async fn get_kyc_profile(&self, external_id: &str) -> RepoResult<Option<db::KycProfileRow>> {
+    pub async fn get_kyc_profile(&self, external_id: &str) -> RepoResult<Option<db::KycProfileRow>> {
         let row = self.get_kyc_profile_db(external_id.to_owned()).await?;
         Ok(row)
     }
 
-    async fn list_kyc_documents(
+    pub async fn list_kyc_documents(
         &self,
         external_id: String,
         params: impl IntoParams + Send,
@@ -807,14 +808,12 @@ impl BffRepo for PgRepository {
         Ok(rows)
     }
 
-    async fn get_kyc_tier(&self, external_id: &str) -> RepoResult<Option<i32>> {
+    pub async fn get_kyc_tier(&self, external_id: &str) -> RepoResult<Option<i32>> {
         let tier = self.get_kyc_tier_db(external_id.to_owned()).await?;
         Ok(tier)
     }
-}
 
-impl StaffRepo for PgRepository {
-    async fn list_kyc_submissions(
+    pub async fn list_kyc_submissions(
         &self,
         params: impl IntoParams + Send,
     ) -> RepoResult<Serial<db::KycProfileRow>> {
@@ -822,12 +821,12 @@ impl StaffRepo for PgRepository {
         Ok(rows)
     }
 
-    async fn get_kyc_submission(&self, external_id: &str) -> RepoResult<Option<db::KycProfileRow>> {
+    pub async fn get_kyc_submission(&self, external_id: &str) -> RepoResult<Option<db::KycProfileRow>> {
         let row = self.get_kyc_profile_db(external_id.to_owned()).await?;
         Ok(row)
     }
 
-    async fn update_kyc_approved(
+    pub async fn update_kyc_approved(
         &self,
         external_id: &str,
         req: &staff_map::KycApprovalRequest,
@@ -842,7 +841,7 @@ impl StaffRepo for PgRepository {
         Ok(res.rows_affected() > 0)
     }
 
-    async fn update_kyc_rejected(
+    pub async fn update_kyc_rejected(
         &self,
         external_id: &str,
         req: &staff_map::KycRejectionRequest,
@@ -853,7 +852,7 @@ impl StaffRepo for PgRepository {
         Ok(res.rows_affected() > 0)
     }
 
-    async fn update_kyc_request_info(
+    pub async fn update_kyc_request_info(
         &self,
         external_id: &str,
         req: &staff_map::KycRequestInfoRequest,
@@ -863,37 +862,36 @@ impl StaffRepo for PgRepository {
             .await?;
         Ok(res.rows_affected() > 0)
     }
-}
 
-impl KcRepo for PgRepository {
-    async fn create_user(&self, req: &kc_map::UserUpsert) -> RepoResult<db::UserRow> {
+    pub async fn create_user(&self, req: &kc_map::UserUpsert) -> RepoResult<db::UserRow> {
         let user_id = backend_id::user_id()?;
         let attributes_json = req
             .attributes
             .clone()
             .map(|m| serde_json::to_value(m).unwrap_or_default());
 
-        self.create_user_db(
-            user_id,
-            req.realm.clone(),
-            req.username.clone(),
-            req.first_name.clone(),
-            req.last_name.clone(),
-            req.email.clone(),
-            req.enabled.unwrap_or(true),
-            req.email_verified.unwrap_or(false),
-            attributes_json,
-        )
-        .await
-        .map_err(Into::into)
+        let row = self
+            .create_user_db(
+                user_id,
+                req.realm.clone(),
+                req.username.clone(),
+                req.first_name.clone(),
+                req.last_name.clone(),
+                req.email.clone(),
+                req.enabled.unwrap_or(true),
+                req.email_verified.unwrap_or(false),
+                attributes_json,
+            )
+            .await?;
+        Ok(row)
     }
 
-    async fn get_user(&self, user_id: &str) -> RepoResult<Option<db::UserRow>> {
+    pub async fn get_user(&self, user_id: &str) -> RepoResult<Option<db::UserRow>> {
         let row = self.get_user_db(user_id.to_owned()).await?;
         Ok(row)
     }
 
-    async fn update_user(
+    pub async fn update_user(
         &self,
         user_id: &str,
         req: &kc_map::UserUpsert,
@@ -903,45 +901,47 @@ impl KcRepo for PgRepository {
             .clone()
             .map(|m| serde_json::to_value(m).unwrap_or_default());
 
-        self.update_user_db(
-            user_id.to_owned(),
-            req.realm.clone(),
-            req.username.clone(),
-            req.first_name.clone(),
-            req.last_name.clone(),
-            req.email.clone(),
-            req.enabled.unwrap_or(true),
-            req.email_verified.unwrap_or(false),
-            attributes_json,
-        )
-        .await
-        .map_err(Into::into)
+        let row = self
+            .update_user_db(
+                user_id.to_owned(),
+                req.realm.clone(),
+                req.username.clone(),
+                req.first_name.clone(),
+                req.last_name.clone(),
+                req.email.clone(),
+                req.enabled.unwrap_or(true),
+                req.email_verified.unwrap_or(false),
+                attributes_json,
+            )
+            .await?;
+        Ok(row)
     }
 
-    async fn delete_user(&self, user_id: &str) -> RepoResult<u64> {
+    pub async fn delete_user(&self, user_id: &str) -> RepoResult<u64> {
         let res = self.delete_user_db(user_id.to_owned()).await?;
         Ok(res.rows_affected())
     }
 
-    async fn search_users(&self, req: &kc_map::UserSearch) -> RepoResult<Vec<db::UserRow>> {
+    pub async fn search_users(&self, req: &kc_map::UserSearch) -> RepoResult<Vec<db::UserRow>> {
         let max_results = req.max_results.unwrap_or(50).clamp(1, 200);
         let first_result = req.first_result.unwrap_or(0).max(0);
 
-        self.search_users_db(
-            req.realm.clone(),
-            req.search.clone(),
-            req.username.clone(),
-            req.email.clone(),
-            req.enabled,
-            req.email_verified,
-            max_results,
-            first_result,
-        )
-        .await
-        .map_err(Into::into)
+        let rows = self
+            .search_users_db(
+                req.realm.clone(),
+                req.search.clone(),
+                req.username.clone(),
+                req.email.clone(),
+                req.enabled,
+                req.email_verified,
+                max_results,
+                first_result,
+            )
+            .await?;
+        Ok(rows)
     }
 
-    async fn lookup_device(
+    pub async fn lookup_device(
         &self,
         req: &kc_map::DeviceLookupRequest,
     ) -> RepoResult<Option<db::DeviceRow>> {
@@ -949,7 +949,7 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn list_user_devices(
+    pub async fn list_user_devices(
         &self,
         user_id: &str,
         include_revoked: bool,
@@ -960,7 +960,7 @@ impl KcRepo for PgRepository {
         Ok(rows)
     }
 
-    async fn get_user_device(
+    pub async fn get_user_device(
         &self,
         user_id: &str,
         device_id: &str,
@@ -971,7 +971,7 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn update_device_status(
+    pub async fn update_device_status(
         &self,
         record_id: &str,
         status: &str,
@@ -982,7 +982,7 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn find_device_binding(
+    pub async fn find_device_binding(
         &self,
         device_id: &str,
         jkt: &str,
@@ -993,7 +993,7 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn bind_device(&self, req: &kc_map::EnrollmentBindRequest) -> RepoResult<String> {
+    pub async fn bind_device(&self, req: &kc_map::EnrollmentBindRequest) -> RepoResult<String> {
         let record_id = backend_id::device_id()?;
         let attributes_json = req
             .attributes
@@ -1022,7 +1022,7 @@ impl KcRepo for PgRepository {
         Ok(id)
     }
 
-    async fn create_approval(
+    pub async fn create_approval(
         &self,
         req: &kc_map::ApprovalCreateRequest,
         idempotency_key: Option<String>,
@@ -1064,12 +1064,12 @@ impl KcRepo for PgRepository {
         })
     }
 
-    async fn get_approval(&self, request_id: &str) -> RepoResult<Option<db::ApprovalRow>> {
+    pub async fn get_approval(&self, request_id: &str) -> RepoResult<Option<db::ApprovalRow>> {
         let row = self.get_approval_db(request_id.to_owned()).await?;
         Ok(row)
     }
 
-    async fn list_user_approvals(
+    pub async fn list_user_approvals(
         &self,
         user_id: &str,
         statuses: Option<Vec<String>>,
@@ -1078,7 +1078,7 @@ impl KcRepo for PgRepository {
         Ok(rows)
     }
 
-    async fn decide_approval(
+    pub async fn decide_approval(
         &self,
         request_id: &str,
         req: &kc_map::ApprovalDecisionRequest,
@@ -1091,21 +1091,21 @@ impl KcRepo for PgRepository {
 
         let row = self
             .decide_approval_db(
-            request_id.to_owned(),
-            status,
-            req.decided_by_device_id.clone(),
-            req.message.clone(),
-        )
-        .await?;
+                request_id.to_owned(),
+                status,
+                req.decided_by_device_id.clone(),
+                req.message.clone(),
+            )
+            .await?;
         Ok(row)
     }
 
-    async fn cancel_approval(&self, request_id: &str) -> RepoResult<u64> {
+    pub async fn cancel_approval(&self, request_id: &str) -> RepoResult<u64> {
         let res = self.cancel_approval_db(request_id.to_owned()).await?;
         Ok(res.rows_affected())
     }
 
-    async fn resolve_user_by_phone(
+    pub async fn resolve_user_by_phone(
         &self,
         realm: &str,
         phone: &str,
@@ -1136,7 +1136,7 @@ impl KcRepo for PgRepository {
         Ok(user)
     }
 
-    async fn resolve_or_create_user_by_phone(
+    pub async fn resolve_or_create_user_by_phone(
         &self,
         realm: &str,
         phone: &str,
@@ -1167,12 +1167,12 @@ impl KcRepo for PgRepository {
         Ok((user, true))
     }
 
-    async fn count_user_devices(&self, user_id: &str) -> RepoResult<i64> {
+    pub async fn count_user_devices(&self, user_id: &str) -> RepoResult<i64> {
         let count = self.count_user_devices_db(user_id.to_owned()).await?;
         Ok(count)
     }
 
-    async fn queue_sms(&self, sms: SmsPendingInsert) -> RepoResult<SmsQueued> {
+    pub async fn queue_sms(&self, sms: SmsPendingInsert) -> RepoResult<SmsQueued> {
         let hash = backend_id::sms_hash()?;
         self.queue_sms_db(
             hash.clone(),
@@ -1195,29 +1195,27 @@ impl KcRepo for PgRepository {
         })
     }
 
-    async fn get_sms_by_hash(&self, hash: &str) -> RepoResult<Option<db::SmsMessageRow>> {
+    pub async fn get_sms_by_hash(&self, hash: &str) -> RepoResult<Option<db::SmsMessageRow>> {
         let row = self.get_sms_by_hash_db(hash.to_owned()).await?;
         Ok(row)
     }
 
-    async fn mark_sms_confirmed(&self, hash: &str) -> RepoResult<()> {
+    pub async fn mark_sms_confirmed(&self, hash: &str) -> RepoResult<()> {
         self.mark_sms_confirmed_db(hash.to_owned()).await?;
         Ok(())
     }
-}
 
-impl SmsRetryRepo for PgRepository {
-    async fn list_retryable_sms(&self, limit: i64) -> RepoResult<Vec<db::SmsMessageRow>> {
+    pub async fn list_retryable_sms(&self, limit: i64) -> RepoResult<Vec<db::SmsMessageRow>> {
         let rows = self.list_retryable_sms_db(limit).await?;
         Ok(rows)
     }
 
-    async fn mark_sms_sent(&self, id: &str, sns_message_id: Option<String>) -> RepoResult<()> {
+    pub async fn mark_sms_sent(&self, id: &str, sns_message_id: Option<String>) -> RepoResult<()> {
         self.mark_sms_sent_db(id.to_owned(), sns_message_id).await?;
         Ok(())
     }
 
-    async fn mark_sms_failed(&self, update: SmsPublishFailure) -> RepoResult<()> {
+    pub async fn mark_sms_failed(&self, update: SmsPublishFailure) -> RepoResult<()> {
         let status = if update.gave_up {
             "GAVE_UP".to_owned()
         } else {
@@ -1229,7 +1227,7 @@ impl SmsRetryRepo for PgRepository {
         Ok(())
     }
 
-    async fn mark_sms_gave_up(&self, id: &str, reason: &str) -> RepoResult<()> {
+    pub async fn mark_sms_gave_up(&self, id: &str, reason: &str) -> RepoResult<()> {
         self.mark_sms_gave_up_db(id.to_owned(), reason.to_owned())
             .await?;
         Ok(())

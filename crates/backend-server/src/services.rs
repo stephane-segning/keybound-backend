@@ -1,7 +1,6 @@
 use backend_model::{db, kc as kc_map, staff as staff_map};
 use backend_repository::{
-    ApprovalCreated, BffRepo, KcRepo, KycDocumentInsert, PgRepository,
-    RepoResult, SmsPendingInsert, SmsQueued, StaffRepo,
+    ApprovalCreated, KycDocumentInsert, PgRepository, RepoResult, SmsPendingInsert, SmsQueued,
 };
 use sqlx_data::{ParamsBuilder, Serial};
 

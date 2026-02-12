@@ -755,8 +755,9 @@ dependencies = [
 name = "backend-auth"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "backend-id",
  "http 1.4.0",
- "swagger",
 ]
 
 [[package]]
@@ -772,6 +773,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-sdk-s3",
+ "aws-sdk-sns",
  "axum",
  "chrono",
  "cuid",
@@ -863,22 +866,17 @@ dependencies = [
  "backend-id",
  "backend-model",
  "backend-repository",
- "bytes",
  "chrono",
  "gen_oas_server_bff",
  "gen_oas_server_kc",
  "gen_oas_server_staff",
- "http 1.4.0",
- "http-body-util",
- "hyper 1.8.1",
  "lru",
+ "serde",
  "serde_json",
  "sha2",
  "sqlx",
  "sqlx-data",
- "swagger",
  "tokio",
- "tower",
  "tracing",
 ]
 

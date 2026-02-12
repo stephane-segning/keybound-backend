@@ -1,26 +1,12 @@
-use axum::body::Body;
-use backend_auth::{KcContext, ServiceContext};
-use backend_core::{Aws, Config};
+use backend_core::Config;
 use backend_repository::PgRepository;
-use bytes::Bytes;
 use gen_oas_server_bff::models::{KycStatusResponse, LimitsResponse};
-use http::{Request, Response, StatusCode};
-use http_body_util::BodyExt as _;
-use http_body_util::combinators::BoxBody;
-use hyper::service::Service as HyperService;
 use lru::LruCache;
 use sqlx::postgres::PgPoolOptions;
-use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
-use tracing::error;
 
 use crate::services::BackendService;
-
-#[derive(Debug, Clone)]
-pub struct RuntimeConfig {
-    pub aws: Aws,
-}
 
 #[derive(Clone)]
 pub struct HttpCache {
@@ -34,7 +20,7 @@ pub struct AppState {
     pub service: BackendService,
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
-    pub config: RuntimeConfig,
+    pub config: Config,
     pub http_cache: HttpCache,
 }
 
@@ -93,9 +79,7 @@ impl AppState {
             service,
             s3,
             sns,
-            config: RuntimeConfig {
-                aws: cfg.aws.clone(),
-            },
+            config: cfg.clone(),
             http_cache,
         })
     }
@@ -151,52 +135,4 @@ impl AppState {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         limits.pop(external_id);
     }
-}
-
-pub async fn call_kc(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
-    let ctx = KcContext::from_request(&req);
-    let svc = gen_oas_server_kc::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-pub async fn call_bff(
-    api: crate::api::BackendApi,
-    ctx: ServiceContext,
-    req: Request<Body>,
-) -> Response<Body> {
-    let svc = gen_oas_server_bff::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-pub async fn call_staff(
-    api: crate::api::BackendApi,
-    ctx: ServiceContext,
-    req: Request<Body>,
-) -> Response<Body> {
-    let svc = gen_oas_server_staff::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-fn to_axum_response<E>(resp: Result<Response<BoxBody<Bytes, Infallible>>, E>) -> Response<Body>
-where
-    E: std::fmt::Display,
-{
-    match resp {
-        Ok(resp) => {
-            let (parts, body) = resp.into_parts();
-            let body = Body::new(body.map_err(infallible_to_io));
-            Response::from_parts(parts, body)
-        }
-        Err(e) => {
-            error!("generated service error: {e}");
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from("Internal server error"))
-                .unwrap_or_else(|_| Response::new(Body::empty()))
-        }
-    }
-}
-
-fn infallible_to_io(err: Infallible) -> std::io::Error {
-    match err {}
 }

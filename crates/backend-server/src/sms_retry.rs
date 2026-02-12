@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use backend_model::db;
-use backend_repository::{SmsPublishFailure, SmsRetryRepo};
+use backend_repository::SmsPublishFailure;
 use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;

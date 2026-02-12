@@ -30,6 +30,19 @@ pub enum Error {
 
     #[error("SQLx-Data parser error: {0}")]
     SqlxDataParser(#[from] sqlx_data_parser::ParserError),
+
+    #[error("S3 presign config error: {0}")]
+    AwsS3PresignConfig(#[from] aws_sdk_s3::presigning::PresigningConfigError),
+
+    #[error("S3 put object error: {0}")]
+    AwsS3PutObject(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
+    ),
+
+    #[error("SNS publish error: {0}")]
+    AwsSnsPublish(
+        #[from] aws_sdk_sns::error::SdkError<aws_sdk_sns::operation::publish::PublishError>,
+    ),
 }
 
 #[cfg(feature = "axum")]
@@ -50,6 +63,9 @@ mod axum_impl {
 
                 Error::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 Error::SqlxDataParser(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                Error::AwsS3PresignConfig(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                Error::AwsS3PutObject(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                Error::AwsSnsPublish(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
 
             (status_code, self.to_string()).into_response()
