@@ -8,10 +8,6 @@ server:
     tls:
       cert_path: "./config/tls/api.crt"
       key_path: "./config/tls/api.key"
-    auth:
-      # If empty, BFF/Staff bearer auth is effectively disabled (dev-friendly).
-      static_bearer_tokens:
-        - "dev-bearer-token"
 logging:
   level: "info"
 database:

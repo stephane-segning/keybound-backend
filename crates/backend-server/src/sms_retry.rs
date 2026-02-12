@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use backend_model::db;
+use backend_repository::{SmsPublishFailure, SmsRetryRepo};
 use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,39 +19,11 @@ pub fn spawn(state: Arc<AppState>) -> JoinHandle<()> {
 }
 
 async fn tick(state: &AppState) -> backend_core::Result<()> {
-    let rows: Vec<db::SmsMessageRow> = sqlx::query_as(
-        r#"
-        SELECT
-          id::text as id,
-          realm,
-          client_id,
-          user_id,
-          phone_number,
-          hash,
-          otp_sha256,
-          ttl_seconds,
-          status::text as status,
-          attempt_count,
-          max_attempts,
-          next_retry_at,
-          last_error,
-          sns_message_id,
-          session_id,
-          trace_id,
-          metadata,
-          created_at,
-          sent_at,
-          confirmed_at
-        FROM sms_messages
-        WHERE status::text IN ('PENDING', 'FAILED')
-          AND (next_retry_at IS NULL OR next_retry_at <= now())
-          AND attempt_count < max_attempts
-        ORDER BY created_at ASC
-        LIMIT 25
-        "#,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let rows = state
+        .repository
+        .list_retryable_sms(25)
+        .await
+        .map_err(|e| backend_core::Error::Server(e.to_string()))?;
 
     for row in rows {
         if let Err(e) = try_publish(state, row).await {
@@ -70,13 +43,11 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
         .unwrap_or("");
 
     if message.is_empty() {
-        sqlx::query(
-            "UPDATE sms_messages SET status = 'GAVE_UP', last_error = $2 WHERE id = $1::uuid",
-        )
-        .bind(&row.id)
-        .bind("missing message body")
-        .execute(&state.db)
-        .await?;
+        state
+            .repository
+            .mark_sms_gave_up(&row.id, "missing message body")
+            .await
+            .map_err(|e| backend_core::Error::Server(e.to_string()))?;
         return Ok(());
     }
 
@@ -92,23 +63,11 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
     {
         Ok(out) => {
             let message_id = out.message_id().map(|s| s.to_owned());
-            sqlx::query(
-                r#"
-                UPDATE sms_messages
-                SET
-                  status = 'SENT',
-                  attempt_count = attempt_count + 1,
-                  sns_message_id = $2,
-                  sent_at = now(),
-                  last_error = NULL,
-                  next_retry_at = NULL
-                WHERE id = $1::uuid
-                "#,
-            )
-            .bind(&row.id)
-            .bind(message_id)
-            .execute(&state.db)
-            .await?;
+            state
+                .repository
+                .mark_sms_sent(&row.id, message_id)
+                .await
+                .map_err(|e| backend_core::Error::Server(e.to_string()))?;
         }
         Err(e) => {
             let max_attempts = row.max_attempts.max(1) as u32;
@@ -125,23 +84,16 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
                 Some(Utc::now() + chrono::Duration::seconds(backoff as i64))
             };
 
-            sqlx::query(
-                r#"
-                UPDATE sms_messages
-                SET
-                  status = $2::sms_status,
-                  attempt_count = attempt_count + 1,
-                  last_error = $3,
-                  next_retry_at = $4
-                WHERE id = $1::uuid
-                "#,
-            )
-            .bind(&row.id)
-            .bind(if gave_up { "GAVE_UP" } else { "FAILED" })
-            .bind(e.to_string())
-            .bind(next_retry_at)
-            .execute(&state.db)
-            .await?;
+            state
+                .repository
+                .mark_sms_failed(SmsPublishFailure {
+                    id: row.id.clone(),
+                    gave_up,
+                    error: e.to_string(),
+                    next_retry_at,
+                })
+                .await
+                .map_err(|e| backend_core::Error::Server(e.to_string()))?;
         }
     }
 

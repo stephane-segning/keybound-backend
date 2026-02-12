@@ -19,7 +19,7 @@ pub struct UserRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct DeviceRow {
-    pub id: String, // uuid::text
+    pub id: String,
     pub realm: String,
     pub client_id: String,
     pub user_id: String,
@@ -37,7 +37,7 @@ pub struct DeviceRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct ApprovalRow {
-    pub request_id: String, // uuid::text
+    pub request_id: String,
     pub realm: String,
     pub client_id: String,
     pub user_id: String,
@@ -60,7 +60,7 @@ pub struct ApprovalRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct SmsMessageRow {
-    pub id: String, // uuid::text
+    pub id: String,
     pub realm: String,
     pub client_id: String,
     pub user_id: Option<String>,
@@ -104,7 +104,7 @@ pub struct KycProfileRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct KycDocumentRow {
-    pub id: String, // uuid::text
+    pub id: String,
     pub external_id: String,
     pub document_type: String,
     pub status: String, // kyc_document_status::text
@@ -119,4 +119,3 @@ pub struct KycDocumentRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-

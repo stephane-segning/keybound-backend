@@ -7,7 +7,10 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
+backend-auth.workspace = true
 backend-core = { workspace = true, features = ["axum"] }
+backend-id.workspace = true
+backend-repository.workspace = true
 backend-model.workspace = true
 axum.workspace = true
 axum-server.workspace = true
@@ -21,7 +24,6 @@ tokio = { workspace = true, features = ["signal", "time"] }
 tower = "0.5"
 tracing.workspace = true
 sha2.workspace = true
-hex.workspace = true
 serde_json.workspace = true
 swagger = "7"
 

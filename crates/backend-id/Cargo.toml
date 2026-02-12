@@ -1,5 +1,5 @@
 [package]
-name = "backend-auth"
+name = "backend-id"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,5 +7,5 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
-http = "1"
-swagger = "7"
+cuid.workspace = true
+thiserror.workspace = true

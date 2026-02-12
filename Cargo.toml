@@ -4,9 +4,11 @@ members = [
     "crates/backend-auth",
     "crates/backend-cli",
     "crates/backend-core",
+    "crates/backend-id",
     "crates/backend-metrics",
     "crates/backend-migrate",
     "crates/backend-model",
+    "crates/backend-repository",
     "crates/backend-otlp",
     "crates/backend-server",
 
@@ -21,9 +23,11 @@ resolver = "3"
 backend-auth = { path = "./crates/backend-auth" }
 backend-cli = { path = "./crates/backend-cli" }
 backend-core = { path = "./crates/backend-core" }
+backend-id = { path = "./crates/backend-id" }
 backend-metrics = { path = "./crates/backend-metrics" }
 backend-migrate = { path = "./crates/backend-migrate" }
 backend-model = { path = "./crates/backend-model" }
+backend-repository = { path = "./crates/backend-repository" }
 backend-otlp = { path = "./crates/backend-otlp" }
 backend-server = { path = "./crates/backend-server" }
 

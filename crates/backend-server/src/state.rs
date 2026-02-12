@@ -1,25 +1,24 @@
 use crate::configuration::{AwsConfig, BackendServerConfig};
-use crate::context::{AuthContext, KcContext};
 use axum::body::Body;
+use backend_auth::{KcContext, ServiceContext};
+use backend_repository::PgRepository;
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt as _;
 use hyper::service::Service as HyperService;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::PgPool;
 use std::convert::Infallible;
 use tracing::error;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-    pub auth_static_bearer_tokens: Vec<String>,
     pub aws: AwsConfig,
 }
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: PgPool,
+    pub repository: PgRepository,
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
     pub config: RuntimeConfig,
@@ -28,7 +27,7 @@ pub struct AppState {
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
-            .field("db", &"<PgPool>")
+            .field("repository", &"<PgRepository>")
             .field("s3", &"<S3Client>")
             .field("sns", &"<SnsClient>")
             .field("config", &self.config)
@@ -65,13 +64,10 @@ impl AppState {
         };
 
         Ok(Self {
-            db,
+            repository: PgRepository::new(db.clone()),
             s3,
             sns,
-            config: RuntimeConfig {
-                auth_static_bearer_tokens: cfg.auth_static_bearer_tokens.clone(),
-                aws: cfg.aws.clone(),
-            },
+            config: RuntimeConfig { aws: cfg.aws.clone() },
         })
     }
 }
@@ -84,7 +80,7 @@ pub async fn call_kc(api: crate::api::BackendApi, req: Request<Body>) -> Respons
 
 pub async fn call_bff(
     api: crate::api::BackendApi,
-    ctx: AuthContext,
+    ctx: ServiceContext,
     req: Request<Body>,
 ) -> Response<Body> {
     let svc = gen_oas_server_bff::server::Service::new(api, false);
@@ -93,7 +89,7 @@ pub async fn call_bff(
 
 pub async fn call_staff(
     api: crate::api::BackendApi,
-    ctx: AuthContext,
+    ctx: ServiceContext,
     req: Request<Body>,
 ) -> Response<Body> {
     let svc = gen_oas_server_staff::server::Service::new(api, false);

@@ -1,8 +1,6 @@
 -- Base schema for user-storage backend (KC + BFF + Staff).
 -- This migration intentionally replaces the previous placeholder schema.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'device_status') THEN
@@ -50,7 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_users_realm_email
 
 -- Device registry and binding.
 CREATE TABLE IF NOT EXISTS devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   realm TEXT NOT NULL,
   client_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
@@ -75,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_user_status
 
 -- Approval workflow for new-device binding.
 CREATE TABLE IF NOT EXISTS approvals (
-  request_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id TEXT PRIMARY KEY,
   realm TEXT NOT NULL,
   client_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
@@ -106,7 +104,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_idempotency_unique
 
 -- SMS send/confirm with persisted retry state (SNS integration happens in app code).
 CREATE TABLE IF NOT EXISTS sms_messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   realm TEXT NOT NULL,
   client_id TEXT NOT NULL,
   user_id TEXT NULL REFERENCES users (user_id) ON DELETE SET NULL,
@@ -164,7 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_kyc_profiles_phone
 
 -- Individual KYC documents stored via S3 (presign intent).
 CREATE TABLE IF NOT EXISTS kyc_documents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   external_id TEXT NOT NULL REFERENCES kyc_profiles (external_id) ON DELETE CASCADE,
   document_type TEXT NOT NULL,
   status kyc_document_status NOT NULL DEFAULT 'PRESIGNED',

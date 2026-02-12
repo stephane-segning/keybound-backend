@@ -1,6 +1,5 @@
 mod api;
 mod configuration;
-mod context;
 mod sms_retry;
 mod state;
 
@@ -23,7 +22,7 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     sms_retry::spawn(state.clone());
 
     let api = api::BackendApi::new(state.clone());
-    let router = router(state.clone(), api.clone());
+    let router = router(api.clone());
 
     info!("Listening on {}", config.listen_addr);
 
@@ -58,11 +57,10 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn router(state: Arc<state::AppState>, api: api::BackendApi) -> Router {
+fn router(api: api::BackendApi) -> Router {
     let fallback = service_fn(move |req: Request<axum::body::Body>| {
-        let state = state.clone();
         let api = api.clone();
-        async move { Ok::<Response<axum::body::Body>, Infallible>(dispatch(state, api, req).await) }
+        async move { Ok::<Response<axum::body::Body>, Infallible>(dispatch(api, req).await) }
     });
 
     Router::new()
@@ -70,11 +68,7 @@ fn router(state: Arc<state::AppState>, api: api::BackendApi) -> Router {
         .fallback_service(fallback)
 }
 
-async fn dispatch(
-    state: Arc<state::AppState>,
-    api: api::BackendApi,
-    req: Request<axum::body::Body>,
-) -> Response<axum::body::Body> {
+async fn dispatch(api: api::BackendApi, req: Request<axum::body::Body>) -> Response<axum::body::Body> {
     let path = req.uri().path();
 
     if path.starts_with("/v1/") {
@@ -82,12 +76,12 @@ async fn dispatch(
     }
 
     if path.starts_with("/api/registration/") {
-        let ctx = context::AuthContext::from_request(&req, &state.config.auth_static_bearer_tokens);
+        let ctx = backend_auth::ServiceContext::from_request(&req);
         return state::call_bff(api, ctx, req).await;
     }
 
     if path.starts_with("/api/kyc/staff/") {
-        let ctx = context::AuthContext::from_request(&req, &state.config.auth_static_bearer_tokens);
+        let ctx = backend_auth::ServiceContext::from_request(&req);
         return state::call_staff(api, ctx, req).await;
     }
 

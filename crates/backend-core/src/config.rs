@@ -23,20 +23,12 @@ pub struct ApiServer {
     pub address: String,
     pub port: u16,
     pub tls: Tls,
-    pub auth: ApiAuth,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Tls {
     pub cert_path: String,
     pub key_path: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ApiAuth {
-    /// If empty, authentication is effectively disabled (dev-friendly default).
-    #[serde(default)]
-    pub static_bearer_tokens: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

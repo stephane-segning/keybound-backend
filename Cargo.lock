@@ -741,6 +741,10 @@ dependencies = [
 [[package]]
 name = "backend-auth"
 version = "0.1.0"
+dependencies = [
+ "http 1.4.0",
+ "swagger",
+]
 
 [[package]]
 name = "backend-cli"
@@ -766,6 +770,14 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.18",
  "utoipa",
+]
+
+[[package]]
+name = "backend-id"
+version = "0.1.0"
+dependencies = [
+ "cuid",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -809,6 +821,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-repository"
+version = "0.1.0"
+dependencies = [
+ "backend-id",
+ "backend-model",
+ "chrono",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "backend-server"
 version = "0.1.0"
 dependencies = [
@@ -818,14 +842,16 @@ dependencies = [
  "aws-types",
  "axum",
  "axum-server",
+ "backend-auth",
  "backend-core",
+ "backend-id",
  "backend-model",
+ "backend-repository",
  "bytes",
  "chrono",
  "gen_oas_server_bff",
  "gen_oas_server_kc",
  "gen_oas_server_staff",
- "hex",
  "http 1.4.0",
  "http-body-util",
  "hyper 1.8.1",

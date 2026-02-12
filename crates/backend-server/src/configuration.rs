@@ -9,7 +9,6 @@ pub struct BackendServerConfig {
     pub tls: Option<TlsConfig>,
     pub database_url: String,
     pub database_pool_size: u32,
-    pub auth_static_bearer_tokens: Vec<String>,
     pub aws: AwsConfig,
 }
 
@@ -53,7 +52,6 @@ impl TryFrom<&Config> for BackendServerConfig {
             tls: resolve_tls(cfg),
             database_url: cfg.database.url.clone(),
             database_pool_size: cfg.database.pool_size.unwrap_or(10),
-            auth_static_bearer_tokens: cfg.server.api.auth.static_bearer_tokens.clone(),
             aws: AwsConfig {
                 region: cfg.aws.region.clone(),
                 s3: AwsS3Config {
