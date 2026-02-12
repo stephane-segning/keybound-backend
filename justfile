@@ -22,7 +22,7 @@ c := ""
 
 # Initialize the project
 init:
-	docker compose -p lightbridge-authz -f compose.yaml build {{c}}
+	docker compose -p user-storage-backend -f compose.yaml build {{c}}
 
 # Show this help
 help:
@@ -30,73 +30,73 @@ help:
 
 # Pull the image
 pull:
-	docker compose -p lightbridge-authz -f compose.yaml pull {{c}}
+	docker compose -p user-storage-backend -f compose.yaml pull {{c}}
 
 # Build the project
 build:
-	docker compose -p lightbridge-authz -f compose.yaml build {{c}}
+	docker compose -p user-storage-backend -f compose.yaml build {{c}}
 
 # Start the project
 up:
-	docker compose -p lightbridge-authz -f compose.yaml up -d --remove-orphans --build {{c}}
+	docker compose -p user-storage-backend -f compose.yaml up -d --remove-orphans --build {{c}}
 
 # Start a single service
 up-single app:
-	docker compose -p lightbridge-authz -f compose.yaml up -d --remove-orphans --build {{app}} {{c}}
+	docker compose -p user-storage-backend -f compose.yaml up -d --remove-orphans --build {{app}} {{c}}
 
 # Start the project (without rebuild)
 up-no-build:
-	docker compose -p lightbridge-authz -f compose.yaml up -d --remove-orphans {{c}}
+	docker compose -p user-storage-backend -f compose.yaml up -d --remove-orphans {{c}}
 
 # Show images
 img:
-	docker compose -p lightbridge-authz -f compose.yaml images {{c}}
+	docker compose -p user-storage-backend -f compose.yaml images {{c}}
 
 # Start the project (without rebuild)
 start:
-	docker compose -p lightbridge-authz -f compose.yaml start {{c}}
+	docker compose -p user-storage-backend -f compose.yaml start {{c}}
 
 # Stop the project
 down:
-	docker compose -p lightbridge-authz -f compose.yaml down {{c}}
+	docker compose -p user-storage-backend -f compose.yaml down {{c}}
 
 # Destroy the project
 destroy:
-	docker compose -p lightbridge-authz -f compose.yaml down -v {{c}}
+	docker compose -p user-storage-backend -f compose.yaml down -v {{c}}
 
 # Stop containers
 stop:
-	docker compose -p lightbridge-authz -f compose.yaml stop {{c}}
+	docker compose -p user-storage-backend -f compose.yaml stop {{c}}
 
 # Restart the project
 restart:
-	docker compose -p lightbridge-authz -f compose.yaml stop {{c}}
-	docker compose -p lightbridge-authz -f compose.yaml up -d {{c}}
+	docker compose -p user-storage-backend -f compose.yaml stop {{c}}
+	docker compose -p user-storage-backend -f compose.yaml up -d {{c}}
 
 # Show logs
 logs:
-	docker compose -p lightbridge-authz -f compose.yaml logs --tail=100 -f {{c}}
+	docker compose -p user-storage-backend -f compose.yaml logs --tail=100 -f {{c}}
 
 # Show API logs
 logs-api:
-	docker compose -p lightbridge-authz -f compose.yaml logs --tail=100 -f authz-api {{c}}
+	docker compose -p user-storage-backend -f compose.yaml logs --tail=100 -f authz-api {{c}}
 
 # Show OPA logs
 logs-opa:
-	docker compose -p lightbridge-authz -f compose.yaml logs --tail=100 -f authz-opa {{c}}
+	docker compose -p user-storage-backend -f compose.yaml logs --tail=100 -f authz-opa {{c}}
 
 # Show status
 ps:
-	docker compose -p lightbridge-authz -f compose.yaml ps {{c}}
+	docker compose -p user-storage-backend -f compose.yaml ps {{c}}
 
 # Show all containers
 ps-all:
-	docker compose -p lightbridge-authz -f compose.yaml ps --all {{c}}
+	docker compose -p user-storage-backend -f compose.yaml ps --all {{c}}
 
 # Run migrations once
 migrate:
-	docker compose -p lightbridge-authz -f compose.yaml run --rm authz-migrate
+	docker compose -p user-storage-backend -f compose.yaml run --rm authz-migrate
 
 # Show stats
 stats:
-	docker compose -p lightbridge-authz -f compose.yaml stats {{c}}
+	docker compose -p user-storage-backend -f compose.yaml stats {{c}}

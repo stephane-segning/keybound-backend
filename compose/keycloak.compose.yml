@@ -1,11 +1,10 @@
 x-keycloak-common-env: &keycloak-common-env
-  BACKEND_HTTP_BASE_PATH_ssegning-keybound-wh-01: "http://api-mock:8080"
-  BACKEND_HTTP_BASE_PATH_e2e-testing: "http://api-backend-example:18080"
   # Dev-only credentials. Do not reuse in production; wire secrets via a vault or env injection.
+  BACKEND_HTTP_BASE_PATH_e2e-testing: "http://172.17.0.1:3000"
   BACKEND_HTTP_AUTH_USERNAME: "admin"
   BACKEND_HTTP_AUTH_PASSWORD: "password"
 
-  NONCE_CACHE_TTL_ssegning-keybound-wh-01: "60"
+  NONCE_CACHE_TTL_e2e-testing: "60"
 
   # Dev-only Keycloak bootstrap credentials. Replace for production.
   KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -16,15 +15,15 @@ x-keycloak-common-extra: &keycloak-common-extra
   command:
     - -c
     - |
-      set -ex
-      
+      set -e
       cp /downloaded/kc-plugins/*.jar /opt/keycloak/providers
       /opt/keycloak/bin/kc.sh start-dev --import-realm
   volumes:
     - ../.docker/keycloak-config/:/opt/keycloak/data/import/:ro
     - downloaded_data:/downloaded
-  links:
-    - download-core-tools
+  depends_on:
+    download-core-tools:
+      condition: service_completed_successfully
 
 services:
   keycloak-26:

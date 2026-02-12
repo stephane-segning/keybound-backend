@@ -7,3 +7,20 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
+cuid.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+sqlx.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+axum = { workspace = true, optional = true }
+utoipa.workspace = true
+
+[features]
+default = []
+axum = ["dep:axum"]

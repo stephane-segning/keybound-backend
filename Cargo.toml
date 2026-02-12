@@ -5,6 +5,8 @@ members = [
     "crates/backend-cli",
     "crates/backend-core",
     "crates/backend-metrics",
+    "crates/backend-migrate",
+    "crates/backend-model",
     "crates/backend-otlp",
     "crates/backend-server",
 
@@ -18,7 +20,10 @@ resolver = "3"
 [workspace.dependencies]
 backend-auth = { path = "./crates/backend-auth" }
 backend-cli = { path = "./crates/backend-cli" }
+backend-core = { path = "./crates/backend-core" }
 backend-metrics = { path = "./crates/backend-metrics" }
+backend-migrate = { path = "./crates/backend-migrate" }
+backend-model = { path = "./crates/backend-model" }
 backend-otlp = { path = "./crates/backend-otlp" }
 backend-server = { path = "./crates/backend-server" }
 
