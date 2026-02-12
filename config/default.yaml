@@ -25,3 +25,17 @@ aws:
     region: null
     max_attempts: 10
     initial_backoff_seconds: 5
+auth:
+  kc:
+    enabled: false
+    signature_secret: "change-me"
+    max_clock_skew_seconds: 60
+    max_body_bytes: 262144
+  bff:
+    enabled: false
+    require_bearer: true
+    require_signature: true
+    max_clock_skew_seconds: 60
+    external_id_claim: "sub"
+  staff:
+    require_bearer: false

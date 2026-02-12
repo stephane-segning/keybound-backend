@@ -53,6 +53,14 @@ impl BackendService {
         self.repository.get_kyc_tier(external_id).await
     }
 
+    pub async fn patch_kyc_information(
+        &self,
+        external_id: &str,
+        req: &backend_model::bff::KycInformationPatchRequest,
+    ) -> RepoResult<Option<db::KycProfileRow>> {
+        self.repository.patch_kyc_information(external_id, req).await
+    }
+
     pub async fn list_kyc_submissions(
         &self,
         status: Option<String>,

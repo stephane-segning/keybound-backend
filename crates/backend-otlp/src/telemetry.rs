@@ -3,7 +3,7 @@ use std::fs::File;
 use std::sync::OnceLock;
 use std::{env, fs, path::Path, path::PathBuf};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 // Keep the guard alive for non-blocking writers; dropping it stops flushing to disk.
 static FILE_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
@@ -109,10 +109,4 @@ fn current_bin_name() -> String {
         .ok()
         .and_then(|path| path.file_stem().map(|os| os.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "soma".to_string())
-}
-
-fn bool_env(var: &str, truthy: &[&str]) -> bool {
-    env::var(var)
-        .map(|value| truthy.contains(&value.trim().to_ascii_lowercase().as_str()))
-        .unwrap_or(false)
 }

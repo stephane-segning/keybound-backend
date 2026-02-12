@@ -189,6 +189,49 @@ trait PgSqlRepo {
 
     #[dml(
         r#"
+        UPDATE kyc_profiles
+        SET
+          first_name = COALESCE($2, first_name),
+          last_name = COALESCE($3, last_name),
+          email = COALESCE($4, email),
+          phone_number = COALESCE($5, phone_number),
+          date_of_birth = COALESCE($6, date_of_birth),
+          nationality = COALESCE($7, nationality),
+          updated_at = now()
+        WHERE external_id = $1
+        RETURNING
+          external_id,
+          first_name,
+          last_name,
+          email,
+          phone_number,
+          date_of_birth,
+          nationality,
+          kyc_tier,
+          kyc_status::text as kyc_status,
+          submitted_at,
+          reviewed_at,
+          reviewed_by,
+          rejection_reason,
+          review_notes,
+          created_at,
+          updated_at
+        "#,
+        unchecked
+    )]
+    async fn patch_kyc_information_db(
+        &self,
+        external_id: String,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        email: Option<String>,
+        phone_number: Option<String>,
+        date_of_birth: Option<String>,
+        nationality: Option<String>,
+    ) -> sqlx_data::Result<Option<db::KycProfileRow>>;
+
+    #[dml(
+        r#"
         INSERT INTO users (
           user_id, realm, username, first_name, last_name, email, enabled, email_verified, attributes
         )
@@ -861,6 +904,25 @@ impl PgRepository {
             .update_kyc_request_info_db(external_id.to_owned(), req.message.clone())
             .await?;
         Ok(res.rows_affected() > 0)
+    }
+
+    pub async fn patch_kyc_information(
+        &self,
+        external_id: &str,
+        req: &backend_model::bff::KycInformationPatchRequest,
+    ) -> RepoResult<Option<db::KycProfileRow>> {
+        let row = self
+            .patch_kyc_information_db(
+                external_id.to_owned(),
+                req.first_name.clone(),
+                req.last_name.clone(),
+                req.email.clone(),
+                req.phone_number.clone(),
+                req.date_of_birth.clone(),
+                req.nationality.clone(),
+            )
+            .await?;
+        Ok(row)
     }
 
     pub async fn create_user(&self, req: &kc_map::UserUpsert) -> RepoResult<db::UserRow> {

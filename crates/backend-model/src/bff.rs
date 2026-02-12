@@ -14,6 +14,17 @@ pub struct KycDocumentUploadRequest {
 }
 
 #[derive(Debug, Clone, o2o)]
+#[from_owned(gen_oas_server_bff::models::KycInformationPatchRequest)]
+pub struct KycInformationPatchRequest {
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub email: Option<String>,
+    pub phone_number: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub nationality: Option<String>,
+}
+
+#[derive(Debug, Clone, o2o)]
 #[owned_into(gen_oas_server_bff::models::KycStatusResponseDocumentStatus)]
 pub struct KycStatusDocumentStatusDto {
     pub document_type: Option<String>,
@@ -61,4 +72,17 @@ pub struct KycStatusResponseDto {
     pub page: Option<i32>,
     pub page_size: Option<i32>,
     pub total_documents: Option<i32>,
+}
+
+#[derive(Debug, Clone, o2o)]
+#[owned_into(gen_oas_server_bff::models::KycInformationResponse)]
+pub struct KycInformationResponseDto {
+    pub external_id: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub email: Option<String>,
+    pub phone_number: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub nationality: Option<String>,
+    pub updated_at: Option<DateTime<Utc>>,
 }

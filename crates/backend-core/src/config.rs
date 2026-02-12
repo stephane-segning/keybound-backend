@@ -12,6 +12,7 @@ pub struct Config {
     pub database: Database,
     pub oauth2: Oauth2,
     pub aws: Aws,
+    pub auth: Auth,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -56,6 +57,35 @@ pub struct Database {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Oauth2 {
     pub jwks_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Auth {
+    pub kc: KcAuth,
+    pub bff: BffAuth,
+    pub staff: StaffAuth,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct KcAuth {
+    pub enabled: bool,
+    pub signature_secret: String,
+    pub max_clock_skew_seconds: i64,
+    pub max_body_bytes: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BffAuth {
+    pub enabled: bool,
+    pub require_bearer: bool,
+    pub require_signature: bool,
+    pub max_clock_skew_seconds: i64,
+    pub external_id_claim: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StaffAuth {
+    pub require_bearer: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

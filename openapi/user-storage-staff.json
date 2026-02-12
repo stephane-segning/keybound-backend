@@ -89,7 +89,7 @@
         }
       }
     },
-    "/api/kyc/staff/submissions/{externalId}": {
+    "/api/kyc/staff/submissions/{userId}": {
       "get": {
         "tags": [
           "KYC Review"
@@ -103,13 +103,13 @@
         ],
         "parameters": [
           {
-            "name": "externalId",
+            "name": "userId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Customer external ID."
+            "description": "User ID."
           },
           {
             "name": "page",
@@ -154,7 +154,7 @@
         }
       }
     },
-    "/api/kyc/staff/submissions/{externalId}/approve": {
+    "/api/kyc/staff/submissions/{userId}/approve": {
       "post": {
         "tags": [
           "KYC Review"
@@ -167,13 +167,13 @@
         ],
         "parameters": [
           {
-            "name": "externalId",
+            "name": "userId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Customer external ID."
+            "description": "User ID."
           }
         ],
         "requestBody": {
@@ -199,7 +199,7 @@
         }
       }
     },
-    "/api/kyc/staff/submissions/{externalId}/reject": {
+    "/api/kyc/staff/submissions/{userId}/reject": {
       "post": {
         "tags": [
           "KYC Review"
@@ -212,13 +212,13 @@
         ],
         "parameters": [
           {
-            "name": "externalId",
+            "name": "userId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Customer external ID."
+            "description": "User ID."
           }
         ],
         "requestBody": {
@@ -244,7 +244,7 @@
         }
       }
     },
-    "/api/kyc/staff/submissions/{externalId}/request-info": {
+    "/api/kyc/staff/submissions/{userId}/request-info": {
       "post": {
         "tags": [
           "KYC Review"
@@ -257,13 +257,13 @@
         ],
         "parameters": [
           {
-            "name": "externalId",
+            "name": "userId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Customer external ID."
+            "description": "User ID."
           }
         ],
         "requestBody": {

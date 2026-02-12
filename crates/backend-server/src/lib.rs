@@ -3,11 +3,13 @@ mod services;
 mod sms_retry;
 mod state;
 
-use axum::Router;
-use axum::routing::get;
-use backend_auth::attach_request_context;
+use axum::body::Body;
+use backend_auth::{require_bff_auth, require_kc_signature, require_staff_bearer};
 use backend_core::{Config, Result};
+use http::{Request, Response, StatusCode};
 use std::sync::Arc;
+use tower::make::Shared;
+use tower::service_fn;
 use tracing::info;
 
 pub async fn serve(core_config: &Config) -> Result<()> {
@@ -17,7 +19,12 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     // Spawn the in-process SNS retry worker.
     sms_retry::spawn(state.clone());
 
-    let router = router(state.clone());
+    let api = api::BackendApi::new(state.clone());
+    let make_svc = Shared::new(service_fn(move |req: Request<hyper::body::Incoming>| {
+        let api = api.clone();
+        let state = state.clone();
+        async move { Ok::<Response<Body>, std::convert::Infallible>(dispatch(api, state, req).await) }
+    }));
 
     info!("Listening on {}", listen_addr);
 
@@ -35,13 +42,13 @@ pub async fn serve(core_config: &Config) -> Result<()> {
                     .await?;
             axum_server::bind_rustls(listen_addr, rustls_config)
                 .handle(handle)
-                .serve(router.into_make_service())
+                .serve(make_svc)
                 .await?;
         }
         None => {
             axum_server::bind(listen_addr)
                 .handle(handle)
-                .serve(router.into_make_service())
+                .serve(make_svc)
                 .await?;
         }
     }
@@ -49,9 +56,40 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn router(state: Arc<state::AppState>) -> Router {
-    Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .merge(api::router(state))
-        .layer(axum::middleware::from_fn(attach_request_context))
+async fn dispatch(
+    api: api::BackendApi,
+    state: Arc<state::AppState>,
+    req: Request<hyper::body::Incoming>,
+) -> Response<Body> {
+    let req = req.map(Body::new);
+    let path = req.uri().path().to_owned();
+
+    if path.starts_with("/v1/") {
+        let req = match require_kc_signature(&state.config.auth.kc, req).await {
+            Ok(req) => req,
+            Err(resp) => return resp,
+        };
+        return state::call_kc(api, req).await;
+    }
+
+    if path == "/health" || path.starts_with("/api/registration/") {
+        let req = match require_bff_auth(&state.config.auth.bff, req).await {
+            Ok(req) => req,
+            Err(resp) => return resp,
+        };
+        return state::call_bff(api, req).await;
+    }
+
+    if path.starts_with("/api/kyc/staff/") {
+        let req = match require_staff_bearer(&state.config.auth.staff, req).await {
+            Ok(req) => req,
+            Err(resp) => return resp,
+        };
+        return state::call_staff(api, req).await;
+    }
+
+    Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .body(Body::from("Not found"))
+        .unwrap_or_else(|_| Response::new(Body::empty()))
 }

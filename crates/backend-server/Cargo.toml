@@ -14,14 +14,20 @@ backend-repository.workspace = true
 backend-model.workspace = true
 axum.workspace = true
 axum-server.workspace = true
+bytes = "1"
 chrono.workspace = true
+http = "1"
+http-body-util = "0.1"
+hyper = "1"
 sqlx.workspace = true
 tokio = { workspace = true, features = ["signal", "time"] }
+tower = "0.5"
 tracing.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 serde.workspace = true
-lru = "0.12"
+swagger = "7"
+lru = "0.16"
 sqlx-data = { version = "0.1.5", features = ["postgres", "chrono", "json"] }
 
 aws-config = "1"
