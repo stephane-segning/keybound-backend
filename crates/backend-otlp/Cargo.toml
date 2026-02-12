@@ -7,3 +7,9 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-error = { workspace = true }
+tracing-flame = { workspace = true }
+backend-core.workspace = true
+tracing.workspace = true

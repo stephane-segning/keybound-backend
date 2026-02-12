@@ -10,6 +10,6 @@ authors.workspace = true
 backend-cli.workspace = true
 backend-core.workspace = true
 backend-migrate.workspace = true
+backend-otlp.workspace = true
 mimalloc.workspace = true
 tokio.workspace = true
-tracing.workspace = true

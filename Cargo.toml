@@ -43,8 +43,15 @@ jwks = "0.5"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "tracing", "net"] }
 thiserror = "2"
 anyhow = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "serde", "serde_json"] }
+
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json", "ansi", "serde_json"] }
+tracing-appender = { version = "0.2" }
+tracing-attributes = { version = "0.1" }
+tracing = { version = "0", features = ["attributes", "async-await", "std"] }
+tracing-error = { version = "0.2" }
+tracing-flame = "0.2.0"
+inferno = "0.12.4"
+
 axum = { version = "0.8", features = ["macros", "tracing"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 async-trait = "0.1"

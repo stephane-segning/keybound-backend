@@ -39,6 +39,9 @@ pub struct BasicAuth {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Logging {
     pub level: String,
+    pub data_dir: Option<String>,
+    pub json: Option<bool>,
+    pub flame: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
