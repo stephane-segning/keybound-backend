@@ -26,6 +26,7 @@ tracing.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 swagger = "7"
+moka = { version = "0.12", features = ["future"] }
 
 aws-config = "1"
 aws-sdk-s3 = "1"

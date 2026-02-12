@@ -3,7 +3,7 @@ use std::fs::File;
 use std::sync::OnceLock;
 use std::{env, fs, path::Path, path::PathBuf};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 // Keep the guard alive for non-blocking writers; dropping it stops flushing to disk.
 static FILE_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
@@ -13,7 +13,8 @@ static FILE_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceL
 /// - Honors `RUST_LOG` if set.
 /// - Falls back to `default_filter` (typically `"info"`).
 pub fn init_tracing(config: &Logging) {
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| config.level.clone().into());
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| config.level.clone().into());
     let mut file_guard_slot = None;
     let mut writer = None;
 

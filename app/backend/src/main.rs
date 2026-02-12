@@ -1,12 +1,12 @@
 mod branding;
 
-use mimalloc::MiMalloc;
-use branding::banner::BANNER;
 use backend_cli::{AppCli, AppCommands, Parser};
-use backend_core::{load_from_path, Result};
+use backend_core::{Result, load_from_path};
 use backend_otlp::init_tracing;
 use backend_otlp::tracing::info;
 use backend_server::serve;
+use branding::banner::BANNER;
+use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;

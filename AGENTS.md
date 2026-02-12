@@ -1,84 +1,149 @@
 # AGENTS.md
 
-## Purpose
-Contributor guide for humans and coding agents working in this repository.
+## 1. Project Purpose
+This repository is a Rust workspace for a tokenization/user-storage backend with:
+- Keycloak-facing APIs (`KC`)
+- Customer-facing registration/BFF APIs (`BFF`)
+- Staff KYC APIs (`Staff`)
 
-## Project Summary
-- Rust workspace for a tokenization/user-storage backend.
-- Main runnable binary: `app/backend` (`backend` CLI).
-- HTTP serving is implemented in `crates/backend-server` as a library and started by `app/backend`.
-- OpenAPI-driven server/client crates are generated into `crates/gen_*`.
+The executable entrypoint is `app/backend`, while HTTP serving logic lives in `crates/backend-server` (library crate).
 
-## Workspace Map
-- `app/backend`: CLI entrypoint (`serve`, `migrate`, `config`).
-- `crates/backend-core`: shared config/types/errors.
-- `crates/backend-server`: axum host + adapters to generated OA3 server traits.
-- `crates/backend-model`: DB row/domain mapping DTOs (`o2o`-based mapping).
-- `crates/backend-migrate`: sqlx migration runner.
-- `crates/gen_oas_server_{kc,bff,staff}`: generated server interfaces/models (do not hand-edit).
-- `crates/gen_oas_client_cuss_registration`: generated API client (do not hand-edit).
-- `openapi/`: source OpenAPI specs.
-- `migrations/`: SQL migrations.
-- `config/default.yaml`: local default configuration.
+## 2. High-Level Architecture
 
-## Non-Negotiable Rules
-1. Never manually edit files under `crates/gen_*`.
-2. To change generated APIs/models, edit `openapi/*.json` and regenerate.
-3. Keep `crates/backend-server` as a library crate; start it from `app/backend`.
-4. Keep config adapters derived from `backend_core::Config` (single source of truth).
-5. Prefer `o2o` mappings for DTO boundaries; avoid ad-hoc manual mapping unless transformation is non-trivial.
+### 2.1 Workspace Crates
+- `app/backend`
+  - CLI binary (`serve`, `migrate`, `config`)
+  - Starts `backend_server::serve(...)`
+- `crates/backend-core`
+  - shared config, errors, core types
+- `crates/backend-server`
+  - axum host + route dispatch to generated OA3 services
+  - implements generated trait handlers
+- `crates/backend-model`
+  - DB row structs + DTO mapping helpers (`o2o`)
+- `crates/backend-repository`
+  - repository traits + PostgreSQL implementation
+  - the only place where SQL queries should be authored
+- `crates/backend-auth`
+  - service/KC request contexts for generated services
+- `crates/backend-id`
+  - prefixed ID generation (`prefix + cuid1`)
+- `crates/backend-migrate`
+  - migration runner (`sqlx::migrate!`)
+- `crates/gen_oas_*`
+  - generated OpenAPI code (server/client)
+  - treat as auto-generated artifacts
 
-## Local Development
+### 2.2 Runtime Routing
+`crates/backend-server/src/lib.rs` dispatches by path prefix:
+- `/v1/*` -> KC generated server
+- `/api/registration/*` -> BFF generated server
+- `/api/kyc/staff/*` -> Staff generated server
+- `/health` -> simple health endpoint
+
+## 3. Non-Negotiable Development Rules
+
+1. Never hand-edit files under `crates/gen_*`.
+2. Change API contracts in `openapi/*`, then regenerate generated crates.
+3. Keep `backend-server` a library; launch from `app/backend`.
+4. Do not mix SQL in service handlers:
+   - `backend-server` should call repository traits only.
+   - SQL belongs in `crates/backend-repository`.
+5. Use repository pattern interfaces (base and domain traits) from:
+   - `crates/backend-repository/src/traits.rs`
+6. ID policy:
+   - Never use UUID.
+   - Use explicit prefix + CUID IDs from `backend-id`.
+
+## 4. ID Strategy (Mandatory)
+
+Use prefixed CUID values:
+- `usr_*` for users
+- `dvc_*` for device records
+- `apr_*` for approvals
+- `sms_*` for SMS challenge hashes
+
+Helper functions:
+- `backend_id::user_id()`
+- `backend_id::device_id()`
+- `backend_id::approval_id()`
+- `backend_id::sms_hash()`
+
+## 5. Device Binding Safety Requirements
+
+Device key material uniqueness must be enforced on both `jkt` and `device_id`:
+- check at precheck time for UX guidance
+- check again at bind/insert time for race safety and direct API safety
+- handle DB conflict paths gracefully and re-check binding ownership
+
+## 6. Auth Model
+
+Current implementation has no bearer token gate in server config or runtime checks.
+
+Config no longer includes `server.api.auth.*`.
+Request context auth objects are populated in `backend-auth` for generated service compatibility.
+
+## 7. Config Model
+
+Primary local config file: `config/default.yaml`.
+
+Main sections:
+- `server.api.address`, `server.api.port`, `server.api.tls.*`
+- `database.url`, `database.pool_size`
+- `oauth2.jwks_url`
+- `aws.region`, `aws.s3.*`, `aws.sns.*`
+
+`backend_core::Config` is the source-of-truth model.
+
+## 8. OpenAPI & Code Generation Workflow
+
+1. Update OpenAPI spec(s) in `openapi/`.
+2. Regenerate code:
+   - `docker compose -f compose.yml run --rm generate-code`
+3. Validate:
+   - `cargo check --workspace`
+4. Do not patch generated output manually.
+
+## 9. Migrations & Schema
+
+Apply migrations with:
+- `cargo run -p backend -- migrate -c config/default.yaml`
+
+Schema uses text IDs (no UUID) for:
+- `devices.id`
+- `approvals.request_id`
+- `sms_messages.id`
+- `kyc_documents.id`
+
+## 10. Local Development Commands
+
 - Start dependencies:
   - `just up-single postgres`
   - `just up-single keycloak-26`
-- Run backend CLI:
-  - `just dev -h`
-  - `just dev migrate -c config/default.yaml`
-  - `just dev serve -c config/default.yaml`
-- Build:
+- Build/check:
   - `cargo check --workspace`
-  - `just prepare`
+- Migrate:
+  - `just dev migrate -c config/default.yaml`
+- Serve:
+  - `just dev serve -c config/default.yaml`
 
-## Code Generation Workflow
-1. Modify OpenAPI files in `openapi/`.
-2. Regenerate:
-   - `docker compose -f compose.yml run --rm generate-code`
-3. Verify:
-   - `cargo check --workspace`
-4. Do not patch generated output directly.
+## 11. Migration File Duplication Note
 
-## Database & Migrations
-- Apply migrations via CLI:
-  - `cargo run -p backend -- migrate -c config/default.yaml`
-- Current base schema lives in:
+There are currently two naming styles for the same migration content:
+- directory-style:
   - `migrations/2026-02-03-000001_init_authz/up.sql`
   - `migrations/2026-02-03-000001_init_authz/down.sql`
-- DB-facing structs are in `crates/backend-model/src/db.rs`.
+- flat-file style:
+  - `migrations/20260203000001_init_authz.up.sql`
+  - `migrations/20260203000001_init_authz.down.sql`
 
-## Runtime Behavior Notes
-- Route dispatch in `backend-server`:
-  - KC: `/v1/*`
-  - BFF: `/api/registration/*`
-  - Staff: `/api/kyc/staff/*`
-- Auth:
-  - BFF/Staff use static bearer token validation from `server.api.auth.static_bearer_tokens`.
-  - KC routes are unauthenticated.
-- AWS settings come from `Config.aws`:
-  - S3 presign upload intent for KYC documents.
-  - SNS SMS publish with in-process retry worker.
+Keep both sets in sync unless/until a deliberate migration-format cleanup is performed.
 
-## Configuration
-- Primary file: `config/default.yaml`.
-- Key sections used by backend-server:
-  - `server.api.address`, `server.api.port`, `server.api.tls.*`
-  - `server.api.auth.static_bearer_tokens`
-  - `database.url`, `database.pool_size`
-  - `aws.region`, `aws.s3.*`, `aws.sns.*`
+## 12. Change Checklist
 
-## Change Checklist
+Before finishing a change:
 1. `cargo check --workspace` passes.
-2. If schema changed, migration up/down updated and migration applied locally.
-3. If API contract changed, OpenAPI updated and `crates/gen_*` regenerated.
-4. No manual edits in generated crates.
-5. Keep changes scoped; avoid unrelated refactors.
+2. If schema changed, migration files are updated consistently.
+3. If API changed, OpenAPI was updated and generated crates regenerated.
+4. No manual edits under `crates/gen_*`.
+5. Service layer contains no raw SQL.

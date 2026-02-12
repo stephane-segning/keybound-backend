@@ -1,19 +1,7 @@
 use backend_model::db;
 use backend_model::{kc as kc_map, staff as staff_map};
 use chrono::{DateTime, Utc};
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum RepoError {
-    #[error("database conflict")]
-    Conflict,
-    #[error(transparent)]
-    Sqlx(#[from] sqlx::Error),
-    #[error(transparent)]
-    Id(#[from] backend_id::IdError),
-}
-
-pub type RepoResult<T> = std::result::Result<T, RepoError>;
+pub type RepoResult<T> = backend_core::Result<T>;
 
 pub trait InsertRepo<T, R> {
     fn insert(&self, entity: T) -> impl std::future::Future<Output = RepoResult<R>> + Send;
@@ -173,7 +161,10 @@ pub trait KcRepo: Send + Sync {
         req: &kc_map::UserUpsert,
     ) -> impl std::future::Future<Output = RepoResult<Option<db::UserRow>>> + Send;
 
-    fn delete_user(&self, user_id: &str) -> impl std::future::Future<Output = RepoResult<u64>> + Send;
+    fn delete_user(
+        &self,
+        user_id: &str,
+    ) -> impl std::future::Future<Output = RepoResult<u64>> + Send;
 
     fn search_users(
         &self,

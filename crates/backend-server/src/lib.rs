@@ -1,10 +1,9 @@
 mod api;
-mod configuration;
 mod sms_retry;
 mod state;
 
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 use backend_core::{Config, Result};
 use http::{Request, Response, StatusCode};
 use std::convert::Infallible;
@@ -12,11 +11,9 @@ use std::sync::Arc;
 use tower::service_fn;
 use tracing::{error, info};
 
-pub use configuration::BackendServerConfig;
-
 pub async fn serve(core_config: &Config) -> Result<()> {
-    let config = BackendServerConfig::try_from(core_config)?;
-    let state = Arc::new(state::AppState::from_config(&config).await?);
+    let listen_addr = core_config.api_listen_addr()?;
+    let state = Arc::new(state::AppState::from_config(core_config).await?);
 
     // Spawn the in-process SNS retry worker.
     sms_retry::spawn(state.clone());
@@ -24,7 +21,7 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     let api = api::BackendApi::new(state.clone());
     let router = router(api.clone());
 
-    info!("Listening on {}", config.listen_addr);
+    info!("Listening on {}", listen_addr);
 
     let handle = axum_server::Handle::new();
     let shutdown_handle = handle.clone();
@@ -33,20 +30,20 @@ pub async fn serve(core_config: &Config) -> Result<()> {
         shutdown_handle.graceful_shutdown(None);
     });
 
-    match config.tls {
-        Some(tls) => {
+    match core_config.api_tls_files() {
+        Some((cert_path, key_path)) => {
             let rustls_config =
-                axum_server::tls_rustls::RustlsConfig::from_pem_file(tls.cert_path, tls.key_path)
+                axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
                     .await
                     .map_err(|e| backend_core::Error::Server(e.to_string()))?;
-            axum_server::bind_rustls(config.listen_addr, rustls_config)
+            axum_server::bind_rustls(listen_addr, rustls_config)
                 .handle(handle)
                 .serve(router.into_make_service())
                 .await
                 .map_err(|e| backend_core::Error::Server(e.to_string()))?;
         }
         None => {
-            axum_server::bind(config.listen_addr)
+            axum_server::bind(listen_addr)
                 .handle(handle)
                 .serve(router.into_make_service())
                 .await
@@ -68,7 +65,10 @@ fn router(api: api::BackendApi) -> Router {
         .fallback_service(fallback)
 }
 
-async fn dispatch(api: api::BackendApi, req: Request<axum::body::Body>) -> Response<axum::body::Body> {
+async fn dispatch(
+    api: api::BackendApi,
+    req: Request<axum::body::Body>,
+) -> Response<axum::body::Body> {
     let path = req.uri().path();
 
     if path.starts_with("/v1/") {

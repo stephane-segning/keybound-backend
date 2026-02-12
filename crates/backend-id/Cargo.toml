@@ -7,5 +7,5 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
+backend-core.workspace = true
 cuid.workspace = true
-thiserror.workspace = true

@@ -1,10 +1,11 @@
 use crate::state::AppState;
 use aws_sdk_s3::presigning::PresigningConfig;
 use backend_auth::{KcContext, ServiceContext};
+use backend_core::Error;
 use backend_model::{bff as bff_map, kc as kc_map, staff as staff_map};
 use backend_repository::{
-    ApprovalCreated, BffRepo, KcRepo, KycDocumentInsert, KycSubmissionsQuery, RepoError,
-    SmsPendingInsert, StaffRepo,
+    ApprovalCreated, BffRepo, KcRepo, KycDocumentInsert, KycSubmissionsQuery, SmsPendingInsert,
+    StaffRepo,
 };
 use chrono::Utc;
 use gen_oas_server_bff::{
@@ -20,7 +21,8 @@ use gen_oas_server_kc::{
 };
 use gen_oas_server_staff::{
     Api as StaffApi, ApiKycStaffSubmissionsExternalIdApprovePostResponse,
-    ApiKycStaffSubmissionsExternalIdGetResponse, ApiKycStaffSubmissionsExternalIdRejectPostResponse,
+    ApiKycStaffSubmissionsExternalIdGetResponse,
+    ApiKycStaffSubmissionsExternalIdRejectPostResponse,
     ApiKycStaffSubmissionsExternalIdRequestInfoPostResponse, ApiKycStaffSubmissionsGetResponse,
 };
 use sha2::{Digest, Sha256};
@@ -48,8 +50,15 @@ fn kc_error(code: &str, message: &str) -> gen_oas_server_kc::models::Error {
     gen_oas_server_kc::models::Error::new(code.to_owned(), message.to_owned())
 }
 
-fn repo_err(err: RepoError) -> ApiError {
+fn repo_err(err: Error) -> ApiError {
     ApiError(err.to_string())
+}
+
+fn is_unique_violation(err: &Error) -> bool {
+    matches!(
+        err,
+        Error::SqlxError(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505")
+    )
 }
 
 // ---- BFF ----
@@ -130,6 +139,8 @@ impl BffApi<ServiceContext> for BackendApi {
             s3_key: Some(doc_row.s3_key),
         };
 
+        self.state.invalidate_bff_cache(&external_id).await;
+
         Ok(ApiRegistrationKycDocumentsPostResponse::UploadURLCreatedSuccessfully(dto.into()))
     }
 
@@ -139,6 +150,12 @@ impl BffApi<ServiceContext> for BackendApi {
         _context: &ServiceContext,
     ) -> std::result::Result<ApiRegistrationKycStatusGetResponse, ApiError> {
         let external_id = Self::require_external_id(x_external_id)?;
+        if let Some(cached) = self.state.http_cache.kyc_status.get(&external_id).await {
+            return Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(
+                cached,
+            ));
+        }
+
         let profile = self
             .state
             .repository
@@ -171,7 +188,15 @@ impl BffApi<ServiceContext> for BackendApi {
             missing_documents: Some(vec![]),
         };
 
-        Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(dto.into()))
+        let response: gen_oas_server_bff::models::KycStatusResponse = dto.into();
+        self.state
+            .http_cache
+            .kyc_status
+            .insert(external_id, response.clone())
+            .await;
+        Ok(ApiRegistrationKycStatusGetResponse::KYCStatusInformation(
+            response,
+        ))
     }
 
     async fn api_registration_limits_get(
@@ -180,6 +205,11 @@ impl BffApi<ServiceContext> for BackendApi {
         _context: &ServiceContext,
     ) -> std::result::Result<ApiRegistrationLimitsGetResponse, ApiError> {
         let external_id = Self::require_external_id(x_external_id)?;
+        if let Some(cached) = self.state.http_cache.limits.get(&external_id).await {
+            return Ok(ApiRegistrationLimitsGetResponse::LimitsAndUsageDetails(
+                cached,
+            ));
+        }
 
         let kyc_tier = self
             .state
@@ -194,18 +224,28 @@ impl BffApi<ServiceContext> for BackendApi {
 
         let mut resp = gen_oas_server_bff::models::LimitsResponse::new();
         resp.kyc_tier = Some(kyc_tier);
-        resp.tier_name = Some(match kyc_tier {
-            0 => "TIER_0",
-            1 => "TIER_1",
-            2 => "TIER_2",
-            _ => "TIER_UNKNOWN",
-        }
-        .to_owned());
+        resp.tier_name = Some(
+            match kyc_tier {
+                0 => "TIER_0",
+                1 => "TIER_1",
+                2 => "TIER_2",
+                _ => "TIER_UNKNOWN",
+            }
+            .to_owned(),
+        );
         resp.currency = Some("USD".to_owned());
         resp.allowed_payment_methods = Some(vec!["CARD".to_owned(), "BANK_TRANSFER".to_owned()]);
         resp.restricted_features = Some(vec![]);
 
-        Ok(ApiRegistrationLimitsGetResponse::LimitsAndUsageDetails(resp))
+        self.state
+            .http_cache
+            .limits
+            .insert(external_id, resp.clone())
+            .await;
+
+        Ok(ApiRegistrationLimitsGetResponse::LimitsAndUsageDetails(
+            resp,
+        ))
     }
 }
 
@@ -248,7 +288,9 @@ impl StaffApi<ServiceContext> for BackendApi {
             page_size: Some(query.limit),
         };
 
-        Ok(ApiKycStaffSubmissionsGetResponse::PageOfKYCSubmissions(dto.into()))
+        Ok(ApiKycStaffSubmissionsGetResponse::PageOfKYCSubmissions(
+            dto.into(),
+        ))
     }
 
     async fn api_kyc_staff_submissions_external_id_get(
@@ -300,6 +342,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         if !updated {
             return Ok(ApiKycStaffSubmissionsExternalIdApprovePostResponse::ValidationFailed);
         }
+        self.state.invalidate_bff_cache(&external_id).await;
         Ok(ApiKycStaffSubmissionsExternalIdApprovePostResponse::KYCApproved)
     }
 
@@ -319,6 +362,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         if !updated {
             return Ok(ApiKycStaffSubmissionsExternalIdRejectPostResponse::ValidationFailed);
         }
+        self.state.invalidate_bff_cache(&external_id).await;
         Ok(ApiKycStaffSubmissionsExternalIdRejectPostResponse::KYCRejected)
     }
 
@@ -327,7 +371,8 @@ impl StaffApi<ServiceContext> for BackendApi {
         external_id: String,
         kyc_request_info_request: gen_oas_server_staff::models::KycRequestInfoRequest,
         _context: &ServiceContext,
-    ) -> std::result::Result<ApiKycStaffSubmissionsExternalIdRequestInfoPostResponse, ApiError> {
+    ) -> std::result::Result<ApiKycStaffSubmissionsExternalIdRequestInfoPostResponse, ApiError>
+    {
         let req: staff_map::KycRequestInfoRequest = kyc_request_info_request.into();
         let updated = self
             .state
@@ -338,6 +383,7 @@ impl StaffApi<ServiceContext> for BackendApi {
         if !updated {
             return Ok(ApiKycStaffSubmissionsExternalIdRequestInfoPostResponse::ValidationFailed);
         }
+        self.state.invalidate_bff_cache(&external_id).await;
         Ok(ApiKycStaffSubmissionsExternalIdRequestInfoPostResponse::AdditionalInfoRequested)
     }
 }
@@ -353,8 +399,10 @@ impl KcApi<KcContext> for BackendApi {
     ) -> std::result::Result<CreateUserResponse, ApiError> {
         let req: kc_map::UserUpsert = user_upsert_request.into();
         match self.state.repository.create_user(&req).await {
-            Ok(row) => Ok(CreateUserResponse::Created(kc_map::UserRecordDto::from(row).into())),
-            Err(RepoError::Conflict) => Ok(CreateUserResponse::Conflict(kc_error(
+            Ok(row) => Ok(CreateUserResponse::Created(
+                kc_map::UserRecordDto::from(row).into(),
+            )),
+            Err(err) if is_unique_violation(&err) => Ok(CreateUserResponse::Conflict(kc_error(
                 "CONFLICT",
                 "User already exists",
             ))),
@@ -374,9 +422,14 @@ impl KcApi<KcContext> for BackendApi {
             .await
             .map_err(repo_err)?;
         let Some(row) = row else {
-            return Ok(GetUserResponse::NotFound(kc_error("NOT_FOUND", "User not found")));
+            return Ok(GetUserResponse::NotFound(kc_error(
+                "NOT_FOUND",
+                "User not found",
+            )));
         };
-        Ok(GetUserResponse::User(kc_map::UserRecordDto::from(row).into()))
+        Ok(GetUserResponse::User(
+            kc_map::UserRecordDto::from(row).into(),
+        ))
     }
 
     async fn update_user(
@@ -393,9 +446,14 @@ impl KcApi<KcContext> for BackendApi {
             .await
             .map_err(repo_err)?;
         let Some(row) = row else {
-            return Ok(UpdateUserResponse::NotFound(kc_error("NOT_FOUND", "User not found")));
+            return Ok(UpdateUserResponse::NotFound(kc_error(
+                "NOT_FOUND",
+                "User not found",
+            )));
         };
-        Ok(UpdateUserResponse::Updated(kc_map::UserRecordDto::from(row).into()))
+        Ok(UpdateUserResponse::Updated(
+            kc_map::UserRecordDto::from(row).into(),
+        ))
     }
 
     async fn delete_user(
@@ -410,7 +468,10 @@ impl KcApi<KcContext> for BackendApi {
             .await
             .map_err(repo_err)?;
         if affected == 0 {
-            return Ok(DeleteUserResponse::NotFound(kc_error("NOT_FOUND", "User not found")));
+            return Ok(DeleteUserResponse::NotFound(kc_error(
+                "NOT_FOUND",
+                "User not found",
+            )));
         }
         Ok(DeleteUserResponse::Deleted)
     }
@@ -460,7 +521,10 @@ impl KcApi<KcContext> for BackendApi {
             .await
             .map_err(repo_err)?;
         let Some(row) = row else {
-            return Ok(LookupDeviceResponse::NotFound(kc_error("NOT_FOUND", "Not found")));
+            return Ok(LookupDeviceResponse::NotFound(kc_error(
+                "NOT_FOUND",
+                "Not found",
+            )));
         };
 
         let public_jwk = match &row.public_jwk {
@@ -509,10 +573,9 @@ impl KcApi<KcContext> for BackendApi {
             .await
             .map_err(repo_err)?;
         let Some(row) = row else {
-            return Ok(gen_oas_server_kc::DisableUserDeviceResponse::NotFound(kc_error(
-                "NOT_FOUND",
-                "Device not found",
-            )));
+            return Ok(gen_oas_server_kc::DisableUserDeviceResponse::NotFound(
+                kc_error("NOT_FOUND", "Device not found"),
+            ));
         };
         if row.status != "ACTIVE" {
             return Ok(
@@ -527,9 +590,11 @@ impl KcApi<KcContext> for BackendApi {
             .update_device_status(&row.id, "REVOKED")
             .await
             .map_err(repo_err)?;
-        Ok(gen_oas_server_kc::DisableUserDeviceResponse::DeviceDisabled(
-            kc_map::DeviceRecordDto::from(updated).into(),
-        ))
+        Ok(
+            gen_oas_server_kc::DisableUserDeviceResponse::DeviceDisabled(
+                kc_map::DeviceRecordDto::from(updated).into(),
+            ),
+        )
     }
 
     async fn enrollment_precheck(
@@ -589,7 +654,7 @@ impl KcApi<KcContext> for BackendApi {
         let insert = self.state.repository.bind_device(&req).await;
         let device_record_id = match insert {
             Ok(id) => id,
-            Err(RepoError::Conflict) => {
+            Err(err) if is_unique_violation(&err) => {
                 let checked = self
                     .state
                     .repository
@@ -636,7 +701,7 @@ impl KcApi<KcContext> for BackendApi {
             .await
         {
             Ok(created) => created,
-            Err(RepoError::Conflict) => {
+            Err(err) if is_unique_violation(&err) => {
                 return Ok(CreateApprovalResponse::Conflict(kc_error(
                     "CONFLICT",
                     "Duplicate idempotency key",
@@ -781,9 +846,7 @@ impl KcApi<KcContext> for BackendApi {
             resp.user_id = Some(user.user_id);
             resp.username = Some(user.username);
         }
-        Ok(ResolveUserByPhoneResponse::PhoneResolutionAndRoutingRecommendation(
-            resp,
-        ))
+        Ok(ResolveUserByPhoneResponse::PhoneResolutionAndRoutingRecommendation(resp))
     }
 
     async fn resolve_or_create_user_by_phone(
@@ -807,7 +870,9 @@ impl KcApi<KcContext> for BackendApi {
             user.username,
             created,
         );
-        Ok(ResolveOrCreateUserByPhoneResponse::UserResolvedOrCreated(resp))
+        Ok(ResolveOrCreateUserByPhoneResponse::UserResolvedOrCreated(
+            resp,
+        ))
     }
 
     async fn send_sms(

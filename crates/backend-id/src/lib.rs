@@ -1,15 +1,8 @@
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum IdError {
-    #[error("failed to create cuid: {0}")]
-    Cuid(#[from] cuid::CuidError),
-}
-
-pub type Result<T> = std::result::Result<T, IdError>;
+use backend_core::{Error, Result};
 
 pub fn prefixed(prefix: &str) -> Result<String> {
-    Ok(format!("{prefix}_{}", cuid::cuid1()?))
+    let id = cuid::cuid1().map_err(|e| Error::Server(e.to_string()))?;
+    Ok(format!("{prefix}_{id}"))
 }
 
 pub fn user_id() -> Result<String> {

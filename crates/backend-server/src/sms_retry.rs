@@ -19,11 +19,7 @@ pub fn spawn(state: Arc<AppState>) -> JoinHandle<()> {
 }
 
 async fn tick(state: &AppState) -> backend_core::Result<()> {
-    let rows = state
-        .repository
-        .list_retryable_sms(25)
-        .await
-        .map_err(|e| backend_core::Error::Server(e.to_string()))?;
+    let rows = state.repository.list_retryable_sms(25).await?;
 
     for row in rows {
         if let Err(e) = try_publish(state, row).await {
@@ -46,8 +42,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
         state
             .repository
             .mark_sms_gave_up(&row.id, "missing message body")
-            .await
-            .map_err(|e| backend_core::Error::Server(e.to_string()))?;
+            .await?;
         return Ok(());
     }
 
@@ -63,11 +58,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
     {
         Ok(out) => {
             let message_id = out.message_id().map(|s| s.to_owned());
-            state
-                .repository
-                .mark_sms_sent(&row.id, message_id)
-                .await
-                .map_err(|e| backend_core::Error::Server(e.to_string()))?;
+            state.repository.mark_sms_sent(&row.id, message_id).await?;
         }
         Err(e) => {
             let max_attempts = row.max_attempts.max(1) as u32;
@@ -92,8 +83,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
                     error: e.to_string(),
                     next_retry_at,
                 })
-                .await
-                .map_err(|e| backend_core::Error::Server(e.to_string()))?;
+                .await?;
         }
     }
 

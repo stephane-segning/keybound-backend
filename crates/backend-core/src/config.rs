@@ -2,6 +2,8 @@ use crate::error::Result;
 use serde::Deserialize;
 use serde_yaml::from_str;
 use std::fs::read_to_string;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -86,4 +88,25 @@ pub fn load_from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Config> {
     let content = read_to_string(path)?;
     let cfg: Config = from_str(&content)?;
     Ok(cfg)
+}
+
+impl Config {
+    pub fn api_listen_addr(&self) -> Result<SocketAddr> {
+        Ok(format!("{}:{}", self.server.api.address, self.server.api.port).parse()?)
+    }
+
+    pub fn api_tls_files(&self) -> Option<(PathBuf, PathBuf)> {
+        let cert_path: PathBuf = self.server.api.tls.cert_path.clone().into();
+        let key_path: PathBuf = self.server.api.tls.key_path.clone().into();
+
+        if Path::new(&cert_path).exists() && Path::new(&key_path).exists() {
+            Some((cert_path, key_path))
+        } else {
+            None
+        }
+    }
+
+    pub fn database_pool_size(&self) -> u32 {
+        self.database.pool_size.unwrap_or(10)
+    }
 }

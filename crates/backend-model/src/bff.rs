@@ -59,4 +59,3 @@ pub struct KycStatusResponseDto {
     pub required_documents: Option<Vec<String>>,
     pub missing_documents: Option<Vec<String>>,
 }
-

@@ -1,31 +1,35 @@
 use crate::traits::*;
 use backend_model::db;
 use backend_model::{kc as kc_map, staff as staff_map};
+use moka::future::Cache;
 use sqlx::{PgPool, Postgres, QueryBuilder};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct PgRepository {
     pool: PgPool,
+    resolve_user_by_phone_cache: Cache<String, Option<db::UserRow>>,
 }
 
 impl PgRepository {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        let resolve_user_by_phone_cache = Cache::builder()
+            .max_capacity(50_000)
+            .time_to_live(Duration::from_secs(30))
+            .build();
+
+        Self {
+            pool,
+            resolve_user_by_phone_cache,
+        }
     }
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-}
 
-fn map_insert_error(err: sqlx::Error) -> RepoError {
-    let sqlx::Error::Database(db_err) = &err else {
-        return RepoError::Sqlx(err);
-    };
-    if db_err.code().as_deref() == Some("23505") {
-        RepoError::Conflict
-    } else {
-        RepoError::Sqlx(err)
+    fn phone_cache_key(realm: &str, phone: &str) -> String {
+        format!("{realm}:{phone}")
     }
 }
 
@@ -40,7 +44,10 @@ impl BffRepo for PgRepository {
         Ok(())
     }
 
-    async fn insert_kyc_document_intent(&self, input: KycDocumentInsert) -> RepoResult<db::KycDocumentRow> {
+    async fn insert_kyc_document_intent(
+        &self,
+        input: KycDocumentInsert,
+    ) -> RepoResult<db::KycDocumentRow> {
         let id = backend_id::kyc_document_id()?;
         let row = sqlx::query_as(
             r#"
@@ -153,7 +160,10 @@ impl BffRepo for PgRepository {
 }
 
 impl StaffRepo for PgRepository {
-    async fn list_kyc_submissions(&self, query: KycSubmissionsQuery) -> RepoResult<KycSubmissionsPage> {
+    async fn list_kyc_submissions(
+        &self,
+        query: KycSubmissionsQuery,
+    ) -> RepoResult<KycSubmissionsPage> {
         let mut count_qb: QueryBuilder<Postgres> =
             QueryBuilder::new("SELECT COUNT(*)::int4 FROM kyc_profiles WHERE 1=1");
         if let Some(status) = &query.status {
@@ -223,7 +233,11 @@ impl StaffRepo for PgRepository {
         BffRepo::get_kyc_profile(self, external_id).await
     }
 
-    async fn update_kyc_approved(&self, external_id: &str, req: &staff_map::KycApprovalRequest) -> RepoResult<bool> {
+    async fn update_kyc_approved(
+        &self,
+        external_id: &str,
+        req: &staff_map::KycApprovalRequest,
+    ) -> RepoResult<bool> {
         let updated = sqlx::query(
             r#"
             UPDATE kyc_profiles
@@ -248,7 +262,11 @@ impl StaffRepo for PgRepository {
         Ok(updated)
     }
 
-    async fn update_kyc_rejected(&self, external_id: &str, req: &staff_map::KycRejectionRequest) -> RepoResult<bool> {
+    async fn update_kyc_rejected(
+        &self,
+        external_id: &str,
+        req: &staff_map::KycRejectionRequest,
+    ) -> RepoResult<bool> {
         let updated = sqlx::query(
             r#"
             UPDATE kyc_profiles
@@ -330,8 +348,7 @@ impl KcRepo for PgRepository {
         .bind(req.email_verified.unwrap_or(false))
         .bind(attributes_json)
         .fetch_one(&self.pool)
-        .await
-        .map_err(map_insert_error)?;
+        .await?;
 
         Ok(row)
     }
@@ -352,7 +369,11 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn update_user(&self, user_id: &str, req: &kc_map::UserUpsert) -> RepoResult<Option<db::UserRow>> {
+    async fn update_user(
+        &self,
+        user_id: &str,
+        req: &kc_map::UserUpsert,
+    ) -> RepoResult<Option<db::UserRow>> {
         let attributes_json = req
             .attributes
             .clone()
@@ -454,7 +475,10 @@ impl KcRepo for PgRepository {
         Ok(users)
     }
 
-    async fn lookup_device(&self, req: &kc_map::DeviceLookupRequest) -> RepoResult<Option<db::DeviceRow>> {
+    async fn lookup_device(
+        &self,
+        req: &kc_map::DeviceLookupRequest,
+    ) -> RepoResult<Option<db::DeviceRow>> {
         let row = sqlx::query_as(
             r#"
             SELECT
@@ -485,7 +509,11 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn list_user_devices(&self, user_id: &str, include_revoked: bool) -> RepoResult<Vec<db::DeviceRow>> {
+    async fn list_user_devices(
+        &self,
+        user_id: &str,
+        include_revoked: bool,
+    ) -> RepoResult<Vec<db::DeviceRow>> {
         let query = if include_revoked {
             r#"
             SELECT
@@ -530,11 +558,18 @@ impl KcRepo for PgRepository {
             ORDER BY created_at DESC
             "#
         };
-        let rows = sqlx::query_as(query).bind(user_id).fetch_all(&self.pool).await?;
+        let rows = sqlx::query_as(query)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows)
     }
 
-    async fn get_user_device(&self, user_id: &str, device_id: &str) -> RepoResult<Option<db::DeviceRow>> {
+    async fn get_user_device(
+        &self,
+        user_id: &str,
+        device_id: &str,
+    ) -> RepoResult<Option<db::DeviceRow>> {
         let row = sqlx::query_as(
             r#"
             SELECT
@@ -563,7 +598,11 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn update_device_status(&self, record_id: &str, status: &str) -> RepoResult<db::DeviceRow> {
+    async fn update_device_status(
+        &self,
+        record_id: &str,
+        status: &str,
+    ) -> RepoResult<db::DeviceRow> {
         let row = sqlx::query_as(
             r#"
             UPDATE devices
@@ -593,7 +632,11 @@ impl KcRepo for PgRepository {
         Ok(row)
     }
 
-    async fn find_device_binding(&self, device_id: &str, jkt: &str) -> RepoResult<Option<(String, String)>> {
+    async fn find_device_binding(
+        &self,
+        device_id: &str,
+        jkt: &str,
+    ) -> RepoResult<Option<(String, String)>> {
         let row = sqlx::query_as(
             "SELECT id, user_id FROM devices WHERE device_id = $1 OR jkt = $2 LIMIT 1",
         )
@@ -636,8 +679,7 @@ impl KcRepo for PgRepository {
         .bind(attributes_json)
         .bind(proof)
         .fetch_one(&self.pool)
-        .await
-        .map_err(map_insert_error)?;
+        .await?;
         Ok(id)
     }
 
@@ -683,7 +725,6 @@ impl KcRepo for PgRepository {
         .bind(idempotency_key)
         .fetch_one(&self.pool)
         .await
-        .map_err(map_insert_error)
         .map(|(request_id, status, expires_at)| ApprovalCreated {
             request_id,
             status,
@@ -825,7 +866,16 @@ impl KcRepo for PgRepository {
         Ok(affected)
     }
 
-    async fn resolve_user_by_phone(&self, realm: &str, phone: &str) -> RepoResult<Option<db::UserRow>> {
+    async fn resolve_user_by_phone(
+        &self,
+        realm: &str,
+        phone: &str,
+    ) -> RepoResult<Option<db::UserRow>> {
+        let cache_key = Self::phone_cache_key(realm, phone);
+        if let Some(cached) = self.resolve_user_by_phone_cache.get(&cache_key).await {
+            return Ok(cached);
+        }
+
         let user = sqlx::query_as(
             r#"
             SELECT
@@ -839,6 +889,10 @@ impl KcRepo for PgRepository {
         .bind(phone)
         .fetch_optional(&self.pool)
         .await?;
+
+        self.resolve_user_by_phone_cache
+            .insert(cache_key, user.clone())
+            .await;
         Ok(user)
     }
 
@@ -867,8 +921,11 @@ impl KcRepo for PgRepository {
         .bind(phone)
         .bind(attributes_json)
         .fetch_one(&self.pool)
-        .await
-        .map_err(map_insert_error)?;
+        .await?;
+
+        self.resolve_user_by_phone_cache
+            .insert(Self::phone_cache_key(realm, phone), Some(user.clone()))
+            .await;
 
         Ok((user, true))
     }
@@ -903,8 +960,7 @@ impl KcRepo for PgRepository {
         .bind(sms.max_attempts)
         .bind(sms.metadata)
         .execute(&self.pool)
-        .await
-        .map_err(map_insert_error)?;
+        .await?;
 
         Ok(SmsQueued {
             hash,

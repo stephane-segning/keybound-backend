@@ -1,19 +1,28 @@
-use crate::configuration::{AwsConfig, BackendServerConfig};
 use axum::body::Body;
 use backend_auth::{KcContext, ServiceContext};
+use backend_core::{Aws, Config};
 use backend_repository::PgRepository;
 use bytes::Bytes;
+use gen_oas_server_bff::models::{KycStatusResponse, LimitsResponse};
 use http::{Request, Response, StatusCode};
-use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt as _;
+use http_body_util::combinators::BoxBody;
 use hyper::service::Service as HyperService;
+use moka::future::Cache;
 use sqlx::postgres::PgPoolOptions;
 use std::convert::Infallible;
+use std::time::Duration;
 use tracing::error;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-    pub aws: AwsConfig,
+    pub aws: Aws,
+}
+
+#[derive(Clone)]
+pub struct HttpCache {
+    pub kyc_status: Cache<String, KycStatusResponse>,
+    pub limits: Cache<String, LimitsResponse>,
 }
 
 #[derive(Clone)]
@@ -22,6 +31,7 @@ pub struct AppState {
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
     pub config: RuntimeConfig,
+    pub http_cache: HttpCache,
 }
 
 impl std::fmt::Debug for AppState {
@@ -31,15 +41,16 @@ impl std::fmt::Debug for AppState {
             .field("s3", &"<S3Client>")
             .field("sns", &"<SnsClient>")
             .field("config", &self.config)
+            .field("http_cache", &"<HttpCache>")
             .finish()
     }
 }
 
 impl AppState {
-    pub async fn from_config(cfg: &BackendServerConfig) -> backend_core::Result<Self> {
+    pub async fn from_config(cfg: &Config) -> backend_core::Result<Self> {
         let db = PgPoolOptions::new()
-            .max_connections(cfg.database_pool_size)
-            .connect(&cfg.database_url)
+            .max_connections(cfg.database_pool_size())
+            .connect(&cfg.database.url)
             .await?;
 
         let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -63,12 +74,31 @@ impl AppState {
             aws_sdk_sns::Client::from_conf(builder.build())
         };
 
+        let http_cache = HttpCache {
+            kyc_status: Cache::builder()
+                .max_capacity(10_000)
+                .time_to_live(Duration::from_secs(30))
+                .build(),
+            limits: Cache::builder()
+                .max_capacity(10_000)
+                .time_to_live(Duration::from_secs(30))
+                .build(),
+        };
+
         Ok(Self {
             repository: PgRepository::new(db.clone()),
             s3,
             sns,
-            config: RuntimeConfig { aws: cfg.aws.clone() },
+            config: RuntimeConfig {
+                aws: cfg.aws.clone(),
+            },
+            http_cache,
         })
+    }
+
+    pub async fn invalidate_bff_cache(&self, external_id: &str) {
+        self.http_cache.kyc_status.invalidate(external_id).await;
+        self.http_cache.limits.invalidate(external_id).await;
     }
 }
 
