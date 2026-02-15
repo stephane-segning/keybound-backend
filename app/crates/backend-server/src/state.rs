@@ -1,12 +1,15 @@
 use axum::body::Body;
 use backend_auth::{KcContext, ServiceContext};
 use backend_core::Config;
-use backend_repository::PgRepository;
+use backend_repository::{
+    ApprovalRepository, DeviceRepository, KycRepository, SmsRepository,
+    UserRepository,
+};
 use bytes::Bytes;
 use gen_oas_server_bff::models::{KycCaseResponse, LimitsResponse};
 use http::{Request, Response, StatusCode};
-use http_body_util::BodyExt as _;
 use http_body_util::combinators::BoxBody;
+use http_body_util::BodyExt as _;
 use hyper::service::Service as HyperService;
 use lru::LruCache;
 use sqlx::postgres::PgPoolOptions;
@@ -14,8 +17,6 @@ use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use tracing::error;
-
-use crate::services::BackendService;
 
 #[derive(Clone)]
 pub struct HttpCache {
@@ -25,8 +26,11 @@ pub struct HttpCache {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub repository: PgRepository,
-    pub service: BackendService,
+    pub kyc: KycRepository,
+    pub user: UserRepository,
+    pub device: DeviceRepository,
+    pub approval: ApprovalRepository,
+    pub sms: SmsRepository,
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
     pub config: Config,
@@ -36,8 +40,11 @@ pub struct AppState {
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
-            .field("repository", &"<PgRepository>")
-            .field("service", &"<BackendService>")
+            .field("kyc", &"<KycRepository>")
+            .field("user", &"<UserRepository>")
+            .field("device", &"<DeviceRepository>")
+            .field("approval", &"<ApprovalRepository>")
+            .field("sms", &"<SmsRepository>")
             .field("s3", &"<S3Client>")
             .field("sns", &"<SnsClient>")
             .field("config", &self.config)
@@ -81,11 +88,13 @@ impl AppState {
         };
 
         let repository = PgRepository::new(db.clone());
-        let service = BackendService::new(repository.clone());
 
         Ok(Self {
-            repository,
-            service,
+            kyc: repository.kyc.clone(),
+            user: repository.user.clone(),
+            device: repository.device.clone(),
+            approval: repository.approval.clone(),
+            sms: repository.sms.clone(),
             s3,
             sns,
             config: cfg.clone(),

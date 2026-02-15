@@ -1,7 +1,6 @@
-mod api;
-mod services;
-mod sms_retry;
-mod state;
+pub(crate) mod api;
+pub(crate) mod sms_retry;
+pub(crate) mod state;
 
 use axum::body::Body;
 use backend_auth::{require_bff_auth, require_kc_signature, require_staff_bearer};

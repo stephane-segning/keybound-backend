@@ -19,7 +19,7 @@ pub fn spawn(state: Arc<AppState>) -> JoinHandle<()> {
 }
 
 async fn tick(state: &AppState) -> backend_core::Result<()> {
-    let rows = state.repository.sms.list_retryable_sms(25).await?;
+    let rows = state.sms.list_retryable_sms(25).await?;
 
     for row in rows {
         if let Err(e) = try_publish(state, row).await {
@@ -40,7 +40,6 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
 
     if message.is_empty() {
         state
-            .repository
             .sms
             .mark_sms_gave_up(&row.id, "missing message body")
             .await?;
@@ -60,7 +59,6 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
         Ok(out) => {
             let message_id = out.message_id().map(|s| s.to_owned());
             state
-                .repository
                 .sms
                 .mark_sms_sent(&row.id, message_id)
                 .await?;
@@ -70,7 +68,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
             let gave_up = attempt >= max_attempts;
 
             let backoff = backoff_seconds(
-                state.config.aws.sns.initial_backoff_seconds,
+                state.config.sns.initial_backoff_seconds,
                 row.attempt_count.max(0) as u32,
             );
 
@@ -81,7 +79,6 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
             };
 
             state
-                .repository
                 .sms
                 .mark_sms_failed(SmsPublishFailure {
                     id: row.id.clone(),
