@@ -14,6 +14,7 @@ SELECT
   rejection_reason,
   review_notes,
   created_at,
-  updated_at
+  updated_at,
+  version
 FROM kyc_profiles
 WHERE external_id = $1

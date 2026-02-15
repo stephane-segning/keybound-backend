@@ -17,10 +17,10 @@ tags:
 paths:
   /api/kyc/cases/mine:
     get:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Get my KYC case
       description: Retrieve the KYC case and active submission summary for the authenticated user.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       responses:
         '200':
           description: KYC case + active submission.
@@ -34,41 +34,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-    patch:
-      tags: [KYC]
-      summary: Update my KYC profile data
-      description: >
-        Patch profile fields for the active submission. Does not upload documents.
-        Use If-Match with the ETag returned by GET to avoid lost updates.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/IfMatch'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/KycProfilePatchRequest' }
-      responses:
-        '200':
-          description: Updated case + submission summary.
-          headers:
-            ETag:
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycCaseResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
-
   /api/kyc/cases/mine:open-submission:
     post:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Open a new submission version
       description: >
         Creates a new KYC submission version (e.g., for resubmission or re-KYC) and makes it active.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       requestBody:
         required: false
         content:
@@ -84,10 +56,10 @@ paths:
 
   /api/kyc/submissions/{submissionId}:
     get:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Get submission detail
       description: Retrieve detailed information for a submission (documents, comments visible to customer, etc.).
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       responses:
@@ -101,12 +73,12 @@ paths:
 
   /api/kyc/submissions/{submissionId}:submit:
     post:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Submit a KYC submission
       description: >
         Submits the submission for review. After submission, profile fields become read-only until staff requests more info.
         Idempotency-Key is recommended for safe retries.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -123,11 +95,11 @@ paths:
 
   /api/kyc/submissions/{submissionId}/documents:init:
     post:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Initialize a document upload
       description: >
         Returns a pre-signed URL to upload a document to S3 and creates a document record.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -149,11 +121,11 @@ paths:
 
   /api/kyc/documents/{documentId}:confirm:
     post:
-      tags: [KYC]
+      tags: [ KYC ]
       summary: Confirm an uploaded document
       description: >
         Confirms the S3 upload and stores hashes/metadata. Idempotency-Key is recommended.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -175,10 +147,10 @@ paths:
 
   /api/limits:
     get:
-      tags: [Limits]
+      tags: [ Limits ]
       summary: Get transaction limits
       description: Retrieve deposit/withdrawal limits based on current KYC tier and usage.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [ ] } ]
       responses:
         '200':
           description: Limits and usage details.
@@ -187,6 +159,36 @@ paths:
               schema: { $ref: '#/components/schemas/LimitsResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/registration/kyc/profile:
+    patch:
+      tags: [ KYC ]
+      operationId: apiRegistrationKycProfilePatch
+      summary: Partially update my KYC profile using JSON Patch
+      description: >
+        Applies RFC 6902 JSON Patch operations against the authenticated user's KYC profile.
+        Supports nested field updates.
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json-patch+json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonPatchOperation'
+      responses:
+        '200':
+          description: Profile updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycCaseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
 
 components:
   securitySchemes:
@@ -260,30 +262,46 @@ components:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
 
   schemas:
+    JsonPatchOperation:
+      type: object
+      additionalProperties: false
+      required: [ op, path ]
+      properties:
+        op:
+          type: string
+          enum: [ add, remove, replace, move, copy, test ]
+        path:
+          type: string
+          minLength: 1
+        from:
+          type: string
+        value:
+          nullable: true
+
     KycCaseStatus:
       type: string
-      enum: [OPEN, CLOSED]
+      enum: [ OPEN, CLOSED ]
 
     KycProvisioningStatus:
       type: string
-      enum: [NONE, STARTED, SUCCEEDED, FAILED]
+      enum: [ NONE, STARTED, SUCCEEDED, FAILED ]
 
     KycNextAction:
       type: string
-      enum: [UPLOAD_DOCUMENTS, FIX_PROFILE, WAIT, CONTACT_SUPPORT]
+      enum: [ UPLOAD_DOCUMENTS, FIX_PROFILE, WAIT, CONTACT_SUPPORT ]
       description: UI helper derived from status.
 
     KycDocumentType:
       type: string
-      enum: [ID_FRONT, ID_BACK, SELFIE, PROOF_OF_ADDRESS]
+      enum: [ ID_FRONT, ID_BACK, SELFIE, PROOF_OF_ADDRESS ]
 
     KycDocumentStatus:
       type: string
-      enum: [INITIATED, UPLOADED, VERIFIED, REJECTED]
+      enum: [ INITIATED, UPLOADED, VERIFIED, REJECTED ]
 
     KycCaseResponse:
       type: object
-      required: [caseId, caseStatus, activeSubmission]
+      required: [ caseId, caseStatus, activeSubmission ]
       properties:
         caseId:
           type: string
@@ -299,7 +317,7 @@ components:
 
     KycSubmissionSummary:
       type: object
-      required: [submissionId, version, status]
+      required: [ submissionId, version, status ]
       properties:
         submissionId:
           type: string
@@ -367,7 +385,7 @@ components:
 
     KycSubmissionDetailResponse:
       type: object
-      required: [submissionId, version, status, userProfile, documents]
+      required: [ submissionId, version, status, userProfile, documents ]
       properties:
         submissionId:
           type: string
@@ -418,7 +436,7 @@ components:
 
     KycDocument:
       type: object
-      required: [documentId, documentType, fileName, status, uploadedAt]
+      required: [ documentId, documentType, fileName, status, uploadedAt ]
       properties:
         documentId:
           type: string
@@ -435,7 +453,7 @@ components:
 
     InitDocumentUploadRequest:
       type: object
-      required: [documentType, fileName, mimeType]
+      required: [ documentType, fileName, mimeType ]
       additionalProperties: false
       properties:
         documentType:
@@ -453,7 +471,7 @@ components:
 
     InitDocumentUploadResponse:
       type: object
-      required: [documentId, uploadUrl, expiresAt]
+      required: [ documentId, uploadUrl, expiresAt ]
       properties:
         documentId:
           type: string
@@ -472,7 +490,7 @@ components:
 
     ConfirmDocumentUploadRequest:
       type: object
-      required: [sha256, sizeBytes]
+      required: [ sha256, sizeBytes ]
       additionalProperties: false
       properties:
         sha256:
@@ -484,7 +502,7 @@ components:
 
     StaffMessage:
       type: object
-      required: [messageId, message, createdAt]
+      required: [ messageId, message, createdAt ]
       properties:
         messageId:
           type: string
@@ -537,7 +555,7 @@ components:
 
     ProblemDetails:
       type: object
-      required: [title, status]
+      required: [ title, status ]
       properties:
         type: { type: string, format: uri }
         title: { type: string }
@@ -553,7 +571,7 @@ components:
           type: array
           items:
             type: object
-            required: [field, message]
+            required: [ field, message ]
             properties:
               field: { type: string }
               message: { type: string }

@@ -2,24 +2,14 @@ use crate::state::AppState;
 use backend_model::db;
 use backend_repository::{SmsPublishFailure, SmsRepo};
 use chrono::Utc;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::task::JoinHandle;
 use tracing::warn;
 
-pub fn spawn(state: Arc<AppState>) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            if let Err(e) = tick(&state).await {
-                warn!("sms retry tick failed: {e}");
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    })
-}
+pub async fn process_retryable_sms_batch(state: &AppState, limit: i64) -> backend_core::Result<()> {
+    if limit <= 0 {
+        return Ok(());
+    }
 
-async fn tick(state: &AppState) -> backend_core::Result<()> {
-    let rows = state.sms.list_retryable_sms(25).await?;
+    let rows = state.sms.list_retryable_sms(limit).await?;
 
     for row in rows {
         if let Err(e) = try_publish(state, row).await {

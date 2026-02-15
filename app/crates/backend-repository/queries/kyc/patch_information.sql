@@ -1,13 +1,15 @@
 UPDATE kyc_profiles
 SET
-  first_name = COALESCE($2, first_name),
-  last_name = COALESCE($3, last_name),
-  email = COALESCE($4, email),
-  phone_number = COALESCE($5, phone_number),
-  date_of_birth = COALESCE($6, date_of_birth),
-  nationality = COALESCE($7, nationality),
-  updated_at = now()
+  first_name = COALESCE($3, first_name),
+  last_name = COALESCE($4, last_name),
+  email = COALESCE($5, email),
+  phone_number = COALESCE($6, phone_number),
+  date_of_birth = COALESCE($7, date_of_birth),
+  nationality = COALESCE($8, nationality),
+  updated_at = now(),
+  version = version + 1
 WHERE external_id = $1
+  AND ($2::int IS NULL OR version = $2)
 RETURNING
   external_id,
   first_name,
@@ -24,4 +26,5 @@ RETURNING
   rejection_reason,
   review_notes,
   created_at,
-  updated_at
+  updated_at,
+  version

@@ -100,6 +100,7 @@ pub struct KycProfileRow {
     pub review_notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub version: i32,
 }
 
 #[derive(Debug, Clone, FromRow)]

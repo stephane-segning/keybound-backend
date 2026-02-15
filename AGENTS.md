@@ -6,6 +6,22 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - BFF: `/api/registration/*`
 - Staff: `/api/kyc/staff/*`
 
+### BFF KYC incremental update (JSON Patch)
+- Endpoint: `PATCH /api/registration/kyc/profile`
+- Content-Type: `application/json-patch+json`
+- Auth: bearer JWT (user id comes from JWT claims)
+- Behavior:
+  1. Load current KYC profile for authenticated user.
+  2. Apply RFC 6902 patch operations (supports nested paths).
+  3. Map patched JSON back to repository patch DTO.
+  4. Persist through repository layer method `patch_kyc_profile`.
+- Implementation points:
+  - OpenAPI: `openapi/user-storage-bff.yaml`
+  - BFF handler: `app/crates/backend-server/src/api/bff.rs`
+  - Repository trait/API: `app/crates/backend-repository/src/traits.rs`, `app/crates/backend-repository/src/pg/kyc.rs`
+  - SQL query: `app/crates/backend-repository/queries/kyc/patch_information.sql`
+  - JSON Patch crate: workspace dependency `json-patch`
+
 `app/backend` starts the server; `crates/backend-server` is a library crate.
 
 ## Core Architecture
@@ -158,3 +174,14 @@ All backends:
 - Fineract is handling core-backing
 - BFF is the client's backend
 - Staff is the admin's frontend of this backend
+
+## Implemented Features
+
+### KYC Profile Patch (Optimistic Locking)
+- **Endpoint**: `PATCH /api/registration/kyc/profile`
+- **Description**: Allows partial updates to the KYC profile using JSON Patch (RFC 6902).
+- **Concurrency Control**: Uses `If-Match` header with ETag (version number) to prevent lost updates.
+- **Implementation**:
+    - **Handler**: `app/crates/backend-server/src/api/bff.rs` handles the request, checks the version, applies the patch, and calls the repository.
+    - **Repository**: `app/crates/backend-repository/src/pg/kyc.rs` executes the update.
+    - **SQL**: `app/crates/backend-repository/queries/kyc/patch_information.sql` performs the atomic update with version checking.

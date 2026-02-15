@@ -5,6 +5,47 @@ use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeMode {
+    Server,
+    Worker,
+    Shared,
+}
+
+impl Default for RuntimeMode {
+    fn default() -> Self {
+        Self::Shared
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Runtime {
+    #[serde(default)]
+    pub mode: RuntimeMode,
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self {
+            mode: RuntimeMode::Shared,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Redis {
+    pub url: String,
+}
+
+impl Default for Redis {
+    fn default() -> Self {
+        Self {
+            url: "redis://127.0.0.1:6379".to_owned(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Server {
     pub address: String,
@@ -60,6 +101,10 @@ pub struct Config {
     pub logging: Logging,
     pub database: Database,
     pub oauth2: Oauth2,
+    #[serde(default)]
+    pub runtime: Runtime,
+    #[serde(default)]
+    pub redis: Redis,
     pub s3: Option<AwsS3>,
     pub sns: Option<AwsSns>,
 

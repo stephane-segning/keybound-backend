@@ -1,4 +1,5 @@
 use super::{BackendApi, kc_error};
+use crate::worker;
 use axum_extra::extract::CookieJar;
 use backend_core::Error;
 use backend_model::kc::{
@@ -172,7 +173,6 @@ impl Devices<Error> for BackendApi {
             .state
             .device
             .get_user_device(&path_params.user_id, &path_params.device_id)
-            .await
             .await?;
 
         let Some(device) = device else {
@@ -394,7 +394,6 @@ impl Enrollment<Error> for BackendApi {
             .state
             .sms
             .get_sms_by_hash(&req.hash)
-            .await
             .await?;
 
         let Some(sms) = sms else {
@@ -417,7 +416,7 @@ impl Enrollment<Error> for BackendApi {
         hasher.update(req.otp.as_bytes());
         let hash = hasher.finalize();
 
-        if hash.as_slice() != sms.otp_sha256 {
+        if hash.as_slice() != sms.otp_sha256.as_slice() {
             return Ok(ConfirmSmsResponse::Status400_BadRequest(kc_error(
                 "INVALID_OTP",
                 "Invalid OTP",
@@ -452,7 +451,6 @@ impl Enrollment<Error> for BackendApi {
             .state
             .device
             .find_device_binding(&req.device_id, &req.jkt)
-            .await
             .await?;
 
         if let Some((bound_user_id, _)) = existing {
@@ -494,7 +492,6 @@ impl Enrollment<Error> for BackendApi {
             .state
             .device
             .find_device_binding(&body.device_id, &body.jkt)
-            .await
             .await?;
 
         let decision = if let Some((user_id, _)) = existing {
@@ -613,17 +610,15 @@ impl Enrollment<Error> for BackendApi {
                 .unwrap_or_default(),
         };
 
-        self.state
-            .sms
-            .queue_sms(insert)
-            .await
-            .map(|queued| {
-                SendSmsResponse::Status200_OTPQueued(models::SmsSendResponse {
-                    hash: queued.hash,
-                    ttl_seconds: Some(queued.ttl_seconds),
-                    status: Some(queued.status),
-                })
-            })
-            .map_err(Into::into)
+        let queued = self.state.sms.queue_sms(insert).await?;
+        worker::enqueue_sms_retry_sweep(&self.state.config.redis.url, "send_sms").await?;
+
+        Ok(
+            SendSmsResponse::Status200_OTPQueued(models::SmsSendResponse {
+                hash: queued.hash,
+                ttl_seconds: Some(queued.ttl_seconds),
+                status: Some(queued.status),
+            }),
+        )
     }
 }

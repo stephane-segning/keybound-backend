@@ -1,6 +1,7 @@
 pub(crate) mod api;
 pub(crate) mod sms_retry;
 pub(crate) mod state;
+pub(crate) mod worker;
 
 use axum::body::Body;
 use backend_auth::{require_bff_auth, require_kc_signature, require_staff_bearer};
@@ -14,9 +15,6 @@ use tracing::info;
 pub async fn serve(core_config: &Config) -> Result<()> {
     let listen_addr = core_config.api_listen_addr()?;
     let state = Arc::new(state::AppState::from_config(core_config).await?);
-
-    // Spawn the in-process SNS retry worker.
-    sms_retry::spawn(state.clone());
 
     let api = api::BackendApi::new(state.clone());
     let make_svc = Shared::new(service_fn(move |req: Request<hyper::body::Incoming>| {
@@ -54,6 +52,11 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub async fn run_worker(core_config: &Config) -> Result<()> {
+    let state = Arc::new(state::AppState::from_config(core_config).await?);
+    worker::run(state).await
 }
 
 async fn dispatch(

@@ -1,13 +1,11 @@
-use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode, header::AUTHORIZATION};
+use axum::body::{to_bytes, Body};
+use axum::http::{header::AUTHORIZATION, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use backend_core::{BffAuth, KcAuth, StaffAuth};
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use ring::hmac;
-use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn require_kc_signature(

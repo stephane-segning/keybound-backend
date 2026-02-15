@@ -75,6 +75,7 @@ pub trait PgKycRepo {
     async fn patch_kyc_information_db(
         &self,
         external_id: String,
+        expected_version: Option<i32>,
         first_name: Option<String>,
         last_name: Option<String>,
         email: Option<String>,
@@ -196,14 +197,16 @@ impl KycRepo for KycRepository {
         Ok(res.rows_affected() > 0)
     }
 
-    async fn patch_kyc_information(
+    async fn patch_kyc_profile(
         &self,
         external_id: &str,
+        expected_version: Option<i32>,
         req: &backend_model::bff::KycInformationPatchRequest,
     ) -> RepoResult<Option<db::KycProfileRow>> {
         let row = self
             .patch_kyc_information_db(
                 external_id.to_owned(),
+                expected_version,
                 req.first_name.clone(),
                 req.last_name.clone(),
                 req.email.clone(),

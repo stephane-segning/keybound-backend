@@ -14,8 +14,8 @@ SELECT
   rejection_reason,
   review_notes,
   created_at,
-  updated_at
+  updated_at,
+  version
 FROM kyc_profiles
 WHERE 1=1
 ORDER BY submitted_at DESC NULLS LAST, created_at DESC
-
