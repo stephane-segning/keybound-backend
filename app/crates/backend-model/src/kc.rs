@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::db;
 
 pub type KcMap = std::collections::HashMap<String, String>;
-pub type KcAnyMap = std::collections::HashMap<String, Value>;
+pub type KcAnyMap = std::collections::HashMap<String, gen_oas_server_kc::types::Object>;
 
 #[derive(Debug, Clone, o2o)]
 #[from_owned(gen_oas_server_kc::models::UserUpsertRequest)]
@@ -42,6 +42,7 @@ pub struct UserSearch {
 pub struct DeviceDescriptor {
     pub device_id: String,
     pub jkt: String,
+    #[map(public_jwk)]
     pub public_jwk: Option<KcAnyMap>,
     pub platform: Option<String>,
     pub model: Option<String>,
@@ -57,6 +58,7 @@ pub struct ApprovalCreateRequest {
     pub new_device: gen_oas_server_kc::models::DeviceDescriptor,
     pub reason: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    #[map(context)]
     pub context: Option<KcAnyMap>,
 }
 
@@ -83,7 +85,9 @@ pub struct EnrollmentPrecheckRequest {
     pub user_hint: Option<String>,
     pub device_id: String,
     pub jkt: String,
+    #[map(public_jwk)]
     pub public_jwk: Option<KcAnyMap>,
+    #[map(proof_context)]
     pub proof_context: Option<KcAnyMap>,
 }
 
@@ -96,9 +100,11 @@ pub struct EnrollmentBindRequest {
     pub user_hint: Option<String>,
     pub device_id: String,
     pub jkt: String,
+    #[map(public_jwk)]
     pub public_jwk: KcAnyMap,
     pub attributes: Option<KcMap>,
     pub created_at: Option<DateTime<Utc>>,
+    #[map(proof)]
     pub proof: Option<KcAnyMap>,
 }
 
@@ -112,6 +118,7 @@ pub struct SmsSendRequest {
     pub otp: String,
     pub session_id: Option<String>,
     pub trace_id: Option<String>,
+    #[map(metadata)]
     pub metadata: Option<KcAnyMap>,
 }
 
@@ -151,6 +158,14 @@ impl UserRecordDto {
         }
         Some(out)
     }
+}
+
+pub fn kc_any_map_to_value(map: KcAnyMap) -> Value {
+    let mut out = serde_json::Map::new();
+    for (k, v) in map {
+        out.insert(k, v.0);
+    }
+    Value::Object(out)
 }
 
 impl From<db::UserRow> for UserRecordDto {
@@ -206,16 +221,16 @@ impl From<db::DeviceRow> for DeviceRecordDto {
 #[owned_into(gen_oas_server_kc::models::ApprovalStatusResponse)]
 pub struct ApprovalStatusDto {
     pub request_id: String,
-    pub status: gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner,
+    pub status: gen_oas_server_kc::models::QueryApprovalStatus,
     pub decided_at: Option<DateTime<Utc>>,
     pub decided_by_device_id: Option<String>,
     pub message: Option<String>,
 }
 
 impl ApprovalStatusDto {
-    fn parse_status(s: &str) -> gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner {
+    fn parse_status(s: &str) -> gen_oas_server_kc::models::QueryApprovalStatus {
         s.parse()
-            .unwrap_or(gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner::Pending)
+            .unwrap_or(gen_oas_server_kc::models::QueryApprovalStatus::Pending)
     }
 }
 
@@ -237,7 +252,7 @@ pub struct UserApprovalRecordDto {
     pub request_id: String,
     pub user_id: String,
     pub device_id: String,
-    pub status: gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner,
+    pub status: gen_oas_server_kc::models::UserApprovalRecordStatus,
     pub created_at: DateTime<Utc>,
     pub decided_at: Option<DateTime<Utc>>,
     pub decided_by_device_id: Option<String>,
@@ -245,9 +260,9 @@ pub struct UserApprovalRecordDto {
 }
 
 impl UserApprovalRecordDto {
-    fn parse_status(s: &str) -> gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner {
+    fn parse_status(s: &str) -> gen_oas_server_kc::models::UserApprovalRecordStatus {
         s.parse()
-            .unwrap_or(gen_oas_server_kc::models::ListUserApprovalsStatusParameterInner::Pending)
+            .unwrap_or(gen_oas_server_kc::models::UserApprovalRecordStatus::Pending)
     }
 }
 

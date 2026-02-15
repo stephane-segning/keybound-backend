@@ -8,7 +8,4 @@ pub const BANNER: &str = r#"
     `Y88888P' `88888P' `88888P' dP                 Y88888P    dP   `88888P' dP       `88888P8 `8888P88 `88888P'
                                                                                                    .88
                                                                                                d8888P
-    ${application.title} ${application.version}
-    Powered by Spring Boot ${spring-boot.version}
-
 "#;

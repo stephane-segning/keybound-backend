@@ -89,6 +89,8 @@ aws-sdk-sns = "1"
 aws-types = "1"
 
 mimalloc = "0"
+axum-extra = "0.12"
+headers = "0.4"
 
 [profile.release]
 lto = true

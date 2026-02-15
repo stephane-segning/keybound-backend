@@ -5,13 +5,20 @@ pub mod staff;
 use crate::state::AppState;
 use backend_auth::ServiceContext;
 use backend_core::Error;
-use gen_oas_server_bff::apis::ErrorHandler;
+use http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request};
 use std::sync::Arc;
 use swagger::ApiError;
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct BackendApi {
     pub(crate) state: Arc<AppState>,
+}
+
+impl AsRef<Self> for BackendApi {
+    fn as_ref(&self) -> &Self {
+        self
+    }
 }
 
 impl BackendApi {
@@ -48,4 +55,43 @@ pub(crate) fn is_unique_violation(err: &Error) -> bool {
     )
 }
 
-impl ErrorHandler<()> for BackendApi {}
+impl gen_oas_server_bff::apis::ErrorHandler<()> for BackendApi {}
+impl gen_oas_server_kc::apis::ErrorHandler<()> for BackendApi {}
+impl gen_oas_server_staff::apis::ErrorHandler<()> for BackendApi {}
+
+#[backend_core::async_trait]
+impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
+    type Claims = ServiceContext;
+
+    async fn extract_claims_from_auth_header(
+        &self,
+        _kind: gen_oas_server_bff::apis::BasicAuthKind,
+        headers: &axum::http::header::HeaderMap,
+        key: &str,
+    ) -> Option<Self::Claims> {
+        claims_from_header_key(headers, key)
+    }
+}
+
+#[backend_core::async_trait]
+impl gen_oas_server_staff::apis::ApiAuthBasic for BackendApi {
+    type Claims = ServiceContext;
+
+    async fn extract_claims_from_auth_header(
+        &self,
+        _kind: gen_oas_server_staff::apis::BasicAuthKind,
+        headers: &axum::http::header::HeaderMap,
+        key: &str,
+    ) -> Option<Self::Claims> {
+        claims_from_header_key(headers, key)
+    }
+}
+
+fn claims_from_header_key(headers: &HeaderMap<HeaderValue>, key: &str) -> Option<ServiceContext> {
+    let auth = headers.get(key).or_else(|| headers.get(AUTHORIZATION))?.clone();
+    let mut req = Request::new(());
+    req.headers_mut().insert(AUTHORIZATION, auth);
+    let ctx = ServiceContext::from_request(&req);
+    debug!(has_user_id = ctx.user_id().is_some(), "constructed auth claims from header");
+    Some(ctx)
+}

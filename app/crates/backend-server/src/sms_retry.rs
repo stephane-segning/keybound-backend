@@ -66,9 +66,15 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
         Err(e) => {
             let max_attempts = row.max_attempts.max(1) as u32;
             let gave_up = attempt >= max_attempts;
+            let initial_backoff_seconds = state
+                .config
+                .sns
+                .as_ref()
+                .map(|v| v.initial_backoff_seconds)
+                .unwrap_or(1);
 
             let backoff = backoff_seconds(
-                state.config.sns.initial_backoff_seconds,
+                initial_backoff_seconds,
                 row.attempt_count.max(0) as u32,
             );
 

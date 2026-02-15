@@ -27,10 +27,14 @@ pub struct KycRequestInfoRequest {
 #[owned_into(gen_oas_server_staff::models::KycDocumentDto)]
 pub struct KycDocumentDto {
     pub id: Option<String>,
-    pub r#type: Option<String>,
+    #[map(r_type)]
+    pub document_type: Option<String>,
+    #[map(file_name)]
     pub file_name: Option<String>,
+    #[map(mime_type)]
     pub mime_type: Option<String>,
     pub url: Option<String>,
+    #[map(uploaded_at)]
     pub uploaded_at: Option<String>,
 }
 
@@ -38,7 +42,7 @@ impl From<db::KycDocumentRow> for KycDocumentDto {
     fn from(row: db::KycDocumentRow) -> Self {
         Self {
             id: Some(row.id),
-            r#type: Some(row.document_type),
+            document_type: Some(row.document_type),
             file_name: Some(row.file_name),
             mime_type: Some(row.mime_type),
             url: None,

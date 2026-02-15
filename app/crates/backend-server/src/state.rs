@@ -5,18 +5,14 @@ use backend_repository::{
     ApprovalRepository, DeviceRepository, KycRepository, SmsRepository,
     UserRepository,
 };
-use bytes::Bytes;
 use gen_oas_server_bff::models::{KycCaseResponse, LimitsResponse};
 use http::{Request, Response, StatusCode};
-use http_body_util::combinators::BoxBody;
-use http_body_util::BodyExt as _;
-use hyper::service::Service as HyperService;
 use lru::LruCache;
 use sqlx::postgres::PgPoolOptions;
-use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
-use tracing::error;
+use tower::util::ServiceExt;
+use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct HttpCache {
@@ -55,28 +51,38 @@ impl std::fmt::Debug for AppState {
 
 impl AppState {
     pub async fn from_config(cfg: &Config) -> backend_core::Result<Self> {
+        info!("initializing application state and repositories");
         let db = PgPoolOptions::new()
             .max_connections(cfg.database_pool_size())
             .connect(&cfg.database.url)
             .await?;
 
         let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_types::region::Region::new(cfg.region.clone()))
             .load()
             .await;
 
         let s3 = {
             let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
-            if let Some(endpoint) = &cfg.s3.endpoint {
-                builder = builder.endpoint_url(endpoint).force_path_style(true);
+            if let Some(s3_cfg) = &cfg.s3 {
+                if let Some(region) = &s3_cfg.region {
+                    builder = builder.region(aws_types::region::Region::new(region.clone()));
+                }
+                if let Some(endpoint) = &s3_cfg.endpoint {
+                    builder = builder.endpoint_url(endpoint);
+                }
+                if s3_cfg.force_path_style.unwrap_or(false) {
+                    builder = builder.force_path_style(true);
+                }
             }
             aws_sdk_s3::Client::from_conf(builder.build())
         };
 
         let sns = {
             let mut builder = aws_sdk_sns::config::Builder::from(&shared_config);
-            if let Some(region) = &cfg.sns.region {
-                builder = builder.region(aws_types::region::Region::new(region.clone()));
+            if let Some(sns_cfg) = &cfg.sns {
+                if let Some(region) = &sns_cfg.region {
+                    builder = builder.region(aws_types::region::Region::new(region.clone()));
+                }
             }
             aws_sdk_sns::Client::from_conf(builder.build())
         };
@@ -86,15 +92,19 @@ impl AppState {
             kyc_status: Arc::new(Mutex::new(LruCache::new(capacity))),
             limits: Arc::new(Mutex::new(LruCache::new(capacity))),
         };
-
-        let repository = PgRepository::new(db.clone());
+        let kyc = KycRepository::new(db.clone());
+        let user_phone_cache = Arc::new(Mutex::new(LruCache::new(capacity)));
+        let user = UserRepository::new(db.clone(), user_phone_cache);
+        let device = DeviceRepository::new(db.clone());
+        let approval = ApprovalRepository::new(db.clone());
+        let sms = SmsRepository::new(db);
 
         Ok(Self {
-            kyc: repository.kyc.clone(),
-            user: repository.user.clone(),
-            device: repository.device.clone(),
-            approval: repository.approval.clone(),
-            sms: repository.sms.clone(),
+            kyc,
+            user,
+            device,
+            approval,
+            sms,
             s3,
             sns,
             config: cfg.clone(),
@@ -156,35 +166,13 @@ impl AppState {
 }
 
 pub async fn call_kc(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
-    let ctx = KcContext::from_request(&req);
-    let svc = gen_oas_server_kc::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-pub async fn call_bff(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
-    let ctx = ServiceContext::from_request(&req);
-    let svc = gen_oas_server_bff::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-pub async fn call_staff(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
-    let ctx = ServiceContext::from_request(&req);
-    let svc = gen_oas_server_staff::server::Service::new(api, false);
-    to_axum_response(HyperService::call(&svc, (req, ctx)).await)
-}
-
-fn to_axum_response<E>(resp: Result<Response<BoxBody<Bytes, Infallible>>, E>) -> Response<Body>
-where
-    E: std::fmt::Display,
-{
-    match resp {
-        Ok(resp) => {
-            let (parts, body) = resp.into_parts();
-            let body = Body::new(body.map_err(infallible_to_io));
-            Response::from_parts(parts, body)
-        }
+    let _ctx = KcContext::from_request(&req);
+    debug!(path = %req.uri().path(), "dispatching request to KC generated router");
+    let router = gen_oas_server_kc::server::new(api);
+    match router.oneshot(req).await {
+        Ok(resp) => resp,
         Err(e) => {
-            error!("generated service error: {e}");
+            error!(error = %e, "KC router request failed");
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::from("Internal server error"))
@@ -193,6 +181,34 @@ where
     }
 }
 
-fn infallible_to_io(err: Infallible) -> std::io::Error {
-    match err {}
+pub async fn call_bff(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
+    let _ctx = ServiceContext::from_request(&req);
+    debug!(path = %req.uri().path(), "dispatching request to BFF generated router");
+    let router = gen_oas_server_bff::server::new(api);
+    match router.oneshot(req).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!(error = %e, "BFF router request failed");
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Internal server error"))
+                .unwrap_or_else(|_| Response::new(Body::empty()))
+        }
+    }
+}
+
+pub async fn call_staff(api: crate::api::BackendApi, req: Request<Body>) -> Response<Body> {
+    let _ctx = ServiceContext::from_request(&req);
+    debug!(path = %req.uri().path(), "dispatching request to Staff generated router");
+    let router = gen_oas_server_staff::server::new(api);
+    match router.oneshot(req).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!(error = %e, "Staff router request failed");
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Internal server error"))
+                .unwrap_or_else(|_| Response::new(Body::empty()))
+        }
+    }
 }
