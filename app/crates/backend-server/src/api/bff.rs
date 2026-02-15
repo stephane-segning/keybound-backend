@@ -1,5 +1,6 @@
-use super::{BackendApi, repo_err};
+use super::BackendApi;
 use backend_auth::ServiceContext;
+use backend_core::Error;
 use backend_model::bff::{
     KycDocumentUploadRequest, KycInformationPatchRequest, KycInformationResponseDto,
     KycStatusResponseDto,
@@ -14,7 +15,7 @@ use gen_oas_server_bff::models;
 use http::Method;
 
 #[backend_core::async_trait]
-impl Kyc for BackendApi {
+impl Kyc<Error> for BackendApi {
     type Claims = ServiceContext;
 
     async fn api_kyc_cases_mine_get(
@@ -23,16 +24,14 @@ impl Kyc for BackendApi {
         _host: &headers::Host,
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
-    ) -> Result<ApiKycCasesMineGetResponse, ()> {
-        let user_id = Self::require_user_id(claims).map_err(|_| ())?;
+    ) -> Result<ApiKycCasesMineGetResponse, Error> {
+        let user_id = Self::require_user_id(claims)?;
 
         let profile = self
             .state
             .kyc
             .get_kyc_profile(&user_id)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         match profile {
             Some(p) => {
@@ -61,8 +60,8 @@ impl Kyc for BackendApi {
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
         body: &models::KycCasePatchRequest,
-    ) -> Result<ApiKycCasesMinePatchResponse, ()> {
-        let user_id = Self::require_user_id(claims).map_err(|_| ())?;
+    ) -> Result<ApiKycCasesMinePatchResponse, Error> {
+        let user_id = Self::require_user_id(claims)?;
 
         let req = KycInformationPatchRequest::from(body.clone());
 
@@ -70,9 +69,7 @@ impl Kyc for BackendApi {
             .state
             .kyc
             .patch_kyc_information(&user_id, &req)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         match profile {
             Some(p) => {
@@ -100,17 +97,15 @@ impl Kyc for BackendApi {
         _host: &headers::Host,
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
-    ) -> Result<ApiKycCasesMineSubmissionPostResponse, ()> {
-        let user_id = Self::require_user_id(claims).map_err(|_| ())?;
+    ) -> Result<ApiKycCasesMineSubmissionPostResponse, Error> {
+        let user_id = Self::require_user_id(claims)?;
 
         // For now, we just return the current profile as "submitted"
         let profile = self
             .state
             .kyc
             .get_kyc_profile(&user_id)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         match profile {
             Some(p) => {
@@ -136,16 +131,14 @@ impl Kyc for BackendApi {
         _host: &headers::Host,
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
-    ) -> Result<ApiLimitsGetResponse, ()> {
-        let user_id = Self::require_user_id(claims).map_err(|_| ())?;
+    ) -> Result<ApiLimitsGetResponse, Error> {
+        let user_id = Self::require_user_id(claims)?;
 
         let tier = self
             .state
             .kyc
             .get_kyc_tier(&user_id)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         match tier {
             Some(t) => {
@@ -181,7 +174,7 @@ impl Kyc for BackendApi {
 }
 
 #[backend_core::async_trait]
-impl KycDocuments for BackendApi {
+impl KycDocuments<Error> for BackendApi {
     type Claims = ServiceContext;
 
     async fn api_kyc_cases_mine_documents_post(
@@ -191,8 +184,8 @@ impl KycDocuments for BackendApi {
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
         body: &models::KycDocumentUploadRequest,
-    ) -> Result<ApiKycCasesMineDocumentsPostResponse, ()> {
-        let user_id = Self::require_user_id(claims).map_err(|_| ())?;
+    ) -> Result<ApiKycCasesMineDocumentsPostResponse, Error> {
+        let user_id = Self::require_user_id(claims)?;
 
         let req = KycDocumentUploadRequest::from(body.clone());
 
@@ -200,9 +193,7 @@ impl KycDocuments for BackendApi {
         self.state
             .kyc
             .ensure_kyc_profile(&user_id)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let input = KycDocumentInsert {
             external_id: user_id,
@@ -219,9 +210,7 @@ impl KycDocuments for BackendApi {
             .state
             .kyc
             .insert_kyc_document_intent(input)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let resp = models::KycDocumentUploadResponse {
             document_id: Some(row.id),

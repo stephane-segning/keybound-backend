@@ -4,3 +4,4 @@ include:
   - deploy/compose/postgres.compose.yml
   - deploy/compose/redis.compose.yml
   - deploy/compose/app.compose.yml
+  - deploy/compose/roo-code.compose.yml

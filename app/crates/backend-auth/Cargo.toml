@@ -16,3 +16,6 @@ ring = "0.17"
 serde_json.workspace = true
 sha2.workspace = true
 swagger = "7"
+
+[dev-dependencies]
+tokio.workspace = true

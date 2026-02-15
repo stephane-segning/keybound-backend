@@ -77,6 +77,8 @@ pub struct Tls {
 #[derive(Debug, Clone, Deserialize)]
 pub struct KcAuth {
     pub enabled: bool,
+    #[serde(alias = "base-path")]
+    pub base_path: String,
     pub signature_secret: String,
     pub max_clock_skew_seconds: i64,
     pub max_body_bytes: usize,
@@ -85,12 +87,14 @@ pub struct KcAuth {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BffAuth {
     pub enabled: bool,
+    #[serde(alias = "base-path")]
     pub base_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct StaffAuth {
     pub enabled: bool,
+    #[serde(alias = "base-path")]
     pub base_path: String,
 }
 

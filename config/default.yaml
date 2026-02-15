@@ -34,15 +34,18 @@ oauth2:
 
 kc:
   enabled: false
+  base-path: /v1
   signature_secret: "change-me"
   max_clock_skew_seconds: 60
   max_body_bytes: 262144
 
 bff:
-  base-path: /staff
+  enabled: true
+  base-path: /api/registration
 
 staff:
-  base-path: /staff
+  enabled: true
+  base-path: /api/kyc/staff
 
 cuss:
   api_url: http://cuss:8080

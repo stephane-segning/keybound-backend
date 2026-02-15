@@ -64,7 +64,7 @@ async fn dispatch(
     let req = req.map(Body::new);
     let path = req.uri().path().to_owned();
 
-    if path.starts_with("/v1/") {
+    if !state.config.kc.base_path.trim().is_empty() && path.starts_with(&state.config.kc.base_path) {
         let req = match require_kc_signature(&state.config.kc, req).await {
             Ok(req) => req,
             Err(resp) => return resp,
@@ -72,7 +72,7 @@ async fn dispatch(
         return state::call_kc(api, req).await;
     }
 
-    if path.starts_with("/api/registration/") {
+    if !state.config.bff.base_path.trim().is_empty() && path.starts_with(&state.config.bff.base_path) {
         let req = match require_bff_auth(&state.config.bff, req).await {
             Ok(req) => req,
             Err(resp) => return resp,
@@ -80,7 +80,9 @@ async fn dispatch(
         return state::call_bff(api, req).await;
     }
 
-    if path.starts_with("/api/kyc/staff/") {
+    if !state.config.staff.base_path.trim().is_empty()
+        && path.starts_with(&state.config.staff.base_path)
+    {
         let req = match require_staff_bearer(&state.config.staff, req).await {
             Ok(req) => req,
             Err(resp) => return resp,

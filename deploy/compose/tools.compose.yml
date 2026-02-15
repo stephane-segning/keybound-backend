@@ -104,7 +104,7 @@ configs:
   oas_server_staff:
     content: |
       {
-        "inputSpec": "/openapi/user-storage-staff.json",
+        "inputSpec": "/openapi/user-storage-staff.yaml",
         "generatorName": "rust-axum",
         "packageName": "gen_oas_server_staff",
         "packageVersion": "9.9.9"
@@ -112,7 +112,7 @@ configs:
   oas_client_cuss_registration:
     content: |
       {
-        "inputSpec": "/openapi/user-storage-registration.json",
+        "inputSpec": "/openapi/user-storage-registration.yaml",
         "generatorName": "rust",
         "packageName": "gen_oas_client_cuss_registration",
         "packageVersion": "9.9.9"

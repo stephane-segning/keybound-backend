@@ -1,6 +1,7 @@
-use super::{BackendApi, repo_err};
+use super::BackendApi;
 use axum_extra::extract::CookieJar;
 use backend_auth::ServiceContext;
+use backend_core::Error;
 use backend_model::staff::{
     KycApprovalRequest, KycDocumentDto, KycRejectionRequest, KycRequestInfoRequest,
     KycSubmissionDetailResponseDto, KycSubmissionSummaryDto, KycSubmissionsResponseDto,
@@ -17,7 +18,7 @@ use http::Method;
 use sqlx_data::ParamsBuilder;
 
 #[backend_core::async_trait]
-impl KycReview for BackendApi {
+impl KycReview<Error> for BackendApi {
     type Claims = ServiceContext;
 
     async fn api_kyc_staff_submissions_get(
@@ -27,16 +28,14 @@ impl KycReview for BackendApi {
         _cookies: &CookieJar,
         _claims: &Self::Claims,
         query_params: &models::ApiKycStaffSubmissionsGetQueryParams,
-    ) -> Result<ApiKycStaffSubmissionsGetResponse, ()> {
+    ) -> Result<ApiKycStaffSubmissionsGetResponse, Error> {
         let (page, limit) = Self::normalize_page_limit(query_params.page, query_params.limit);
 
         let rows = self
             .state
             .kyc
             .list_kyc_submissions(ParamsBuilder::default())
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let status_filter = query_params
             .status
@@ -105,16 +104,14 @@ impl KycReview for BackendApi {
         _claims: &Self::Claims,
         path_params: &models::ApiKycStaffSubmissionsUserIdApprovePostPathParams,
         body: &models::KycApprovalRequest,
-    ) -> Result<ApiKycStaffSubmissionsUserIdApprovePostResponse, ()> {
+    ) -> Result<ApiKycStaffSubmissionsUserIdApprovePostResponse, Error> {
         let req = KycApprovalRequest::from(body.clone());
 
         let updated = self
             .state
             .kyc
             .update_kyc_approved(&path_params.user_id, &req)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         if updated {
             Ok(ApiKycStaffSubmissionsUserIdApprovePostResponse::Status200_KYCApproved)
@@ -131,16 +128,14 @@ impl KycReview for BackendApi {
         _claims: &Self::Claims,
         path_params: &models::ApiKycStaffSubmissionsUserIdGetPathParams,
         query_params: &models::ApiKycStaffSubmissionsUserIdGetQueryParams,
-    ) -> Result<ApiKycStaffSubmissionsUserIdGetResponse, ()> {
+    ) -> Result<ApiKycStaffSubmissionsUserIdGetResponse, Error> {
         let (page, limit) = Self::normalize_page_limit(query_params.page, query_params.limit);
 
         let profile = self
             .state
             .kyc
             .get_kyc_submission(&path_params.user_id)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let Some(profile) = profile else {
             return Ok(ApiKycStaffSubmissionsUserIdGetResponse::Status404_SubmissionNotFound);
@@ -150,9 +145,7 @@ impl KycReview for BackendApi {
             .state
             .kyc
             .list_kyc_documents(path_params.user_id.clone(), ParamsBuilder::default())
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let total_documents = i32::try_from(documents.data.len()).unwrap_or(i32::MAX);
         let start = usize::try_from((page - 1) * limit).unwrap_or(0);
@@ -186,16 +179,14 @@ impl KycReview for BackendApi {
         _claims: &Self::Claims,
         path_params: &models::ApiKycStaffSubmissionsUserIdRejectPostPathParams,
         body: &models::KycRejectionRequest,
-    ) -> Result<ApiKycStaffSubmissionsUserIdRejectPostResponse, ()> {
+    ) -> Result<ApiKycStaffSubmissionsUserIdRejectPostResponse, Error> {
         let req = KycRejectionRequest::from(body.clone());
 
         let updated = self
             .state
             .kyc
             .update_kyc_rejected(&path_params.user_id, &req)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         if updated {
             Ok(ApiKycStaffSubmissionsUserIdRejectPostResponse::Status200_KYCRejected)
@@ -212,16 +203,14 @@ impl KycReview for BackendApi {
         _claims: &Self::Claims,
         path_params: &models::ApiKycStaffSubmissionsUserIdRequestInfoPostPathParams,
         body: &models::KycRequestInfoRequest,
-    ) -> Result<ApiKycStaffSubmissionsUserIdRequestInfoPostResponse, ()> {
+    ) -> Result<ApiKycStaffSubmissionsUserIdRequestInfoPostResponse, Error> {
         let req = KycRequestInfoRequest::from(body.clone());
 
         let updated = self
             .state
             .kyc
             .update_kyc_request_info(&path_params.user_id, &req)
-            .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         if updated {
             Ok(ApiKycStaffSubmissionsUserIdRequestInfoPostResponse::Status200_AdditionalInfoRequested)

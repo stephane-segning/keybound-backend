@@ -54,31 +54,14 @@ pub async fn require_bff_auth(
     cfg: &BffAuth,
     req: Request<Body>,
 ) -> std::result::Result<Request<Body>, Response> {
-    if !cfg.enabled {
-        return Ok(req);
-    }
-
-    let token = match bearer_token(req.headers()) {
-        Some(value) => value,
-        None => return Err(unauthorized("missing bearer token")),
-    };
-
-    match decode_jwt_claims(&token) {
-        Some(_) => {} // no validation required for BFF
-        None => return Err(unauthorized("invalid bearer token")),
-    }
-
-    Ok(req)
+    require_user_bearer_auth(cfg.enabled, &cfg.base_path, req).await
 }
 
 pub async fn require_staff_bearer(
     cfg: &StaffAuth,
     req: Request<Body>,
 ) -> std::result::Result<Request<Body>, Response> {
-    if bearer_token(req.headers()).is_none() {
-        return Err(unauthorized("missing bearer token"));
-    }
-    Ok(req)
+    require_user_bearer_auth(cfg.enabled, &cfg.base_path, req).await
 }
 
 #[derive(Debug, Clone)]
@@ -138,4 +121,32 @@ fn unauthorized(message: &str) -> Response {
         })),
     )
         .into_response()
+}
+
+async fn require_user_bearer_auth(
+    enabled: bool,
+    protected_base_path: &str,
+    req: Request<Body>,
+) -> std::result::Result<Request<Body>, Response> {
+    if !enabled {
+        return Ok(req);
+    }
+
+    if protected_base_path.trim().is_empty() {
+        return Ok(req);
+    }
+
+    if !req.uri().path().starts_with(protected_base_path) {
+        return Ok(req);
+    }
+
+    let token = match bearer_token(req.headers()) {
+        Some(value) => value,
+        None => return Err(unauthorized("missing bearer token")),
+    };
+
+    match decode_jwt_claims(&token) {
+        Some(_) => Ok(req),
+        None => Err(unauthorized("invalid bearer token")),
+    }
 }

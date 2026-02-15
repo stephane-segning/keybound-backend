@@ -1,5 +1,6 @@
-use super::{BackendApi, kc_error, repo_err};
+use super::{BackendApi, kc_error};
 use axum_extra::extract::CookieJar;
+use backend_core::Error;
 use backend_model::kc::{
     ApprovalDecisionRequest, ApprovalStatusDto, DeviceRecordDto, SmsConfirmRequest, SmsSendRequest,
     UserApprovalRecordDto, UserRecordDto, UserSearch, UserUpsert,
@@ -25,14 +26,14 @@ use headers::Host;
 use http::Method;
 
 #[backend_core::async_trait]
-impl Approvals for BackendApi {
+impl Approvals<Error> for BackendApi {
     async fn cancel_approval(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
         path_params: &models::CancelApprovalPathParams,
-    ) -> Result<CancelApprovalResponse, ()> {
+    ) -> Result<CancelApprovalResponse, Error> {
         self.state
             .approval
             .cancel_approval(&path_params.request_id)
@@ -47,8 +48,7 @@ impl Approvals for BackendApi {
                     ))
                 }
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn create_approval(
@@ -58,7 +58,7 @@ impl Approvals for BackendApi {
         _cookies: &CookieJar,
         header_params: &models::CreateApprovalHeaderParams,
         body: &models::ApprovalCreateRequest,
-    ) -> Result<CreateApprovalResponse, ()> {
+    ) -> Result<CreateApprovalResponse, Error> {
         let req = backend_model::kc::ApprovalCreateRequest::from(body.clone());
         self.state
             .approval
@@ -74,8 +74,7 @@ impl Approvals for BackendApi {
                     expires_at: created.expires_at,
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn decide_approval(
@@ -85,7 +84,7 @@ impl Approvals for BackendApi {
         _cookies: &CookieJar,
         path_params: &models::DecideApprovalPathParams,
         body: &models::ApprovalDecisionRequest,
-    ) -> Result<DecideApprovalResponse, ()> {
+    ) -> Result<DecideApprovalResponse, Error> {
         let req = ApprovalDecisionRequest::from(body.clone());
         self.state
             .approval
@@ -101,8 +100,7 @@ impl Approvals for BackendApi {
                     "Approval not found",
                 )),
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn get_approval(
@@ -111,7 +109,7 @@ impl Approvals for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         path_params: &models::GetApprovalPathParams,
-    ) -> Result<GetApprovalResponse, ()> {
+    ) -> Result<GetApprovalResponse, Error> {
         self.state
             .approval
             .get_approval(&path_params.request_id)
@@ -126,8 +124,7 @@ impl Approvals for BackendApi {
                     "Approval not found",
                 )),
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn list_user_approvals(
@@ -137,7 +134,7 @@ impl Approvals for BackendApi {
         _cookies: &CookieJar,
         path_params: &models::ListUserApprovalsPathParams,
         query_params: &models::ListUserApprovalsQueryParams,
-    ) -> Result<ListUserApprovalsResponse, ()> {
+    ) -> Result<ListUserApprovalsResponse, Error> {
         let statuses = if query_params.status.is_empty() {
             None
         } else {
@@ -158,27 +155,25 @@ impl Approvals for BackendApi {
                     user_id: path_params.user_id.clone(),
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 }
 
 #[backend_core::async_trait]
-impl Devices for BackendApi {
+impl Devices<Error> for BackendApi {
     async fn disable_user_device(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
         path_params: &models::DisableUserDevicePathParams,
-    ) -> Result<DisableUserDeviceResponse, ()> {
+    ) -> Result<DisableUserDeviceResponse, Error> {
         let device = self
             .state
             .device
             .get_user_device(&path_params.user_id, &path_params.device_id)
             .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let Some(device) = device else {
             return Ok(DisableUserDeviceResponse::Status404_NotFound(kc_error(
@@ -203,8 +198,7 @@ impl Devices for BackendApi {
                 let dto = DeviceRecordDto::from(row);
                 DisableUserDeviceResponse::Status200_DeviceDisabled(dto.into())
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn list_user_devices(
@@ -214,7 +208,7 @@ impl Devices for BackendApi {
         _cookies: &CookieJar,
         path_params: &models::ListUserDevicesPathParams,
         query_params: &models::ListUserDevicesQueryParams,
-    ) -> Result<ListUserDevicesResponse, ()> {
+    ) -> Result<ListUserDevicesResponse, Error> {
         self.state
             .device
             .list_user_devices(
@@ -232,8 +226,7 @@ impl Devices for BackendApi {
                     user_id: path_params.user_id.clone(),
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn lookup_device(
@@ -242,7 +235,7 @@ impl Devices for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::DeviceLookupRequest,
-    ) -> Result<LookupDeviceResponse, ()> {
+    ) -> Result<LookupDeviceResponse, Error> {
         let req = backend_model::kc::DeviceLookupRequest {
             device_id: body.device_id.clone(),
             jkt: body.jkt.clone(),
@@ -267,20 +260,19 @@ impl Devices for BackendApi {
                     "Device not found",
                 )),
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 }
 
 #[backend_core::async_trait]
-impl Users for BackendApi {
+impl Users<Error> for BackendApi {
     async fn create_user(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::UserUpsertRequest,
-    ) -> Result<CreateUserResponse, ()> {
+    ) -> Result<CreateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
         self.state
             .user
@@ -290,8 +282,7 @@ impl Users for BackendApi {
                 let dto = UserRecordDto::from(row);
                 CreateUserResponse::Status201_Created(dto.into())
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn delete_user(
@@ -300,7 +291,7 @@ impl Users for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         path_params: &models::DeleteUserPathParams,
-    ) -> Result<DeleteUserResponse, ()> {
+    ) -> Result<DeleteUserResponse, Error> {
         self.state
             .user
             .delete_user(&path_params.user_id)
@@ -312,8 +303,7 @@ impl Users for BackendApi {
                     DeleteUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn get_user(
@@ -322,7 +312,7 @@ impl Users for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         path_params: &models::GetUserPathParams,
-    ) -> Result<GetUserResponse, ()> {
+    ) -> Result<GetUserResponse, Error> {
         self.state
             .user
             .get_user(&path_params.user_id)
@@ -336,8 +326,7 @@ impl Users for BackendApi {
                     GetUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn search_users(
@@ -346,7 +335,7 @@ impl Users for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::UserSearchRequest,
-    ) -> Result<SearchUsersResponse, ()> {
+    ) -> Result<SearchUsersResponse, Error> {
         let req = UserSearch::from(body.clone());
         self.state
             .user
@@ -362,8 +351,7 @@ impl Users for BackendApi {
                     total_count: None,
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn update_user(
@@ -373,7 +361,7 @@ impl Users for BackendApi {
         _cookies: &CookieJar,
         path_params: &models::UpdateUserPathParams,
         body: &models::UserUpsertRequest,
-    ) -> Result<UpdateUserResponse, ()> {
+    ) -> Result<UpdateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
         self.state
             .user
@@ -388,28 +376,26 @@ impl Users for BackendApi {
                     UpdateUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 }
 
 #[backend_core::async_trait]
-impl Enrollment for BackendApi {
+impl Enrollment<Error> for BackendApi {
     async fn confirm_sms(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::SmsConfirmRequest,
-    ) -> Result<ConfirmSmsResponse, ()> {
+    ) -> Result<ConfirmSmsResponse, Error> {
         let req = SmsConfirmRequest::from(body.clone());
         let sms = self
             .state
             .sms
             .get_sms_by_hash(&req.hash)
             .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let Some(sms) = sms else {
             return Ok(ConfirmSmsResponse::Status400_BadRequest(kc_error(
@@ -448,8 +434,7 @@ impl Enrollment for BackendApi {
                     reason: None,
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn enrollment_bind(
@@ -459,7 +444,7 @@ impl Enrollment for BackendApi {
         _cookies: &CookieJar,
         _header_params: &models::EnrollmentBindHeaderParams,
         body: &models::EnrollmentBindRequest,
-    ) -> Result<EnrollmentBindResponse, ()> {
+    ) -> Result<EnrollmentBindResponse, Error> {
         let req = backend_model::kc::EnrollmentBindRequest::from(body.clone());
 
         // Check if device is already bound to someone else
@@ -468,8 +453,7 @@ impl Enrollment for BackendApi {
             .device
             .find_device_binding(&req.device_id, &req.jkt)
             .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         if let Some((bound_user_id, _)) = existing {
             if bound_user_id != req.user_id {
@@ -493,8 +477,7 @@ impl Enrollment for BackendApi {
                     bound_user_id: Some(req.user_id),
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn enrollment_precheck(
@@ -504,7 +487,7 @@ impl Enrollment for BackendApi {
         _cookies: &CookieJar,
         _header_params: &models::EnrollmentPrecheckHeaderParams,
         body: &models::EnrollmentPrecheckRequest,
-    ) -> Result<EnrollmentPrecheckResponse, ()> {
+    ) -> Result<EnrollmentPrecheckResponse, Error> {
         // In a real app, this would involve complex policy logic.
         // For now, we check if the device is already bound.
         let existing = self
@@ -512,8 +495,7 @@ impl Enrollment for BackendApi {
             .device
             .find_device_binding(&body.device_id, &body.jkt)
             .await
-            .map_err(repo_err)
-            .map_err(|_| ())?;
+            .await?;
 
         let decision = if let Some((user_id, _)) = existing {
             models::EnrollmentPrecheckResponse {
@@ -545,7 +527,7 @@ impl Enrollment for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::PhoneResolveOrCreateRequest,
-    ) -> Result<ResolveOrCreateUserByPhoneResponse, ()> {
+    ) -> Result<ResolveOrCreateUserByPhoneResponse, Error> {
         self.state
             .user
             .resolve_or_create_user_by_phone(&body.realm, &body.phone_number)
@@ -560,8 +542,7 @@ impl Enrollment for BackendApi {
                     },
                 )
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn resolve_user_by_phone(
@@ -570,7 +551,7 @@ impl Enrollment for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::PhoneResolveRequest,
-    ) -> Result<ResolveUserByPhoneResponse, ()> {
+    ) -> Result<ResolveUserByPhoneResponse, Error> {
         self.state
             .user
             .resolve_user_by_phone(&body.realm, &body.phone_number)
@@ -601,8 +582,7 @@ impl Enrollment for BackendApi {
                     )
                 }
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 
     async fn send_sms(
@@ -611,7 +591,7 @@ impl Enrollment for BackendApi {
         _host: &Host,
         _cookies: &CookieJar,
         body: &models::SmsSendRequest,
-    ) -> Result<SendSmsResponse, ()> {
+    ) -> Result<SendSmsResponse, Error> {
         let req = SmsSendRequest::from(body.clone());
 
         use sha2::{Digest, Sha256};
@@ -644,7 +624,6 @@ impl Enrollment for BackendApi {
                     status: Some(queued.status),
                 })
             })
-            .map_err(repo_err)
-            .map_err(|_| ())
+            .map_err(Into::into)
     }
 }

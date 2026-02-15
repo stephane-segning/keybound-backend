@@ -3,11 +3,11 @@ pub mod kc;
 pub mod staff;
 
 use crate::state::AppState;
+use axum::response::IntoResponse;
 use backend_auth::ServiceContext;
-use backend_core::Error;
+use backend_core::{AppResult, Error};
 use http::{HeaderMap, HeaderValue, Request, header::AUTHORIZATION};
 use std::sync::Arc;
-use swagger::ApiError;
 use tracing::debug;
 
 #[derive(Clone)]
@@ -28,11 +28,11 @@ impl BackendApi {
 
     pub(crate) fn require_user_id(
         context: &ServiceContext,
-    ) -> std::result::Result<String, ApiError> {
+    ) -> AppResult<String> {
         context
             .user_id()
             .map(ToOwned::to_owned)
-            .ok_or_else(|| ApiError("Missing bearer subject".to_owned()))
+            .ok_or_else(|| Error::unauthorized("Missing bearer subject"))
     }
 
     pub(crate) fn normalize_page_limit(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
@@ -46,10 +46,6 @@ pub(crate) fn kc_error(code: &str, message: &str) -> gen_oas_server_kc::models::
     gen_oas_server_kc::models::Error::new(code.to_owned(), message.to_owned())
 }
 
-pub(crate) fn repo_err(err: Error) -> ApiError {
-    ApiError(err.to_string())
-}
-
 pub(crate) fn is_unique_violation(err: &Error) -> bool {
     matches!(
         err,
@@ -57,9 +53,44 @@ pub(crate) fn is_unique_violation(err: &Error) -> bool {
     )
 }
 
-impl gen_oas_server_bff::apis::ErrorHandler<()> for BackendApi {}
-impl gen_oas_server_kc::apis::ErrorHandler<()> for BackendApi {}
-impl gen_oas_server_staff::apis::ErrorHandler<()> for BackendApi {}
+#[backend_core::async_trait]
+impl gen_oas_server_bff::apis::ErrorHandler<Error> for BackendApi {
+    async fn handle_error(
+        &self,
+        _method: &::http::Method,
+        _host: &headers::Host,
+        _cookies: &axum_extra::extract::CookieJar,
+        error: Error,
+    ) -> Result<axum::response::Response, http::StatusCode> {
+        Ok(error.into_response())
+    }
+}
+
+#[backend_core::async_trait]
+impl gen_oas_server_kc::apis::ErrorHandler<Error> for BackendApi {
+    async fn handle_error(
+        &self,
+        _method: &::http::Method,
+        _host: &headers::Host,
+        _cookies: &axum_extra::extract::CookieJar,
+        error: Error,
+    ) -> Result<axum::response::Response, http::StatusCode> {
+        Ok(error.into_response())
+    }
+}
+
+#[backend_core::async_trait]
+impl gen_oas_server_staff::apis::ErrorHandler<Error> for BackendApi {
+    async fn handle_error(
+        &self,
+        _method: &::http::Method,
+        _host: &headers::Host,
+        _cookies: &axum_extra::extract::CookieJar,
+        error: Error,
+    ) -> Result<axum::response::Response, http::StatusCode> {
+        Ok(error.into_response())
+    }
+}
 
 #[backend_core::async_trait]
 impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
