@@ -10,15 +10,15 @@ Tokenization/user-storage backend with three HTTP surfaces:
 
 ## Core Architecture
 - Runtime is native `axum` (no generated `swagger` runtime dispatch).
-- Layering is strict: `controller -> service -> repository`.
-- Controllers: `crates/backend-server/src/api.rs`
-- Services: `crates/backend-server/src/services.rs`
+- Layering is strict: `controller -> repository` (explicit service layer removed).
+- Controllers: `crates/backend-server/src/api/mod.rs` (and submodules)
+- API modules: `api/bff.rs`, `api/kc.rs`, `api/staff.rs`
 - Repository: `crates/backend-repository/src/pg/mod.rs` (and submodules)
 
 ## Crate Roles
 - `backend-core`: config + shared `Error`/`Result`
 - `backend-auth`: axum middleware/extractors (request context/auth)
-- `backend-server`: router/controllers/services/state/retry worker
+- `backend-server`: router/controllers/state/retry worker
 - `backend-repository`: SQLx-Data repository layer. SQL queries are externalized in `queries/`.
 - `backend-model`: `FromRow` DB structs + `o2o` DTO mapping
 - `backend-id`: prefixed CUID ID generation

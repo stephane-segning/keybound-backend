@@ -1,0 +1,559 @@
+openapi: 3.0.3
+info:
+  title: Customer Registration Core API
+  version: 1.1.0
+  description: >
+    Core KYC + limits API consumed by a customer-facing BFF. Identity handled by Keycloak (JWT).
+servers:
+  - url: https://api.example.com
+    description: Example production server
+
+tags:
+  - name: KYC
+    description: KYC case/submission and documents.
+  - name: Limits
+    description: Transaction limits derived from KYC tier.
+
+paths:
+  /api/kyc/cases/mine:
+    get:
+      tags: [KYC]
+      summary: Get my KYC case
+      description: Retrieve the KYC case and active submission summary for the authenticated user.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: KYC case + active submission.
+          headers:
+            ETag:
+              description: Entity tag for optimistic concurrency on PATCH.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycCaseResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [KYC]
+      summary: Update my KYC profile data
+      description: >
+        Patch profile fields for the active submission. Does not upload documents.
+        Use If-Match with the ETag returned by GET to avoid lost updates.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KycProfilePatchRequest' }
+      responses:
+        '200':
+          description: Updated case + submission summary.
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycCaseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/kyc/cases/mine:open-submission:
+    post:
+      tags: [KYC]
+      summary: Open a new submission version
+      description: >
+        Creates a new KYC submission version (e.g., for resubmission or re-KYC) and makes it active.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenSubmissionRequest' }
+      responses:
+        '201':
+          description: New submission opened.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycCaseResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/kyc/submissions/{submissionId}:
+    get:
+      tags: [KYC]
+      summary: Get submission detail
+      description: Retrieve detailed information for a submission (documents, comments visible to customer, etc.).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submission detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycSubmissionDetailResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/kyc/submissions/{submissionId}:submit:
+    post:
+      tags: [KYC]
+      summary: Submit a KYC submission
+      description: >
+        Submits the submission for review. After submission, profile fields become read-only until staff requests more info.
+        Idempotency-Key is recommended for safe retries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Submission submitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycSubmissionDetailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/kyc/submissions/{submissionId}/documents:init:
+    post:
+      tags: [KYC]
+      summary: Initialize a document upload
+      description: >
+        Returns a pre-signed URL to upload a document to S3 and creates a document record.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InitDocumentUploadRequest' }
+      responses:
+        '201':
+          description: Upload initialized.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InitDocumentUploadResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/kyc/documents/{documentId}:confirm:
+    post:
+      tags: [KYC]
+      summary: Confirm an uploaded document
+      description: >
+        Confirms the S3 upload and stores hashes/metadata. Idempotency-Key is recommended.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmDocumentUploadRequest' }
+      responses:
+        '200':
+          description: Document confirmed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycDocument' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/limits:
+    get:
+      tags: [Limits]
+      summary: Get transaction limits
+      description: Retrieve deposit/withdrawal limits based on current KYC tier and usage.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Limits and usage details.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LimitsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SubmissionId:
+      name: submissionId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^sub_[a-z0-9]{10,}$'
+      description: Submission ID (prefixed CUID).
+
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^doc_[a-z0-9]{10,}$'
+      description: Document ID (prefixed CUID).
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Idempotency key for safe retries.
+
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      schema:
+        type: string
+      description: ETag value from the most recent GET response.
+
+  responses:
+    BadRequest:
+      description: Bad request / validation error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Unauthorized:
+      description: Unauthorized.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: Not found.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Conflict:
+      description: Conflict / illegal state transition / duplicate.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    PreconditionFailed:
+      description: ETag mismatch (optimistic concurrency failure).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  schemas:
+    KycCaseStatus:
+      type: string
+      enum: [OPEN, CLOSED]
+
+    KycProvisioningStatus:
+      type: string
+      enum: [NONE, STARTED, SUCCEEDED, FAILED]
+
+    KycNextAction:
+      type: string
+      enum: [UPLOAD_DOCUMENTS, FIX_PROFILE, WAIT, CONTACT_SUPPORT]
+      description: UI helper derived from status.
+
+    KycDocumentType:
+      type: string
+      enum: [ID_FRONT, ID_BACK, SELFIE, PROOF_OF_ADDRESS]
+
+    KycDocumentStatus:
+      type: string
+      enum: [INITIATED, UPLOADED, VERIFIED, REJECTED]
+
+    KycCaseResponse:
+      type: object
+      required: [caseId, caseStatus, activeSubmission]
+      properties:
+        caseId:
+          type: string
+          pattern: '^kyc_[a-z0-9]{10,}$'
+        caseStatus:
+          $ref: '#/components/schemas/KycCaseStatus'
+        currentTier:
+          type: integer
+          minimum: 0
+          maximum: 3
+        activeSubmission:
+          $ref: '#/components/schemas/KycSubmissionSummary'
+
+    KycSubmissionSummary:
+      type: object
+      required: [submissionId, version, status]
+      properties:
+        submissionId:
+          type: string
+          pattern: '^sub_[a-z0-9]{10,}$'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/KycSubmissionStatus'
+        requestedTier:
+          type: integer
+          minimum: 1
+          maximum: 3
+        decidedTier:
+          type: integer
+          minimum: 1
+          maximum: 3
+          nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        provisioningStatus:
+          $ref: '#/components/schemas/KycProvisioningStatus'
+        nextAction:
+          $ref: '#/components/schemas/KycNextAction'
+
+
+    KycSubmissionStatus:
+      type: string
+      enum:
+        - DRAFT
+        - SUBMITTED
+        - IN_VERIFICATION
+        - RISK_ASSESSMENT
+        - PENDING_MANUAL_REVIEW
+        - PENDING_USER_RESPONSE
+        - APPROVED
+        - REJECTED
+
+    KycProfilePatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, format: email }
+        phoneNumber: { type: string, maxLength: 64 }
+        dateOfBirth: { type: string, format: date }
+        nationality: { type: string, maxLength: 2, description: "ISO 3166-1 alpha-2" }
+        address: { $ref: '#/components/schemas/KycAddress' }
+
+    OpenSubmissionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        requestedTier:
+          type: integer
+          minimum: 1
+          maximum: 3
+
+    KycSubmissionDetailResponse:
+      type: object
+      required: [submissionId, version, status, userProfile, documents]
+      properties:
+        submissionId:
+          type: string
+          pattern: '^sub_[a-z0-9]{10,}$'
+        version:
+          type: integer
+        status:
+          $ref: '#/components/schemas/KycSubmissionStatus'
+        userProfile:
+          $ref: '#/components/schemas/UserProfile'
+        documents:
+          type: array
+          items: { $ref: '#/components/schemas/KycDocument' }
+        staffMessages:
+          type: array
+          description: Messages visible to the customer (e.g. request-info).
+          items: { $ref: '#/components/schemas/StaffMessage' }
+
+    UserProfile:
+      type: object
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        phoneNumber: { type: string }
+        dateOfBirth: { type: string, format: date }
+        nationality: { type: string }
+        address: { $ref: '#/components/schemas/KycAddress' }
+
+    KycAddress:
+      type: object
+      additionalProperties: false
+      properties:
+        gps:
+          type: object
+          additionalProperties: false
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lon: { type: number, minimum: -180, maximum: 180 }
+        street: { type: string }
+        city: { type: string }
+        postalCode: { type: string }
+        country:
+          type: string
+          description: "ISO 3166-1 alpha-2"
+          minLength: 2
+          maxLength: 2
+
+    KycDocument:
+      type: object
+      required: [documentId, documentType, fileName, status, uploadedAt]
+      properties:
+        documentId:
+          type: string
+          pattern: '^doc_[a-z0-9]{10,}$'
+        fileName: { type: string }
+        documentType:
+          $ref: '#/components/schemas/KycDocumentType'
+        status:
+          $ref: '#/components/schemas/KycDocumentStatus'
+        uploadedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    InitDocumentUploadRequest:
+      type: object
+      required: [documentType, fileName, mimeType]
+      additionalProperties: false
+      properties:
+        documentType:
+          $ref: '#/components/schemas/KycDocumentType'
+        fileName:
+          type: string
+          maxLength: 256
+        mimeType:
+          type: string
+          maxLength: 128
+        sizeBytes:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    InitDocumentUploadResponse:
+      type: object
+      required: [documentId, uploadUrl, expiresAt]
+      properties:
+        documentId:
+          type: string
+          pattern: '^doc_[a-z0-9]{10,}$'
+        uploadUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        requiredHeaders:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional headers the client must include in the PUT to S3.
+
+    ConfirmDocumentUploadRequest:
+      type: object
+      required: [sha256, sizeBytes]
+      additionalProperties: false
+      properties:
+        sha256:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+        sizeBytes:
+          type: integer
+          minimum: 1
+
+    StaffMessage:
+      type: object
+      required: [messageId, message, createdAt]
+      properties:
+        messageId:
+          type: string
+        message:
+          type: string
+          maxLength: 500
+        createdAt:
+          type: string
+          format: date-time
+
+    LimitsResponse:
+      type: object
+      properties:
+        kycTier: { type: integer }
+        tierName: { type: string }
+        currency: { type: string }
+        effectiveAt:
+          type: string
+          format: date-time
+        limits: { $ref: '#/components/schemas/LimitsResponseLimitsDto' }
+        usage: { $ref: '#/components/schemas/LimitsResponseUsageDto' }
+        available: { $ref: '#/components/schemas/LimitsResponseAvailableDto' }
+        allowedPaymentMethods:
+          type: array
+          items: { type: string }
+        restrictedFeatures:
+          type: array
+          items: { type: string }
+
+    LimitsResponseLimitsDto:
+      type: object
+      properties:
+        dailyDepositLimit: { type: number }
+        dailyWithdrawalLimit: { type: number }
+        perTransactionLimit: { type: number }
+        monthlyTransactionLimit: { type: number }
+
+    LimitsResponseUsageDto:
+      type: object
+      properties:
+        dailyDepositUsed: { type: number }
+        dailyWithdrawalUsed: { type: number }
+        monthlyUsed: { type: number }
+
+    LimitsResponseAvailableDto:
+      type: object
+      properties:
+        depositRemaining: { type: number }
+        withdrawalRemaining: { type: number }
+
+    ProblemDetails:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Application-specific error code (e.g., KYC_INVALID_STATE).
+        traceId:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }

@@ -7,7 +7,7 @@ Date: February 15, 2026
 1. Replace Kafka design assumptions with Redis-based eventing.
 2. Defer pgvector integration.
 3. Introduce a user-friendly worker framework for cron/scheduled jobs.
-4. Rework BFF handlers after `openapi/user-storage-bff.json` changes.
+4. Rework BFF handlers after `openapi/user-storage-bff.yaml` changes.
 5. Switch migration source to `crates/backend-migrate/migrations` with automatic PostgreSQL vs SQLite (`h2`) detection.
 6. Align `crates/backend-core/src/config.rs` with `config/default.yaml`.
 

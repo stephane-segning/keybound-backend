@@ -1,4 +1,4 @@
-use super::{repo_err, BackendApi};
+use super::{BackendApi, repo_err};
 use axum_extra::extract::CookieJar;
 use backend_auth::ServiceContext;
 use backend_model::staff::{
@@ -38,8 +38,14 @@ impl KycReview for BackendApi {
             .map_err(repo_err)
             .map_err(|_| ())?;
 
-        let status_filter = query_params.status.as_ref().map(|status| status.to_lowercase());
-        let search_filter = query_params.search.as_ref().map(|search| search.to_lowercase());
+        let status_filter = query_params
+            .status
+            .as_ref()
+            .map(|status| status.to_lowercase());
+        let search_filter = query_params
+            .search
+            .as_ref()
+            .map(|search| search.to_lowercase());
 
         let filtered_rows = rows
             .data
@@ -88,9 +94,7 @@ impl KycReview for BackendApi {
             page_size: Some(limit),
         };
 
-        Ok(ApiKycStaffSubmissionsGetResponse::Status200_PageOfKYCSubmissions(
-            response.into(),
-        ))
+        Ok(ApiKycStaffSubmissionsGetResponse::Status200_PageOfKYCSubmissions(response.into()))
     }
 
     async fn api_kyc_staff_submissions_user_id_approve_post(
@@ -171,9 +175,7 @@ impl KycReview for BackendApi {
         response.page_size = Some(limit);
         response.total_documents = Some(total_documents);
 
-        Ok(ApiKycStaffSubmissionsUserIdGetResponse::Status200_DetailedSubmission(
-            response.into(),
-        ))
+        Ok(ApiKycStaffSubmissionsUserIdGetResponse::Status200_DetailedSubmission(response.into()))
     }
 
     async fn api_kyc_staff_submissions_user_id_reject_post(

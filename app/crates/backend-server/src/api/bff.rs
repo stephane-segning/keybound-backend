@@ -1,4 +1,4 @@
-use super::{repo_err, BackendApi};
+use super::{BackendApi, repo_err};
 use backend_auth::ServiceContext;
 use backend_model::bff::{
     KycDocumentUploadRequest, KycInformationPatchRequest, KycInformationResponseDto,
@@ -9,9 +9,7 @@ use gen_oas_server_bff::apis::kyc::{
     ApiKycCasesMineGetResponse, ApiKycCasesMinePatchResponse,
     ApiKycCasesMineSubmissionPostResponse, ApiLimitsGetResponse, Kyc,
 };
-use gen_oas_server_bff::apis::kyc_documents::{
-    ApiKycCasesMineDocumentsPostResponse, KycDocuments,
-};
+use gen_oas_server_bff::apis::kyc_documents::{ApiKycCasesMineDocumentsPostResponse, KycDocuments};
 use gen_oas_server_bff::models;
 use http::Method;
 
@@ -173,7 +171,9 @@ impl Kyc for BackendApi {
                     restricted_features: Some(Vec::new()),
                     currency: Some("EUR".to_owned()),
                 };
-                Ok(ApiLimitsGetResponse::Status200_LimitsAndUsageDetails(limits))
+                Ok(ApiLimitsGetResponse::Status200_LimitsAndUsageDetails(
+                    limits,
+                ))
             }
             None => Ok(ApiLimitsGetResponse::Status404_CustomerNotFound),
         }

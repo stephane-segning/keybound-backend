@@ -96,7 +96,7 @@ configs:
   oas_server_bff:
     content: |
       {
-        "inputSpec": "/openapi/user-storage-bff.json",
+        "inputSpec": "/openapi/user-storage-bff.yaml",
         "generatorName": "rust-axum",
         "packageName": "gen_oas_server_bff",
         "packageVersion": "9.9.9"

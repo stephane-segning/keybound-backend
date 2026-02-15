@@ -58,10 +58,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
     {
         Ok(out) => {
             let message_id = out.message_id().map(|s| s.to_owned());
-            state
-                .sms
-                .mark_sms_sent(&row.id, message_id)
-                .await?;
+            state.sms.mark_sms_sent(&row.id, message_id).await?;
         }
         Err(e) => {
             let max_attempts = row.max_attempts.max(1) as u32;
@@ -73,10 +70,7 @@ async fn try_publish(state: &AppState, row: db::SmsMessageRow) -> backend_core::
                 .map(|v| v.initial_backoff_seconds)
                 .unwrap_or(1);
 
-            let backoff = backoff_seconds(
-                initial_backoff_seconds,
-                row.attempt_count.max(0) as u32,
-            );
+            let backoff = backoff_seconds(initial_backoff_seconds, row.attempt_count.max(0) as u32);
 
             let next_retry_at = if gave_up {
                 None

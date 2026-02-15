@@ -100,58 +100,6 @@ fn decode_jwt_claims(token: &str) -> Option<JwtClaims> {
     Some(JwtClaims { jkt })
 }
 
-fn verify_bff_signature(
-    req: &Request<Body>,
-    timestamp: &str,
-    signature: &str,
-    public_jwk: &Value,
-) -> bool {
-    let x = public_jwk.get("x").and_then(Value::as_str);
-    let y = public_jwk.get("y").and_then(Value::as_str);
-    let (Some(x), Some(y)) = (x, y) else {
-        return false;
-    };
-
-    let x = match URL_SAFE_NO_PAD.decode(x) {
-        Ok(v) if v.len() == 32 => v,
-        _ => return false,
-    };
-    let y = match URL_SAFE_NO_PAD.decode(y) {
-        Ok(v) if v.len() == 32 => v,
-        _ => return false,
-    };
-    let signature = match URL_SAFE_NO_PAD.decode(signature) {
-        Ok(v) if v.len() == 64 => v,
-        _ => return false,
-    };
-
-    let mut pk = [0u8; 65];
-    pk[0] = 0x04;
-    pk[1..33].copy_from_slice(&x);
-    pk[33..65].copy_from_slice(&y);
-
-    let method = req.method().as_str().to_uppercase();
-    let path = req.uri().path();
-    let query = req.uri().query().unwrap_or("");
-    let payload = format!("{method}\n{path}\n{query}\n{timestamp}");
-
-    let verifier = UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, pk);
-    verifier.verify(payload.as_bytes(), &signature).is_ok()
-}
-
-fn compute_jkt_thumbprint(jwk: &Value) -> Option<String> {
-    let kty = jwk.get("kty")?.as_str()?;
-    let crv = jwk.get("crv")?.as_str()?;
-    let x = jwk.get("x")?.as_str()?;
-    let y = jwk.get("y")?.as_str()?;
-    if kty != "EC" || crv != "P-256" {
-        return None;
-    }
-    let canonical = format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#);
-    let hash = Sha256::digest(canonical.as_bytes());
-    Some(URL_SAFE_NO_PAD.encode(hash))
-}
-
 fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let mut parts = value.splitn(2, ' ');

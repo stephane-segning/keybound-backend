@@ -5,7 +5,7 @@ pub mod staff;
 use crate::state::AppState;
 use backend_auth::ServiceContext;
 use backend_core::Error;
-use http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request};
+use http::{HeaderMap, HeaderValue, Request, header::AUTHORIZATION};
 use std::sync::Arc;
 use swagger::ApiError;
 use tracing::debug;
@@ -26,7 +26,9 @@ impl BackendApi {
         Self { state }
     }
 
-    pub(crate) fn require_user_id(context: &ServiceContext) -> std::result::Result<String, ApiError> {
+    pub(crate) fn require_user_id(
+        context: &ServiceContext,
+    ) -> std::result::Result<String, ApiError> {
         context
             .user_id()
             .map(ToOwned::to_owned)
@@ -88,10 +90,16 @@ impl gen_oas_server_staff::apis::ApiAuthBasic for BackendApi {
 }
 
 fn claims_from_header_key(headers: &HeaderMap<HeaderValue>, key: &str) -> Option<ServiceContext> {
-    let auth = headers.get(key).or_else(|| headers.get(AUTHORIZATION))?.clone();
+    let auth = headers
+        .get(key)
+        .or_else(|| headers.get(AUTHORIZATION))?
+        .clone();
     let mut req = Request::new(());
     req.headers_mut().insert(AUTHORIZATION, auth);
     let ctx = ServiceContext::from_request(&req);
-    debug!(has_user_id = ctx.user_id().is_some(), "constructed auth claims from header");
+    debug!(
+        has_user_id = ctx.user_id().is_some(),
+        "constructed auth claims from header"
+    );
     Some(ctx)
 }
