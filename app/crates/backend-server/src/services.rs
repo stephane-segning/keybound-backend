@@ -1,13 +1,15 @@
 use backend_model::{db, kc as kc_map, staff as staff_map};
-use backend_repository::{
-    ApprovalCreated, ApprovalRepo, DeviceRepo, KycDocumentInsert, KycRepo, PgRepository,
-    RepoResult, SmsPendingInsert, SmsQueued, SmsRepo, UserRepo,
-};
+use backend_repository::{ApprovalCreated, ApprovalRepo, ApprovalRepository, DeviceRepo, DeviceRepository, KycDocumentInsert, KycRepo, KycRepository, PgRepository, RepoResult, SmsPendingInsert, SmsQueued, SmsRepo, SmsRepository, UserRepo, UserRepository};
 use sqlx_data::{ParamsBuilder, Serial};
 
 #[derive(Clone)]
 pub struct BackendService {
     repository: PgRepository,
+    pub kyc: KycRepository,
+    pub user: UserRepository,
+    pub device: DeviceRepository,
+    pub approval: ApprovalRepository,
+    pub sms: SmsRepository,
 }
 
 impl BackendService {

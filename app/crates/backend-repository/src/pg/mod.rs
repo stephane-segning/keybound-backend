@@ -17,7 +17,6 @@ pub use user::{PgUserRepo, UserRepository};
 
 #[derive(Clone)]
 pub struct PgRepository {
-    pub pool: PgPool,
     pub kyc: KycRepository,
     pub user: UserRepository,
     pub device: DeviceRepository,
@@ -31,16 +30,11 @@ impl PgRepository {
         let resolve_user_by_phone_cache = Arc::new(Mutex::new(LruCache::new(capacity)));
 
         Self {
-            pool: pool.clone(),
             kyc: KycRepository::new(pool.clone()),
             user: UserRepository::new(pool.clone(), resolve_user_by_phone_cache),
             device: DeviceRepository::new(pool.clone()),
             approval: ApprovalRepository::new(pool.clone()),
             sms: SmsRepository::new(pool),
         }
-    }
-
-    pub fn pool(&self) -> &PgPool {
-        &self.pool
     }
 }
