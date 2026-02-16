@@ -29,7 +29,7 @@ jobs:
 
   cargo-version:
     name: Cargo Version Change Detector
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.detection.outputs.changed }}
@@ -46,7 +46,7 @@ jobs:
     needs:
       - release-build
       - tests
-    if: github.ref != 'refs/heads/main'
+    if: github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -68,7 +68,7 @@ jobs:
       - cargo-version
       - release-build
       - tests
-    if: github.ref == 'refs/heads/main' && needs.cargo-version.outputs.changed == 'true'
+    if: github.ref == 'refs/heads/master' && needs.cargo-version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
