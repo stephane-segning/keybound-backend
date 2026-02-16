@@ -6,3 +6,5 @@ gen*
 
 ### Helm ###
 */charts/*/charts
+
+*tmp*

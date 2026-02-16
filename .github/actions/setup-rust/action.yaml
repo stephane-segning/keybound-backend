@@ -15,4 +15,5 @@ runs:
         rust-version: ${{ inputs.rust-version }}
         cache: cargo
     - name: Prime cargo registry cache
+      shell: bash
       run: cargo fetch
