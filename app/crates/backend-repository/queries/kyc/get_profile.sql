@@ -1,20 +1,24 @@
 SELECT
-  external_id,
-  first_name,
-  last_name,
-  email,
-  phone_number,
-  date_of_birth,
-  nationality,
-  kyc_tier,
-  kyc_status::text as kyc_status,
-  submitted_at,
-  reviewed_at,
-  reviewed_by,
-  rejection_reason,
-  review_notes,
-  created_at,
-  updated_at,
-  version
-FROM kyc_profiles
-WHERE external_id = $1
+  ks.id as submission_id,
+  kc.user_id as external_id,
+  ks.first_name,
+  ks.last_name,
+  ks.email,
+  ks.phone_number,
+  ks.date_of_birth,
+  ks.nationality,
+  kc.current_tier as kyc_tier,
+  ks.status::text as kyc_status,
+  ks.submitted_at,
+  ks.decided_at as reviewed_at,
+  ks.decided_by as reviewed_by,
+  ks.rejection_reason,
+  ks.review_notes,
+  ks.created_at,
+  ks.updated_at,
+  ks.version
+FROM kyc_submission ks
+JOIN kyc_case kc ON ks.kyc_case_id = kc.id
+WHERE kc.user_id = $1
+ORDER BY ks.version DESC
+LIMIT 1

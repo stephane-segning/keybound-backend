@@ -1,4 +1,4 @@
-use super::{BackendApi, kc_error};
+use super::{kc_error, BackendApi};
 use crate::worker;
 use axum_extra::extract::CookieJar;
 use backend_core::Error;

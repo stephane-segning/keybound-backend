@@ -6,7 +6,7 @@ use axum::response::{IntoResponse, Response};
 use backend_core::KcAuth;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
+use jsonwebtoken::{Validation, decode, decode_header};
 use jwks::Jwks;
 use ring::hmac;
 use serde::Deserialize;
@@ -17,7 +17,7 @@ use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
 use tower::{Layer, Service};
-use tracing::{error, info};
+use tracing::{error};
 
 pub async fn require_kc_signature(
     cfg: &KcAuth,
