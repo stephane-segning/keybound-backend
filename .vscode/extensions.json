@@ -1,0 +1,13 @@
+{
+    "recommendations": [
+        "skellock.just",
+        "antfu.icons-carbon",
+        "panicbit.cargo",
+        "fill-labs.dependi",
+        "tamasfe.even-better-toml",
+        "pkief.material-icon-theme",
+        "dustypomerleau.rust-syntax",
+        "rooveterinaryinc.roo-cline",
+        "asciidoctor.asciidoctor-vscode"
+    ]
+}

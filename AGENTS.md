@@ -126,7 +126,7 @@ The repository implementation is split into domain-specific modules under `src/p
 Before finalizing:
 1. `cargo check --workspace`
 2. No runtime use of `swagger` or generated `server::Service`
-3. No direct `sqlx::query*` or `sqlx-data` usage for migrated modules (currently `user`).
+3. No direct `sqlx::query*` or `sqlx-data` usage for migrated modules (currently `user`, `device`, `approval`).
 4. No manual edits under `crates/gen_*`
 5. Auth and error tests pass:
    - `cargo test -p backend-core --features axum --test error_response`
@@ -144,6 +144,14 @@ Before finalizing:
 Let's talk about all the rules we're having to work efficiently:
 - To work here, you should take the habit of first checking the web if there's a newer version of a framework or tool, before using the "known" version
 - When searching for code, use `grep` only in `{app,config,deploy,docs,openapi}` directories to avoid noise from `target/` or other ignored directories.
+
+### Work Methodology
+- **Analyze First**: Always read the existing implementation and related queries before starting a migration.
+- **Incremental Migration**: Migrate one module at a time.
+- **Type Safety**: Leverage Diesel DSL for type-safe queries. Avoid raw SQL.
+- **Error Mapping**: Consistently map Diesel errors to `backend_core::Error` using `Into::into`.
+- **Verification**: Run `cargo check --workspace` and relevant tests after every significant change.
+- **Documentation**: Keep `AGENTS.md` updated with the current state of the project (e.g., which modules are migrated).
 
 ### Rust (Cargo workspace)
 

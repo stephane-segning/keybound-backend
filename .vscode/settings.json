@@ -1,6 +1,12 @@
 {
-    "workbench.colorTheme": "Monokai",
+    "workbench.colorTheme": "Experimental Dark",
     "workbench.iconTheme": "material-icon-theme",
     "workbench.productIconTheme": "icons-carbon",
-    "workbench.preferredDarkColorTheme": "Default Dark+"
+    "workbench.preferredDarkColorTheme": "Red",
+    "material-icon-theme.activeIconPack": "react",
+    "files.exclude": {
+        "**/.idea": true,
+        "**/*tmp*": true,
+        "**/target": true
+    }
 }
