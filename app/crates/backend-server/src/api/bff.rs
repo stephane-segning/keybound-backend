@@ -147,9 +147,29 @@ impl Kyc<Error> for BackendApi {
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
         _header_params: &models::ApiKycSubmissionsSubmissionIdSubmitPostHeaderParams,
-        _path_params: &models::ApiKycSubmissionsSubmissionIdSubmitPostPathParams,
+        path_params: &models::ApiKycSubmissionsSubmissionIdSubmitPostPathParams,
     ) -> Result<ApiKycSubmissionsSubmissionIdSubmitPostResponse, Error> {
         let user_id = Self::require_user_id(claims)?;
+        let expected_submission_id = format!("sub_{user_id}");
+
+        if expected_submission_id != path_params.submission_id {
+            return Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
+                Self::not_found_problem("KYC submission not found"),
+            ));
+        }
+
+        let updated = self
+            .state
+            .kyc
+            .submit_kyc_profile(&user_id, &path_params.submission_id)
+            .await?;
+
+        if !updated {
+            return Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
+                Self::not_found_problem("KYC submission not found"),
+            ));
+        }
+
         let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
 
         match profile {

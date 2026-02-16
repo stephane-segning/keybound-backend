@@ -1,3 +1,6 @@
 {
-    "workbench.colorTheme": "Monokai Dimmed"
+    "workbench.colorTheme": "Abyss",
+    "workbench.iconTheme": "material-icon-theme",
+    "workbench.productIconTheme": "icons-carbon",
+    "workbench.preferredDarkColorTheme": "Default Dark+"
 }

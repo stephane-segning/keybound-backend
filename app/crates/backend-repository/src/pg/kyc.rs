@@ -83,6 +83,13 @@ pub trait PgKycRepo {
         date_of_birth: Option<String>,
         nationality: Option<String>,
     ) -> sqlx_data::Result<Option<db::KycProfileRow>>;
+
+    #[dml(file = "queries/kyc/submit_profile.sql", unchecked)]
+    async fn submit_kyc_profile_db(
+        &self,
+        submission_id: String,
+        external_id: String,
+    ) -> sqlx_data::Result<sqlx_data::QueryResult>;
 }
 
 #[derive(Clone)]
@@ -216,6 +223,17 @@ impl KycRepo for KycRepository {
             )
             .await?;
         Ok(row)
+    }
+
+    async fn submit_kyc_profile(
+        &self,
+        submission_id: &str,
+        external_id: &str,
+    ) -> RepoResult<bool> {
+        let res = self
+            .submit_kyc_profile_db(submission_id.to_owned(), external_id.to_owned())
+            .await?;
+        Ok(res.rows_affected() > 0)
     }
 }
 

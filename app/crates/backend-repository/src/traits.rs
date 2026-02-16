@@ -97,6 +97,11 @@ pub trait KycRepo: Send + Sync {
         external_id: &str,
         req: &backend_model::staff::KycRequestInfoRequest,
     ) -> impl std::future::Future<Output = RepoResult<bool>> + Send;
+    fn submit_kyc_profile(
+        &self,
+        submission_id: &str,
+        external_id: &str,
+    ) -> impl std::future::Future<Output = RepoResult<bool>> + Send;
     fn patch_kyc_profile(
         &self,
         external_id: &str,

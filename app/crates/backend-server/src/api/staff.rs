@@ -16,6 +16,7 @@ use gen_oas_server_staff::models;
 use headers::Host;
 use http::Method;
 use sqlx_data::ParamsBuilder;
+use tracing::info;
 
 #[backend_core::async_trait]
 impl KycReview<Error> for BackendApi {
@@ -114,6 +115,12 @@ impl KycReview<Error> for BackendApi {
             .await?;
 
         if updated {
+            info!(
+                user_id = %path_params.user_id,
+                new_tier = req.new_tier,
+                notes = req.notes.as_deref(),
+                "Fineract flow placeholder: staff approved KYC and would provision user."
+            );
             Ok(ApiKycStaffSubmissionsUserIdApprovePostResponse::Status200_KYCApproved)
         } else {
             Ok(ApiKycStaffSubmissionsUserIdApprovePostResponse::Status400_ValidationFailed)
