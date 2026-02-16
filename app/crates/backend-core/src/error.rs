@@ -60,6 +60,15 @@ pub enum Error {
     #[error("SQLx error: {0}")]
     SqlxError(#[from] sqlx::Error),
 
+    #[error("Diesel error: {0}")]
+    Diesel(#[from] diesel::result::Error),
+
+    #[error("Diesel connection error: {0}")]
+    DieselConnection(#[from] diesel::result::ConnectionError),
+
+    #[error("Diesel pool error: {0}")]
+    DieselPool(String),
+
     #[error("SQLx-Data parser error: {0}")]
     SqlxDataParser(#[from] sqlx_data_parser::ParserError),
 
@@ -170,6 +179,24 @@ impl Error {
                 error_key: "DATABASE_ERROR",
                 status_code: 500,
                 message: format!("Database operation failed: {t}"),
+                context: None,
+            },
+            Self::Diesel(e) => ErrorMeta {
+                error_key: "DATABASE_ERROR",
+                status_code: 500,
+                message: format!("Database operation failed: {e}"),
+                context: None,
+            },
+            Self::DieselConnection(e) => ErrorMeta {
+                error_key: "DATABASE_ERROR",
+                status_code: 500,
+                message: format!("Database connection failed: {e}"),
+                context: None,
+            },
+            Self::DieselPool(e) => ErrorMeta {
+                error_key: "DATABASE_ERROR",
+                status_code: 500,
+                message: format!("Database pool error: {e}"),
                 context: None,
             },
             Self::SqlxDataParser(e) => ErrorMeta {

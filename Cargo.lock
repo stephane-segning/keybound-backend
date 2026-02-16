@@ -897,6 +897,7 @@ dependencies = [
  "axum",
  "chrono",
  "cuid",
+ "diesel",
  "hex",
  "serde",
  "serde_json",
