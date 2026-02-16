@@ -112,7 +112,7 @@ impl KycRepo for KycRepository {
                         ))
                         .get_result::<db::KycDocumentRow>(conn)
                         .await
-                        .map_err(Into::into)
+                        .map_err(|e| backend_core::Error::Diesel(e))
                 })
             })
             .await?;
@@ -133,7 +133,7 @@ impl KycRepo for KycRepository {
             .first::<db::KycSubmissionRow>(&mut conn)
             .await
             .optional()
-            .map_err(Into::into)
+            .map_err(|e| backend_core::Error::Diesel(e))
     }
 
     async fn list_kyc_documents(
@@ -154,12 +154,13 @@ impl KycRepo for KycRepository {
             .await
             .map_err(|e| backend_core::Error::Diesel(e))?;
 
+        let total = rows.len() as i64;
         Ok(sqlx_data::Serial {
             data: rows,
-            page: 0,
-            size: 0,
-            total_items: 0,
-            total_pages: 0,
+            page: 1,
+            size: total as u32,
+            total_items: total,
+            total_pages: 1,
         })
     }
 
@@ -181,7 +182,7 @@ impl KycRepo for KycRepository {
             .first::<db::KycDocumentRow>(&mut conn)
             .await
             .optional()
-            .map_err(Into::into)
+            .map_err(|e| backend_core::Error::Diesel(e))
     }
 
     async fn get_kyc_tier(&self, external_id_val: &str) -> RepoResult<Option<i32>> {
@@ -195,7 +196,7 @@ impl KycRepo for KycRepository {
             .first::<i32>(&mut conn)
             .await
             .optional()
-            .map_err(Into::into)
+            .map_err(|e| backend_core::Error::Diesel(e))
     }
 
     async fn list_kyc_submissions(
@@ -212,12 +213,13 @@ impl KycRepo for KycRepository {
             .await
             .map_err(|e| backend_core::Error::Diesel(e))?;
 
+        let total = rows.len() as i64;
         Ok(sqlx_data::Serial {
             data: rows,
-            page: 0,
-            size: 0,
-            total_items: 0,
-            total_pages: 0,
+            page: 1,
+            size: total as u32,
+            total_items: total,
+            total_pages: 1,
         })
     }
 
@@ -373,6 +375,28 @@ impl KycRepo for KycRepository {
 
         let mut conn = self.get_conn().await?;
 
+        #[derive(AsChangeset)]
+        #[diesel(table_name = kyc_submission)]
+        struct KycUpdate {
+            first_name: Option<String>,
+            last_name: Option<String>,
+            email: Option<String>,
+            phone_number: Option<String>,
+            date_of_birth: Option<String>,
+            nationality: Option<String>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let update = KycUpdate {
+            first_name: req.first_name.clone(),
+            last_name: req.last_name.clone(),
+            email: req.email.clone(),
+            phone_number: req.phone_number.clone(),
+            date_of_birth: req.date_of_birth.clone(),
+            nationality: req.nationality.clone(),
+            updated_at: Utc::now(),
+        };
+
         let mut query = diesel::update(kyc_submission::table)
             .filter(kyc_submission::status.eq("DRAFT"))
             .filter(
@@ -388,27 +412,12 @@ impl KycRepo for KycRepository {
             query = query.filter(kyc_submission::version.eq(v));
         }
 
-        let first_name_val = req.first_name.clone();
-        let last_name_val = req.last_name.clone();
-        let email_val = req.email.clone();
-        let phone_number_val = req.phone_number.clone();
-        let date_of_birth_val = req.date_of_birth.clone();
-        let nationality_val = req.nationality.clone();
-
         query
-            .set((
-                kyc_submission::first_name.eq(first_name_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("first_name"))),
-                kyc_submission::last_name.eq(last_name_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("last_name"))),
-                kyc_submission::email.eq(email_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("email"))),
-                kyc_submission::phone_number.eq(phone_number_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("phone_number"))),
-                kyc_submission::date_of_birth.eq(date_of_birth_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("date_of_birth"))),
-                kyc_submission::nationality.eq(nationality_val.map(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>).unwrap_or(diesel::dsl::sql("nationality"))),
-                kyc_submission::updated_at.eq(Utc::now()),
-            ))
+            .set(update)
             .get_result::<db::KycSubmissionRow>(&mut conn)
             .await
             .optional()
-            .map_err(Into::into)
+            .map_err(|e| backend_core::Error::Diesel(e))
     }
 
     async fn submit_kyc_profile(&self, submission_id_val: &str, external_id_val: &str) -> RepoResult<bool> {
