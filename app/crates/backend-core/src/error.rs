@@ -48,6 +48,9 @@ pub enum Error {
     #[error("Server Error: {0}")]
     Server(String),
 
+    #[error("S3 Error: {0}")]
+    S3(String),
+
     #[error("Address parse error: {0}")]
     AddrParseError(#[from] std::net::AddrParseError),
 
@@ -128,6 +131,10 @@ impl Error {
         }
     }
 
+    pub fn s3(message: impl Into<String>) -> Self {
+        Self::S3(message.into())
+    }
+
     pub fn with_context(self, context: Value) -> Self {
         match self {
             Self::Http {
@@ -169,6 +176,12 @@ impl Error {
                 error_key: "DATABASE_ERROR",
                 status_code: 500,
                 message: format!("Database operation failed: {e}"),
+                context: None,
+            },
+            Self::S3(e) => ErrorMeta {
+                error_key: "S3_ERROR",
+                status_code: 500,
+                message: format!("S3 operation failed: {e}"),
                 context: None,
             },
             Self::Http {

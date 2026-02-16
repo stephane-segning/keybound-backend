@@ -244,13 +244,59 @@ impl KycReview<Error> for BackendApi {
 
     async fn api_kyc_staff_submissions_user_id_documents_document_id_download_url_post(
         &self,
-        method: &Method,
-        host: &Host,
-        cookies: &CookieJar,
-        claims: &Self::Claims,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::ApiKycStaffSubmissionsUserIdDocumentsDocumentIdDownloadUrlPostPathParams,
         body: &Option<models::PresignedDownloadUrlRequest>,
     ) -> Result<ApiKycStaffSubmissionsUserIdDocumentsDocumentIdDownloadUrlPostResponse, Error> {
-        todo!()
+        let document = self
+            .state
+            .kyc
+            .get_kyc_document(&path_params.user_id, &path_params.document_id)
+            .await?;
+
+        let Some(document) = document else {
+            return Ok(ApiKycStaffSubmissionsUserIdDocumentsDocumentIdDownloadUrlPostResponse::Status404_SubmissionOrDocumentNotFound);
+        };
+
+        let expires_in = body
+            .as_ref()
+            .and_then(|b| b.expires_in_seconds)
+            .unwrap_or(300)
+            .clamp(60, 3600);
+
+        let content_disposition = body
+            .as_ref()
+            .and_then(|b| b.response_content_disposition.clone());
+
+        let presigned_req = self
+            .state
+            .s3
+            .get_object()
+            .bucket(&document.s3_bucket)
+            .key(&document.s3_key)
+            .set_response_content_disposition(content_disposition)
+            .presigned(
+                aws_sdk_s3::presigning::PresigningConfig::expires_in(
+                    std::time::Duration::from_secs(expires_in as u64),
+                )
+                .map_err(|e| Error::s3(e.to_string()))?,
+            )
+            .await
+            .map_err(|e| Error::s3(e.to_string()))?;
+
+        let expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
+
+        let response = models::PresignedDownloadUrlResponse {
+            url: presigned_req.uri().to_string(),
+            expires_at,
+            document_id: Some(document.id),
+            file_name: Some(document.file_name),
+            mime_type: Some(document.mime_type),
+        };
+
+        Ok(ApiKycStaffSubmissionsUserIdDocumentsDocumentIdDownloadUrlPostResponse::Status200_PresignedDownloadURLCreated(response))
     }
 }

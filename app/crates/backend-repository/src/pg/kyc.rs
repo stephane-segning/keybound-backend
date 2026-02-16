@@ -13,6 +13,13 @@ pub trait PgKycRepo {
         params: impl IntoParams,
     ) -> sqlx_data::Result<Serial<db::KycDocumentRow>>;
 
+    #[dml(file = "queries/kyc/get_document.sql", unchecked)]
+    async fn get_kyc_document_db(
+        &self,
+        external_id: String,
+        id: String,
+    ) -> sqlx_data::Result<Option<db::KycDocumentRow>>;
+
     #[dml(file = "queries/staff/list_kyc_submissions.sql", unchecked)]
     async fn list_kyc_submissions_db(
         &self,
@@ -143,6 +150,17 @@ impl KycRepo for KycRepository {
     ) -> RepoResult<Serial<db::KycDocumentRow>> {
         let rows = self.list_kyc_documents_db(external_id, params).await?;
         Ok(rows)
+    }
+
+    async fn get_kyc_document(
+        &self,
+        external_id: &str,
+        document_id: &str,
+    ) -> RepoResult<Option<db::KycDocumentRow>> {
+        let row = self
+            .get_kyc_document_db(external_id.to_owned(), document_id.to_owned())
+            .await?;
+        Ok(row)
     }
 
     async fn get_kyc_tier(&self, external_id: &str) -> RepoResult<Option<i32>> {

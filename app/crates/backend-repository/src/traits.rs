@@ -68,6 +68,11 @@ pub trait KycRepo: Send + Sync {
     ) -> impl std::future::Future<
         Output = RepoResult<sqlx_data::Serial<backend_model::db::KycDocumentRow>>,
     > + Send;
+    fn get_kyc_document(
+        &self,
+        external_id: &str,
+        document_id: &str,
+    ) -> impl std::future::Future<Output = RepoResult<Option<backend_model::db::KycDocumentRow>>> + Send;
     fn get_kyc_tier(
         &self,
         external_id: &str,
