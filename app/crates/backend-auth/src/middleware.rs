@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode, header::AUTHORIZATION};
-use tokio::sync::OnceCell;
 use axum::extract::OriginalUri;
+use axum::http::{Request, StatusCode, header::AUTHORIZATION};
 use axum::response::{IntoResponse, Response};
 use backend_core::KcAuth;
 use base64::Engine;
@@ -15,8 +15,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::OnceCell;
 use tower::{Layer, Service};
-use async_trait::async_trait;
 
 pub async fn require_kc_signature(
     cfg: &KcAuth,
@@ -145,7 +145,10 @@ where
         let mut inner = self.inner.clone();
         let jwks_url = self.jwks_url.clone();
         let base_paths = if self.base_paths.is_empty() {
-            vec!["/api/registration".to_string(), "/api/kyc/staff".to_string()]
+            vec![
+                "/api/registration".to_string(),
+                "/api/kyc/staff".to_string(),
+            ]
         } else {
             self.base_paths.clone()
         };
@@ -266,7 +269,6 @@ where
     }
 }
 
-
 #[derive(Debug, Clone, Deserialize)]
 struct JwtClaims {
     #[allow(dead_code)]
@@ -278,7 +280,6 @@ fn default_jwt_validation() -> Validation {
     validation.algorithms = vec![Algorithm::RS256];
     validation
 }
-
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;

@@ -1,11 +1,10 @@
+use async_trait::async_trait;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderValue, Request, StatusCode};
 use axum::routing::get;
 use axum::{body::to_bytes, response::Response};
-use backend_auth::{
-    jwks_auth_layer, kc_signature_layer, require_kc_signature, JwksProvider,
-};
+use backend_auth::{JwksProvider, jwks_auth_layer, kc_signature_layer, require_kc_signature};
 use backend_core::KcAuth;
 use base64::Engine;
 use jwks::Jwks;
@@ -14,7 +13,6 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
-use async_trait::async_trait;
 
 fn build_kc_auth() -> KcAuth {
     KcAuth {
@@ -25,7 +23,6 @@ fn build_kc_auth() -> KcAuth {
         max_body_bytes: 1024,
     }
 }
-
 
 async fn read_error_body(response: Response) -> Value {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -253,7 +250,10 @@ async fn jwks_auth_layer_enforces_when_path_matches_base_path() {
     let base_paths = vec!["/api/registration".to_string()];
     let router = Router::new()
         .route("/api/registration/users", get(|| async { "ok" }))
-        .layer(jwks_auth_layer(jwks_url, base_paths).with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>));
+        .layer(
+            jwks_auth_layer(jwks_url, base_paths)
+                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
+        );
 
     let request = Request::builder()
         .uri("/api/registration/users")
@@ -272,7 +272,10 @@ async fn jwks_auth_layer_bypasses_when_path_does_not_match_base_path() {
     let base_paths = vec!["/api/registration".to_string()];
     let router = Router::new()
         .route("/public/info", get(|| async { "ok" }))
-        .layer(jwks_auth_layer(jwks_url, base_paths).with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>));
+        .layer(
+            jwks_auth_layer(jwks_url, base_paths)
+                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
+        );
 
     let request = Request::builder()
         .uri("/public/info")
@@ -290,7 +293,10 @@ async fn jwks_auth_layer_uses_default_paths_when_empty() {
     let base_paths = vec![];
     let router = Router::new()
         .route("/api/registration/users", get(|| async { "ok" }))
-        .layer(jwks_auth_layer(jwks_url, base_paths).with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>));
+        .layer(
+            jwks_auth_layer(jwks_url, base_paths)
+                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
+        );
 
     let request = Request::builder()
         .uri("/api/registration/users")

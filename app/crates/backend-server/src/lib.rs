@@ -3,10 +3,10 @@ pub(crate) mod sms_retry;
 pub(crate) mod state;
 pub(crate) mod worker;
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::Request as HttpRequest;
 use axum::response::Response;
-use axum::Router;
 use backend_auth::{jwks_auth_layer, kc_signature_layer};
 use backend_core::{Config, Result};
 use hyper::StatusCode;
@@ -134,11 +134,9 @@ fn build_staff_router(api: api::BackendApi, _cfg: backend_core::StaffAuth) -> Ro
     gen_oas_server_staff::server::new(api)
 }
 
-
 fn request_path(req: &HttpRequest<Body>) -> String {
     req.extensions()
         .get::<axum::extract::OriginalUri>()
         .map(|uri| uri.0.path().to_owned())
         .unwrap_or_else(|| req.uri().path().to_owned())
 }
-
