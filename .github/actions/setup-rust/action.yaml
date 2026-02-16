@@ -5,15 +5,18 @@ inputs:
   rust-version:
     description: Rust version to install.
     required: false
-    default: '1'
+    default: 'stable'
 runs:
   using: composite
   steps:
+    - name: Setup just
+      uses: extractions/setup-just@v3
+
     - name: Install rust toolchain
-      uses: actions/setup-rust@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        rust-version: ${{ inputs.rust-version }}
-        cache: cargo
+        toolchain: ${{ inputs.rust-version }}
+
     - name: Prime cargo registry cache
       shell: bash
       run: cargo fetch
