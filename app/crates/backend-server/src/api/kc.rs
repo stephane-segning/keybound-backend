@@ -390,11 +390,7 @@ impl Enrollment<Error> for BackendApi {
         body: &models::SmsConfirmRequest,
     ) -> Result<ConfirmSmsResponse, Error> {
         let req = SmsConfirmRequest::from(body.clone());
-        let sms = self
-            .state
-            .sms
-            .get_sms_by_hash(&req.hash)
-            .await?;
+        let sms = self.state.sms.get_sms_by_hash(&req.hash).await?;
 
         let Some(sms) = sms else {
             return Ok(ConfirmSmsResponse::Status400_BadRequest(kc_error(
@@ -613,12 +609,12 @@ impl Enrollment<Error> for BackendApi {
         let queued = self.state.sms.queue_sms(insert).await?;
         worker::enqueue_sms_retry_sweep(&self.state.config.redis.url, "send_sms").await?;
 
-        Ok(
-            SendSmsResponse::Status200_OTPQueued(models::SmsSendResponse {
+        Ok(SendSmsResponse::Status200_OTPQueued(
+            models::SmsSendResponse {
                 hash: queued.hash,
                 ttl_seconds: Some(queued.ttl_seconds),
                 status: Some(queued.status),
-            }),
-        )
+            },
+        ))
     }
 }

@@ -184,9 +184,9 @@ impl Error {
 mod axum_impl {
     use super::Error;
     use axum::{
+        Json,
         http::StatusCode,
         response::{IntoResponse, Response},
-        Json,
     };
 
     impl IntoResponse for Error {

@@ -26,9 +26,7 @@ impl BackendApi {
         Self { state }
     }
 
-    pub(crate) fn require_user_id(
-        context: &ServiceContext,
-    ) -> AppResult<String> {
+    pub(crate) fn require_user_id(context: &ServiceContext) -> AppResult<String> {
         context
             .user_id()
             .map(ToOwned::to_owned)

@@ -1,11 +1,13 @@
-use axum::body::{to_bytes, Body};
-use axum::http::{header::AUTHORIZATION, Request, StatusCode};
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode, header::AUTHORIZATION};
+use axum::middleware::{Next, from_fn};
 use axum::response::{IntoResponse, Response};
 use backend_core::{BffAuth, KcAuth, StaffAuth};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::hmac;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn require_kc_signature(
@@ -60,6 +62,45 @@ pub async fn require_staff_bearer(
     req: Request<Body>,
 ) -> std::result::Result<Request<Body>, Response> {
     require_user_bearer_auth(cfg.enabled, &cfg.base_path, req).await
+}
+
+pub fn kc_signature_layer(cfg: KcAuth) -> impl Clone {
+    let cfg = Arc::new(cfg);
+    from_fn(move |req: Request<Body>, next: Next<Body>| {
+        let cfg = Arc::clone(&cfg);
+        async move {
+            match require_kc_signature(&cfg, req).await {
+                Ok(req) => next.run(req).await,
+                Err(resp) => resp,
+            }
+        }
+    })
+}
+
+pub fn bff_bearer_layer(cfg: BffAuth) -> impl Clone {
+    let cfg = Arc::new(cfg);
+    from_fn(move |req: Request<Body>, next: Next<Body>| {
+        let cfg = Arc::clone(&cfg);
+        async move {
+            match require_bff_auth(&cfg, req).await {
+                Ok(req) => next.run(req).await,
+                Err(resp) => resp,
+            }
+        }
+    })
+}
+
+pub fn staff_bearer_layer(cfg: StaffAuth) -> impl Clone {
+    let cfg = Arc::new(cfg);
+    from_fn(move |req: Request<Body>, next: Next<Body>| {
+        let cfg = Arc::clone(&cfg);
+        async move {
+            match require_staff_bearer(&cfg, req).await {
+                Ok(req) => next.run(req).await,
+                Err(resp) => resp,
+            }
+        }
+    })
 }
 
 #[derive(Debug, Clone)]

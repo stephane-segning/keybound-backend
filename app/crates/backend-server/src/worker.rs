@@ -20,7 +20,8 @@ pub async fn enqueue_sms_retry_sweep(redis_url: &str, trigger: &str) -> backend_
     let conn = apalis_redis::connect(redis_url)
         .await
         .map_err(|error| backend_core::Error::Server(error.to_string()))?;
-    let mut storage = RedisStorage::new_with_config(conn, RedisConfig::new(SMS_RETRY_QUEUE_NAMESPACE));
+    let mut storage =
+        RedisStorage::new_with_config(conn, RedisConfig::new(SMS_RETRY_QUEUE_NAMESPACE));
     storage
         .push(SmsRetrySweepJob {
             trigger: trigger.to_owned(),

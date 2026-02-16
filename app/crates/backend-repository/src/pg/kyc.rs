@@ -225,11 +225,7 @@ impl KycRepo for KycRepository {
         Ok(row)
     }
 
-    async fn submit_kyc_profile(
-        &self,
-        submission_id: &str,
-        external_id: &str,
-    ) -> RepoResult<bool> {
+    async fn submit_kyc_profile(&self, submission_id: &str, external_id: &str) -> RepoResult<bool> {
         let res = self
             .submit_kyc_profile_db(submission_id.to_owned(), external_id.to_owned())
             .await?;

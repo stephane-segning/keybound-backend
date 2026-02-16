@@ -1,10 +1,11 @@
+use axum::Router;
 use axum::body::Body;
-use axum::http::{header::AUTHORIZATION, HeaderValue, Request};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, Request, StatusCode, header::AUTHORIZATION};
+use axum::routing::get;
 use axum::{body::to_bytes, response::Response};
-use base64::Engine;
 use backend_auth::{require_bff_auth, require_kc_signature, require_staff_bearer};
 use backend_core::{BffAuth, KcAuth, StaffAuth};
+use base64::Engine;
 use ring::hmac;
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,8 +35,8 @@ fn build_kc_auth() -> KcAuth {
 }
 
 fn valid_bearer_token() -> String {
-    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(r#"{"sub":"usr_test"}"#.as_bytes());
+    let payload =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"sub":"usr_test"}"#.as_bytes());
     format!("Bearer header.{payload}.signature")
 }
 
@@ -65,7 +66,10 @@ fn kc_signature(secret: &str, timestamp: i64, method: &str, path: &str, body: &s
 #[tokio::test]
 async fn bypasses_validation_for_path_outside_bff_base_path() {
     let cfg = build_bff_auth();
-    let request = Request::builder().uri("/kc/users").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/kc/users")
+        .body(Body::empty())
+        .unwrap();
 
     let result = require_bff_auth(&cfg, request).await;
 
@@ -98,9 +102,10 @@ async fn accepts_bearer_token_for_bff_base_path() {
         .uri("/api/registration/users")
         .body(Body::empty())
         .unwrap();
-    request
-        .headers_mut()
-        .insert(AUTHORIZATION, HeaderValue::from_str(&valid_bearer_token()).unwrap());
+    request.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&valid_bearer_token()).unwrap(),
+    );
 
     let result = require_bff_auth(&cfg, request).await;
 
@@ -183,8 +188,8 @@ async fn rejects_bff_auth_with_invalid_bearer_token_payload() {
 #[tokio::test]
 async fn accepts_case_insensitive_bearer_scheme_for_bff_auth() {
     let cfg = build_bff_auth();
-    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(r#"{"sub":"usr_test"}"#.as_bytes());
+    let payload =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"sub":"usr_test"}"#.as_bytes());
     let mut request = Request::builder()
         .uri("/api/registration/users")
         .body(Body::empty())
@@ -202,7 +207,10 @@ async fn accepts_case_insensitive_bearer_scheme_for_bff_auth() {
 #[tokio::test]
 async fn staff_auth_bypasses_when_path_is_outside_staff_base_path() {
     let cfg = build_staff_auth();
-    let request = Request::builder().uri("/kc/realm").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/kc/realm")
+        .body(Body::empty())
+        .unwrap();
 
     let result = require_staff_bearer(&cfg, request).await;
 
@@ -235,9 +243,10 @@ async fn staff_auth_accepts_valid_bearer_token_for_staff_base_path() {
         .uri("/api/kyc/staff/submissions")
         .body(Body::empty())
         .unwrap();
-    request
-        .headers_mut()
-        .insert(AUTHORIZATION, HeaderValue::from_str(&valid_bearer_token()).unwrap());
+    request.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&valid_bearer_token()).unwrap(),
+    );
 
     let result = require_staff_bearer(&cfg, request).await;
 
@@ -269,7 +278,10 @@ async fn staff_auth_rejects_invalid_bearer_token_payload() {
 async fn kc_signature_bypasses_when_disabled() {
     let mut cfg = build_kc_auth();
     cfg.enabled = false;
-    let request = Request::builder().uri("/v1/users").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
 
     let result = require_kc_signature(&cfg, request).await;
 
@@ -279,7 +291,10 @@ async fn kc_signature_bypasses_when_disabled() {
 #[tokio::test]
 async fn kc_signature_rejects_when_timestamp_header_is_missing() {
     let cfg = build_kc_auth();
-    let request = Request::builder().uri("/v1/users").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
 
     let result = require_kc_signature(&cfg, request).await;
 
@@ -291,7 +306,10 @@ async fn kc_signature_rejects_when_timestamp_header_is_missing() {
 #[tokio::test]
 async fn kc_signature_rejects_when_signature_header_is_missing() {
     let cfg = build_kc_auth();
-    let mut request = Request::builder().uri("/v1/users").body(Body::empty()).unwrap();
+    let mut request = Request::builder()
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
     let timestamp = now_unix_seconds().to_string();
     request
         .headers_mut()
@@ -307,7 +325,10 @@ async fn kc_signature_rejects_when_signature_header_is_missing() {
 #[tokio::test]
 async fn kc_signature_rejects_when_timestamp_is_invalid() {
     let cfg = build_kc_auth();
-    let mut request = Request::builder().uri("/v1/users").body(Body::empty()).unwrap();
+    let mut request = Request::builder()
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
     request
         .headers_mut()
         .insert("x-kc-timestamp", HeaderValue::from_static("invalid"));
@@ -326,7 +347,10 @@ async fn kc_signature_rejects_when_timestamp_is_invalid() {
 async fn kc_signature_rejects_when_timestamp_is_outside_allowed_skew() {
     let mut cfg = build_kc_auth();
     cfg.max_clock_skew_seconds = 1;
-    let mut request = Request::builder().uri("/v1/users").body(Body::empty()).unwrap();
+    let mut request = Request::builder()
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
     let stale = (now_unix_seconds() - 120).to_string();
     request
         .headers_mut()
@@ -354,9 +378,10 @@ async fn kc_signature_rejects_when_signature_is_invalid() {
     request
         .headers_mut()
         .insert("x-kc-timestamp", HeaderValue::from_str(&timestamp).unwrap());
-    request
-        .headers_mut()
-        .insert("x-kc-signature", HeaderValue::from_static("invalid-signature"));
+    request.headers_mut().insert(
+        "x-kc-signature",
+        HeaderValue::from_static("invalid-signature"),
+    );
 
     let result = require_kc_signature(&cfg, request).await;
 
@@ -417,4 +442,64 @@ async fn kc_signature_accepts_valid_signature_and_preserves_body() {
     let request = result.unwrap();
     let bytes = to_bytes(request.into_body(), usize::MAX).await.unwrap();
     assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), body);
+}
+
+#[tokio::test]
+async fn kc_signature_layer_rejects_requests_without_headers() {
+    let router = Router::new()
+        .route("/v1/users", get(|| async { "ok" }))
+        .layer(kc_signature_layer(build_kc_auth()));
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/v1/users")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn bff_bearer_layer_allows_requests_with_token() {
+    let cfg = build_bff_auth();
+    let router = Router::new()
+        .route("/api/registration/users", get(|| async { "ok" }))
+        .layer(bff_bearer_layer(cfg.clone()));
+
+    let mut request = Request::builder()
+        .uri("/api/registration/users")
+        .body(Body::empty())
+        .unwrap();
+    request.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&valid_bearer_token()).unwrap(),
+    );
+
+    let response = router.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn staff_bearer_layer_requires_token_for_protected_path() {
+    let cfg = build_staff_auth();
+    let router = Router::new()
+        .route("/api/kyc/staff/submissions", get(|| async { "ok" }))
+        .layer(staff_bearer_layer(cfg));
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/kyc/staff/submissions")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

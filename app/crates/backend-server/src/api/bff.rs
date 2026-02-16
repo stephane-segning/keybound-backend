@@ -5,8 +5,9 @@ use backend_repository::{KycDocumentInsert, KycRepo};
 use gen_oas_server_bff::apis::kyc::{
     ApiKycCasesMineGetResponse, ApiKycCasesMineOpenSubmissionPostResponse,
     ApiKycDocumentsDocumentIdConfirmPostResponse,
-    ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse, ApiKycSubmissionsSubmissionIdGetResponse,
-    ApiKycSubmissionsSubmissionIdSubmitPostResponse, ApiRegistrationKycProfilePatchResponse, Kyc,
+    ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse,
+    ApiKycSubmissionsSubmissionIdGetResponse, ApiKycSubmissionsSubmissionIdSubmitPostResponse,
+    ApiRegistrationKycProfilePatchResponse, Kyc,
 };
 use gen_oas_server_bff::apis::limits::{ApiLimitsGetResponse, Limits};
 use gen_oas_server_bff::models;
@@ -33,9 +34,9 @@ impl Kyc<Error> for BackendApi {
                 body: Self::kyc_case_from_profile(p),
                 e_tag: None,
             }),
-            None => Ok(ApiKycCasesMineGetResponse::Status404_NotFound(Self::not_found_problem(
-                "KYC case not found",
-            ))),
+            None => Ok(ApiKycCasesMineGetResponse::Status404_NotFound(
+                Self::not_found_problem("KYC case not found"),
+            )),
         }
     }
 
@@ -51,12 +52,16 @@ impl Kyc<Error> for BackendApi {
         let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
 
         match profile {
-            Some(p) => Ok(ApiKycCasesMineOpenSubmissionPostResponse::Status201_NewSubmissionOpened(
-                Self::kyc_case_from_profile(p),
-            )),
-            None => Ok(ApiKycCasesMineOpenSubmissionPostResponse::Status401_Unauthorized(
-                Self::unauthorized_problem(),
-            )),
+            Some(p) => Ok(
+                ApiKycCasesMineOpenSubmissionPostResponse::Status201_NewSubmissionOpened(
+                    Self::kyc_case_from_profile(p),
+                ),
+            ),
+            None => Ok(
+                ApiKycCasesMineOpenSubmissionPostResponse::Status401_Unauthorized(
+                    Self::unauthorized_problem(),
+                ),
+            ),
         }
     }
 
@@ -109,14 +114,16 @@ impl Kyc<Error> for BackendApi {
 
         let row = self.state.kyc.insert_kyc_document_intent(input).await?;
 
-        Ok(ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse::Status201_UploadInitialized(
-            models::InitDocumentUploadResponse {
-                document_id: row.id,
-                upload_url: "https://s3.example.com/upload".to_owned(),
-                expires_at: row.presigned_expires_at,
-                required_headers: None,
-            },
-        ))
+        Ok(
+            ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse::Status201_UploadInitialized(
+                models::InitDocumentUploadResponse {
+                    document_id: row.id,
+                    upload_url: "https://s3.example.com/upload".to_owned(),
+                    expires_at: row.presigned_expires_at,
+                    required_headers: None,
+                },
+            ),
+        )
     }
 
     async fn api_kyc_submissions_submission_id_get(
@@ -131,12 +138,16 @@ impl Kyc<Error> for BackendApi {
         let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
 
         match profile {
-            Some(p) => Ok(ApiKycSubmissionsSubmissionIdGetResponse::Status200_SubmissionDetail(
-                Self::kyc_submission_detail_from_profile(p),
-            )),
-            None => Ok(ApiKycSubmissionsSubmissionIdGetResponse::Status404_NotFound(
-                Self::not_found_problem("KYC submission not found"),
-            )),
+            Some(p) => Ok(
+                ApiKycSubmissionsSubmissionIdGetResponse::Status200_SubmissionDetail(
+                    Self::kyc_submission_detail_from_profile(p),
+                ),
+            ),
+            None => Ok(
+                ApiKycSubmissionsSubmissionIdGetResponse::Status404_NotFound(
+                    Self::not_found_problem("KYC submission not found"),
+                ),
+            ),
         }
     }
 
@@ -153,9 +164,11 @@ impl Kyc<Error> for BackendApi {
         let expected_submission_id = format!("sub_{user_id}");
 
         if expected_submission_id != path_params.submission_id {
-            return Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-                Self::not_found_problem("KYC submission not found"),
-            ));
+            return Ok(
+                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
+                    Self::not_found_problem("KYC submission not found"),
+                ),
+            );
         }
 
         let updated = self
@@ -165,20 +178,26 @@ impl Kyc<Error> for BackendApi {
             .await?;
 
         if !updated {
-            return Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-                Self::not_found_problem("KYC submission not found"),
-            ));
+            return Ok(
+                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
+                    Self::not_found_problem("KYC submission not found"),
+                ),
+            );
         }
 
         let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
 
         match profile {
-            Some(p) => Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status200_SubmissionSubmitted(
-                Self::kyc_submission_detail_from_profile(p),
-            )),
-            None => Ok(ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-                Self::not_found_problem("KYC submission not found"),
-            )),
+            Some(p) => Ok(
+                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status200_SubmissionSubmitted(
+                    Self::kyc_submission_detail_from_profile(p),
+                ),
+            ),
+            None => Ok(
+                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
+                    Self::not_found_problem("KYC submission not found"),
+                ),
+            ),
         }
     }
 
@@ -291,11 +310,13 @@ impl Limits<Error> for BackendApi {
                     allowed_payment_methods: Some(vec!["bank_transfer".to_owned()]),
                     restricted_features: Some(vec![]),
                 };
-                Ok(ApiLimitsGetResponse::Status200_LimitsAndUsageDetails(limits))
+                Ok(ApiLimitsGetResponse::Status200_LimitsAndUsageDetails(
+                    limits,
+                ))
             }
-            None => Ok(ApiLimitsGetResponse::Status404_NotFound(Self::not_found_problem(
-                "Customer not found",
-            ))),
+            None => Ok(ApiLimitsGetResponse::Status404_NotFound(
+                Self::not_found_problem("Customer not found"),
+            )),
         }
     }
 }
@@ -455,7 +476,9 @@ impl BackendApi {
         let user_profile = target
             .get("userProfile")
             .and_then(Value::as_object)
-            .ok_or_else(|| Error::bad_request("INVALID_JSON_PATCH", "Missing /userProfile object"))?;
+            .ok_or_else(|| {
+                Error::bad_request("INVALID_JSON_PATCH", "Missing /userProfile object")
+            })?;
 
         Ok(backend_model::bff::KycInformationPatchRequest {
             first_name: user_profile
