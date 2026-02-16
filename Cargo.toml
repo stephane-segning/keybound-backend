@@ -83,6 +83,10 @@ sqlx-data = { version = "0.1.5", features = ["postgres", "chrono", "json", "bigd
 sqlx-utils = "1.1.3"
 ciborium = "0.2"
 
+diesel = { version = "2.3", features = ["postgres", "chrono", "serde_json", "r2d2"] }
+diesel-async = { version = "0.7", features = ["postgres", "deadpool"] }
+deadpool-diesel = { version = "0.6", features = ["postgres"] }
+
 tower = "0"
 http = "1"
 http-body-util = "0.1"

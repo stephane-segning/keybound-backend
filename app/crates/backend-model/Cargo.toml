@@ -9,6 +9,7 @@ authors.workspace = true
 [dependencies]
 backend-core.workspace = true
 chrono.workspace = true
+diesel.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

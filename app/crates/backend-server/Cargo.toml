@@ -16,6 +16,8 @@ axum.workspace = true
 axum-extra = { workspace = true, features = ["cookie"] }
 axum-server.workspace = true
 chrono.workspace = true
+deadpool-diesel.workspace = true
+diesel-async.workspace = true
 http.workspace = true
 hyper.workspace = true
 sqlx.workspace = true
