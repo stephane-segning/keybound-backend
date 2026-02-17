@@ -32,55 +32,27 @@ impl KycReview<Error> for BackendApi {
         query_params: &models::ApiKycStaffSubmissionsGetQueryParams,
     ) -> Result<ApiKycStaffSubmissionsGetResponse, Error> {
         let (page, limit) = Self::normalize_page_limit(query_params.page, query_params.limit);
+        let offset = i64::from((page - 1) * limit);
 
         let rows = self
             .state
             .kyc
-            .list_kyc_submissions()
+            .list_kyc_submissions(
+                query_params.status.clone(),
+                query_params.search.clone(),
+                i64::from(limit),
+                offset,
+            )
             .await?;
 
-        let status_filter = query_params
-            .status
-            .as_ref()
-            .map(|status| status.to_lowercase());
-        let search_filter = query_params
-            .search
-            .as_ref()
-            .map(|search| search.to_lowercase());
+        let total_count = self
+            .state
+            .kyc
+            .count_kyc_submissions(query_params.status.clone(), query_params.search.clone())
+            .await?;
 
-        let filtered_rows = rows
+        let items = rows
             .into_iter()
-            .filter(|row| {
-                let status_matches = status_filter
-                    .as_ref()
-                    .is_none_or(|status| row.status.eq_ignore_ascii_case(status));
-
-                let search_matches = search_filter.as_ref().is_none_or(|search| {
-                    row.first_name
-                        .as_deref()
-                        .is_some_and(|value: &str| value.to_lowercase().contains(search))
-                        || row
-                            .last_name
-                            .as_deref()
-                            .is_some_and(|value: &str| value.to_lowercase().contains(search))
-                        || row
-                            .email
-                            .as_deref()
-                            .is_some_and(|value: &str| value.to_lowercase().contains(search))
-                });
-
-                status_matches && search_matches
-            })
-            .collect::<Vec<_>>();
-
-        let total = i32::try_from(filtered_rows.len()).unwrap_or(i32::MAX);
-        let start = usize::try_from((page - 1) * limit).unwrap_or(0);
-        let end = start.saturating_add(usize::try_from(limit).unwrap_or(0));
-
-        let items = filtered_rows
-            .into_iter()
-            .skip(start)
-            .take(end.saturating_sub(start))
             .map(|row| {
                 let dto = KycSubmissionSummaryDto::from(row);
                 dto.into()
@@ -89,7 +61,7 @@ impl KycReview<Error> for BackendApi {
 
         let response = KycSubmissionsResponseDto {
             items: Some(items),
-            total: Some(total),
+            total: Some(i32::try_from(total_count).unwrap_or(i32::MAX)),
             page: Some(page),
             page_size: Some(limit),
         };
