@@ -270,7 +270,10 @@ async fn kc_signature_handles_url_encoded_paths() {
 
     let result = require_kc_signature(&cfg, request).await;
 
-    assert!(result.is_ok(), "Signature verification failed for encoded path");
+    assert!(
+        result.is_ok(),
+        "Signature verification failed for encoded path"
+    );
 }
 
 #[tokio::test]
@@ -281,11 +284,12 @@ async fn kc_signature_works_with_nested_router() {
     let full_path = "/v1/nested/users";
     let signature = kc_signature(&cfg.signature_secret, timestamp, "GET", full_path, body);
 
-    let router = Router::new()
-        .nest("/v1/nested", Router::new()
+    let router = Router::new().nest(
+        "/v1/nested",
+        Router::new()
             .route("/users", get(|| async { "ok" }))
-            .layer(kc_signature_layer(cfg.clone()))
-        );
+            .layer(kc_signature_layer(cfg.clone())),
+    );
 
     let mut request = Request::builder()
         .method("GET")
@@ -303,7 +307,11 @@ async fn kc_signature_works_with_nested_router() {
 
     let response = router.oneshot(request).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK, "Signature verification failed for nested router");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Signature verification failed for nested router"
+    );
 }
 
 #[tokio::test]

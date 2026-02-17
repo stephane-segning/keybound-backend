@@ -1,9 +1,9 @@
 use crate::traits::*;
 use backend_model::{db, kc as kc_map};
 use diesel::prelude::*;
-use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
+use diesel_async::pooled_connection::deadpool::Pool;
 
 #[derive(Clone)]
 pub struct UserRepository {

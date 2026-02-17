@@ -3,8 +3,8 @@ use backend_core::{Config, SmsProviderType};
 use backend_repository::{
     ApprovalRepository, DeviceRepository, KycRepository, SmsRepository, UserRepository,
 };
-use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::AsyncPgConnection;
+use diesel_async::pooled_connection::deadpool::Pool;
 use std::sync::Arc;
 use tracing::info;
 
@@ -78,7 +78,9 @@ impl AppState {
         let sms_provider: Arc<dyn SmsProvider> = if let Some(sms_cfg) = &cfg.sms {
             match sms_cfg.provider {
                 SmsProviderType::Console => Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>,
-                SmsProviderType::Sns => Arc::new(SnsSmsProvider::new(sns.clone())) as Arc<dyn SmsProvider>,
+                SmsProviderType::Sns => {
+                    Arc::new(SnsSmsProvider::new(sns.clone())) as Arc<dyn SmsProvider>
+                }
             }
         } else {
             Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>

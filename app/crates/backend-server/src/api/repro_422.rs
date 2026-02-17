@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, Utc};
     use gen_oas_server_kc::models::EnrollmentBindRequest;
     use serde_json::json;
-    use chrono::{DateTime, Utc};
 
     #[test]
     fn test_date_deserialization() {

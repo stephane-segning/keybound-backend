@@ -1,7 +1,7 @@
 pub mod bff;
 pub mod kc;
-pub mod staff;
 mod repro_422;
+pub mod staff;
 
 use crate::state::AppState;
 use axum::response::IntoResponse;

@@ -1,8 +1,8 @@
-use super::{kc_error, BackendApi};
+use super::{BackendApi, kc_error};
 use crate::worker;
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use axum_extra::extract::CookieJar;
 use backend_auth::SignatureContext;
@@ -266,8 +266,9 @@ impl Devices<Error> for BackendApi {
             .map(|res| match res {
                 Some(row) => {
                     let user_id = row.user_id.clone();
-                    let public_jwk: Option<std::collections::HashMap<String, gen_oas_server_kc::types::Object>> =
-                        serde_json::from_str(&row.public_jwk).ok();
+                    let public_jwk: Option<
+                        std::collections::HashMap<String, gen_oas_server_kc::types::Object>,
+                    > = serde_json::from_str(&row.public_jwk).ok();
                     let dto = DeviceRecordDto::from(row);
                     LookupDeviceResponse::Status200_LookupResult(models::DeviceLookupResponse {
                         device: Some(dto.into()),
