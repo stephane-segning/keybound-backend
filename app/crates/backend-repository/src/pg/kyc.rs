@@ -24,6 +24,19 @@ impl KycRepository {
             .await
             .map_err(|e| backend_core::Error::DieselPool(e.to_string()))
     }
+
+    fn calculate_tier(&self, documents: &[db::KycDocumentRow]) -> i32 {
+        let has_identity = documents.iter().any(|d| d.doc_type == "Identity");
+        let has_address = documents.iter().any(|d| d.doc_type == "Address");
+
+        if has_identity && has_address {
+            2
+        } else if has_identity {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 impl KycRepo for KycRepository {
@@ -57,7 +70,6 @@ impl KycRepo for KycRepository {
                                 kyc_submission::kyc_case_id.eq(cid),
                                 kyc_submission::version.eq(1),
                                 kyc_submission::status.eq("DRAFT"),
-                                kyc_submission::requested_tier.eq(1),
                                 kyc_submission::provisioning_status.eq("PENDING"),
                                 kyc_submission::created_at.eq(Utc::now()),
                                 kyc_submission::updated_at.eq(Utc::now()),
@@ -185,17 +197,11 @@ impl KycRepo for KycRepository {
     }
 
     async fn get_kyc_tier(&self, external_id_val: &str) -> RepoResult<Option<i32>> {
-        use backend_model::schema::kyc_case;
-
-        let mut conn = self.get_conn().await?;
-
-        kyc_case::table
-            .filter(kyc_case::user_id.eq(external_id_val))
-            .select(kyc_case::current_tier)
-            .first::<i32>(&mut conn)
-            .await
-            .optional()
-            .map_err(|e| backend_core::Error::Diesel(e))
+        let docs = self.list_kyc_documents(external_id_val.to_string()).await?;
+        if docs.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(self.calculate_tier(&docs)))
     }
 
     async fn list_kyc_submissions(&self) -> RepoResult<Vec<db::KycSubmissionRow>> {
@@ -246,7 +252,6 @@ impl KycRepo for KycRepository {
                         diesel::update(kyc_submission::table.filter(kyc_submission::id.eq(&sid)))
                             .set((
                                 kyc_submission::status.eq("APPROVED"),
-                                kyc_submission::decided_tier.eq(req.new_tier as i32),
                                 kyc_submission::decided_at.eq(Utc::now()),
                                 kyc_submission::review_notes.eq(req.notes.clone()),
                                 kyc_submission::updated_at.eq(Utc::now()),
@@ -258,7 +263,6 @@ impl KycRepo for KycRepository {
                             kyc_case::table.filter(kyc_case::user_id.eq(external_id_val)),
                         )
                         .set((
-                            kyc_case::current_tier.eq(req.new_tier as i32),
                             kyc_case::updated_at.eq(Utc::now()),
                         ))
                         .execute(conn)

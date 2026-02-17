@@ -55,7 +55,6 @@ diesel::table! {
         id -> Varchar,
         #[max_length = 40]
         user_id -> Varchar,
-        current_tier -> Int4,
         case_status -> Varchar,
         #[max_length = 40]
         active_submission_id -> Nullable<Varchar>,
@@ -76,8 +75,6 @@ diesel::table! {
         kyc_case_id -> Varchar,
         version -> Int4,
         status -> Varchar,
-        requested_tier -> Int4,
-        decided_tier -> Nullable<Int4>,
         submitted_at -> Nullable<Timestamptz>,
         decided_at -> Nullable<Timestamptz>,
         #[max_length = 40]

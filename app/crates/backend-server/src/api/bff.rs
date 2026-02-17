@@ -514,7 +514,7 @@ impl BackendApi {
         models::KycCaseResponse {
             case_id: format!("kyc_{}", profile.kyc_case_id),
             case_status: models::KycCaseStatus::Open,
-            current_tier: Some(profile.requested_tier as u8),
+            current_tier: None, // Calculated dynamically
             active_submission: models::KycSubmissionSummary {
                 submission_id: profile.id,
                 version: 1,
@@ -522,7 +522,7 @@ impl BackendApi {
                     .status
                     .parse()
                     .unwrap_or(models::KycSubmissionStatus::Draft),
-                requested_tier: Some(profile.requested_tier.max(1) as u8),
+                requested_tier: None, // Calculated dynamically
                 decided_tier: None,
                 submitted_at: Some(match profile.submitted_at {
                     Some(value) => Nullable::Present(value),

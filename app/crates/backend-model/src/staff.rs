@@ -72,7 +72,7 @@ impl From<db::KycSubmissionRow> for KycSubmissionSummaryDto {
             last_name: row.last_name,
             email: row.email,
             phone_number: row.phone_number,
-            kyc_tier: Some(row.requested_tier),
+            kyc_tier: None, // Calculated dynamically
             kyc_status: Some(row.status),
             submitted_at: row
                 .submitted_at
@@ -123,7 +123,7 @@ impl KycSubmissionDetailResponseDto {
             phone_number: profile.phone_number,
             date_of_birth: profile.date_of_birth,
             nationality: profile.nationality,
-            kyc_tier: Some(profile.requested_tier),
+            kyc_tier: None, // Calculated dynamically
             kyc_status: Some(profile.status),
             documents: Some(vec![]),
             submitted_at: profile

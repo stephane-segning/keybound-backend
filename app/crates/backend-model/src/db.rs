@@ -86,7 +86,6 @@ pub struct SmsMessageRow {
 pub struct KycCaseRow {
     pub id: String,
     pub user_id: String,
-    pub current_tier: i32,
     pub case_status: String,
     pub active_submission_id: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -100,8 +99,6 @@ pub struct KycSubmissionRow {
     pub kyc_case_id: String,
     pub version: i32,
     pub status: String,
-    pub requested_tier: i32,
-    pub decided_tier: Option<i32>,
     pub submitted_at: Option<DateTime<Utc>>,
     pub decided_at: Option<DateTime<Utc>>,
     pub decided_by: Option<String>,
