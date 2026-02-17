@@ -35,6 +35,7 @@ jobs:
       changed: ${{ steps.detection.outputs.changed }}
       version: ${{ steps.detection.outputs.version }}
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/check-cargo-change
         id: detection
         with:
