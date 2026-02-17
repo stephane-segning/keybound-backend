@@ -36,5 +36,7 @@ runs:
 outputs:
   changed:
     description: "true if Cargo.toml differs between before-sha and after-sha"
+    value: ${{ steps.detect.outputs.changed }}
   version:
     description: Workspace version from Cargo.toml
+    value: ${{ steps.detect.outputs.version }}

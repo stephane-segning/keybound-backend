@@ -1,0 +1,23 @@
+### Helm ###
+*/charts/*/charts
+
+*tmp*
+
+azamra-tokenization-backend
+.code
+.docker
+.github
+.idea
+.roo
+.vscode
+config
+deploy
+docs
+target
+.dockerignore
+.gitignore
+.pre-commit-config.yaml
+AGENTS.md
+compose.yml
+justfile
+upgrade.md

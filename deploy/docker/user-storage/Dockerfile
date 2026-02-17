@@ -1,41 +1,72 @@
-syntax = "docker/dockerfile:1.5"
+# syntax=docker/dockerfile:1.5
 
-FROM --platform=$BUILDPLATFORM rust:1-bullseye as builder
+FROM rust:1-bullseye as base
 
-WORKDIR /app
-
-# Cache dependencies
-COPY Cargo.toml Cargo.lock ./
-COPY app app/
-COPY crates crates/
-COPY config config/
-COPY deploy deploy/
-COPY openapi openapi/
-COPY .cargo .cargo
-
-RUN cargo fetch --workspace
-
-# Build release binaries
-RUN cargo build --release --workspace --locked
-
-FROM gcr.io/distroless/base-debian12:nonroot
-
-LABEL maintainer="stephane-segning <selastlambou@gmail.com>"
-LABEL org.opencontainers.image.description="Backend for Keycloak Keybound x Fineract"
+ENV CARGO_TERM_COLOR=always
+ENV OPENSSL_STATIC=1
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/backend /usr/local/bin/backend
-COPY --from=builder /app/target/release/health /usr/local/bin/health
+FROM base as builder
 
-RUN mkdir -p /etc/ssl/certs
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+ARG TARGETARCH
 
-EXPOSE 3000 3443
+RUN \
+  --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && \
+  apt-get install -y --no-install-recommends \
+    musl-tools \
+    build-essential \
+    pkg-config \
+    perl \
+  && rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=1s --retries=3 \
-    CMD ["/usr/local/bin/health", "-r", "3000"]
+RUN \
+  # Mount workspace files and only the necessary crates
+  --mount=type=bind,source=./Cargo.toml,target=/app/Cargo.toml \
+  --mount=type=bind,source=./Cargo.lock,target=/app/Cargo.lock \
+  --mount=type=bind,source=./app/,target=/app/app \
+  --mount=type=cache,target=/app/target \
+  --mount=type=cache,target=/usr/local/cargo/registry/cache \
+  --mount=type=cache,target=/usr/local/cargo/registry/index \
+  --mount=type=cache,target=/usr/local/cargo/git/db \
+  case "$TARGETARCH" in \
+    "amd64") \
+      export RUST_TARGET=x86_64-unknown-linux-musl; \
+      export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc; \
+      ;; \
+    "arm64") \
+      export RUST_TARGET=aarch64-unknown-linux-musl; \
+      export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc; \
+      ;; \
+    *) \
+      echo "Unsupported TARGETARCH: $TARGETARCH"; \
+      exit 1; \
+      ;; \
+  esac; \
+  cargo build --release --locked --target "${RUST_TARGET}" -p backend \
+  && cp ./target/"${RUST_TARGET}"/release/backend backend \
+  && cp ./target/"${RUST_TARGET}"/release/health healthcheck
 
-ENV RUST_LOG=info
+FROM gcr.io/distroless/static-debian12:nonroot
 
-ENTRYPOINT ["backend"]
+LABEL maintainer="Stephane Segning Lambou <stephane.segning-lambou@adorsys>"
+LABEL maintainer="GIS Cameroon <udm-gis@adorsys>"
+LABEL org.opencontainers.image.description="adorsys GIS Cameroon"
+
+ENV RUST_LOG=warn
+ENV PORT=3000
+
+WORKDIR /app
+
+COPY --from=builder /app/backend /app/server
+COPY --from=builder /app/healthcheck /app/healthcheck
+
+USER nonroot:nonroot
+
+EXPOSE $PORT
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=2s --retries=5 CMD ["/app/healthcheck"]
+
+ENTRYPOINT ["/app/server"]

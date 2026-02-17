@@ -1,62 +1,20 @@
-x-app-env: &app-env
-  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/user-storage
-  SPRING_DATASOURCE_USERNAME: postgres
-  SPRING_DATASOURCE_PASSWORD: postgres
-
 services:
-  migration:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/user-storage/Dockerfile
-    environment:
-      FLYWAY_URL: jdbc:postgresql://postgres:5432/user-storage
-      FLYWAY_USER: postgres
-      FLYWAY_PASSWORD: postgres
-      FLYWAY_CONNECT_RETRIES: 30
-      FLYWAY_LOCATIONS: filesystem:/flyway/sql/postgresql
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
   app:
     build:
       context: ../..
       dockerfile: deploy/docker/user-storage/Dockerfile
-      target: dev
-    ports:
-      - "3002:3000"
-    environment:
-      <<: *app-env
-      SPRING_PROFILES_ACTIVE: dev
-      JAVA_TOOL_OPTIONS: -XX:+UseShenandoahGC #-XX:+UseShenandoahGC
-      REDIS_HOST: redis
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-
-  app-prod:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/user-storage/Dockerfile
-      target: prod
-      args:
-        NATIVE_IMAGE_XMX: "12g"
-        NATIVE_IMAGE_PARALLELISM: "4"
+    command:
+      - serve
+      - --config-path
+      - config/default.yaml
+    volumes:
+      - ../../config:/app/config/
     ports:
       - "3001:3000"
     environment:
-      <<: *app-env
-      SPRING_PROFILES_ACTIVE: prod
       REDIS_HOST: redis
     depends_on:
       postgres:
         condition: service_healthy
-      migration:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy

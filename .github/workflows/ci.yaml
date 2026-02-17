@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-rust
+        name: Setup rust
       - name: Run cargo test
         run: cargo test --workspace --locked
 
@@ -24,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-rust
+        name: Setup rust
       - name: Run cargo build --release
         run: cargo build --release --workspace --locked
 
@@ -51,6 +53,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-rust
+        name: Setup rust
       - uses: ./.github/actions/setup-docker
         id: setup
         with:
@@ -76,6 +80,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-rust
+        name: Setup rust
       - uses: ./.github/actions/setup-docker
         id: setup
         with:
