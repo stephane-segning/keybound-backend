@@ -37,6 +37,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 9. `backend-core::Config` supports environment variable expansion in YAML files using `${VAR}` or `${VAR:-default}` syntax.
 10. Use `TEXT` instead of `VARCHAR` for all string columns in migrations.
 11. Use Argon2 for hashing sensitive data that needs verification (e.g., SMS OTPs).
+12. Always sort JWK keys alphabetically before serializing to JSON for signature payloads to ensure deterministic string representations across different platforms (Frontend, Keycloak, Backend).
 
 ## IDs (Mandatory)
 Always use prefix + CUID from `backend-id`:
