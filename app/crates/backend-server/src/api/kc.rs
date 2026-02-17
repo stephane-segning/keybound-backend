@@ -265,12 +265,15 @@ impl Devices<Error> for BackendApi {
             .await
             .map(|res| match res {
                 Some(row) => {
+                    let user_id = row.user_id.clone();
+                    let public_jwk: Option<std::collections::HashMap<String, gen_oas_server_kc::types::Object>> =
+                        serde_json::from_str(&row.public_jwk).ok();
                     let dto = DeviceRecordDto::from(row);
                     LookupDeviceResponse::Status200_LookupResult(models::DeviceLookupResponse {
                         device: Some(dto.into()),
                         found: true,
-                        public_jwk: None,
-                        user_id: None,
+                        public_jwk,
+                        user_id: Some(user_id),
                     })
                 }
                 None => LookupDeviceResponse::Status404_NotFound(kc_error(
