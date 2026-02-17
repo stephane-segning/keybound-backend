@@ -6,16 +6,16 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - BFF: `/bff/*`
 - Staff: `/staff/*`
 
-`app/backend` starts the server; `crates/backend-server` is a library crate.
+`app/bins/backend` starts the server; `app/crates/backend-server` is a library crate.
 
 ## Core Architecture
 - Runtime is native `axum`, using `Router::nest` to mount each API surface under a configurable base path.
 - Layering is strict: `controller -> repository` (explicit service layer removed).
-- Controllers: `crates/backend-server/src/api/mod.rs` (and submodules)
+- Controllers: `app/crates/backend-server/src/api/mod.rs` (and submodules)
 - API modules: `api/bff.rs`, `api/kc.rs`, `api/staff.rs`
-- Repository: `crates/backend-repository/src/pg/mod.rs` (and submodules)
+- Repository: `app/crates/backend-repository/src/pg/mod.rs` (and submodules)
 
-## Crate Roles
+## Crate Roles (under `app/crates/`)
 - `backend-core`: config + shared `Error`/`Result`
 - `backend-auth`: axum middleware layers for authentication and authorization.
 - `backend-server`: router/controllers/state/retry worker
@@ -23,10 +23,10 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - `backend-model`: Diesel models (`Queryable`, `Selectable`, `Insertable`, `Identifiable`) + `o2o` DTO mapping. Contains `schema.rs`.
 - `backend-id`: prefixed CUID ID generation
 - `backend-migrate`: migration runner and database factory (Postgres only)
-- `gen_oas_*`: generated OA3 models/interfaces (never edit manually)
+- `gen_oas_*`: generated OA3 models/interfaces (under `app/gen/`, never edit manually)
 
 ## Hard Rules
-1. Never hand-edit `crates/gen_*`.
+1. Never hand-edit `app/gen/*`.
 2. OpenAPI changes happen in `openapi/*` then regenerate.
 3. Use Diesel DSL for database operations; avoid raw SQL strings where possible.
 4. Use `diesel-async` for all database interactions in the repository layer.
@@ -127,10 +127,18 @@ The repository implementation is split into domain-specific modules under `src/p
 Before finalizing:
 1. `cargo check --workspace`
 2. No runtime use of `swagger` or generated `server::Service`
-3. No manual edits under `crates/gen_*`
+3. No manual edits under `app/gen/*`
 5. Auth and error tests pass:
    - `cargo test -p backend-core --features axum --test error_response`
    - `cargo test -p backend-auth --test jwt_auth_exclude_paths`
+
+## Docker & Build System
+- **Target**: `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`.
+- **Base Image**: `rust:1-alpine` for building, `gcr.io/distroless/static-debian12:nonroot` for execution.
+- **Static Linking**:
+    - OpenSSL is statically linked via `openssl = { version = "0.10", features = ["vendored"] }`.
+    - libpq is statically linked via `diesel = { version = "2.3", features = ["postgres", ..., "pq-src"] }`.
+- **Build Command**: `just build` (uses Docker Compose).
 
 ## CI/CD (GitHub Actions)
 - Main workflow: `.github/workflows/ci.yaml`
