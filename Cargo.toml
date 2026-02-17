@@ -67,6 +67,7 @@ clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 cuid = { version = "1" }
+regex = "1"
 getrandom = "0.4"
 goose = "0.18"
 reqwest = { version = "0.13", features = ["json"] }

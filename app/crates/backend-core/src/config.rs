@@ -1,4 +1,5 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
+use regex::Regex;
 use serde::Deserialize;
 use serde_yaml::from_str;
 use std::fs::read_to_string;
@@ -168,8 +169,37 @@ pub struct Cuss {
 
 pub fn load_from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Config> {
     let content = read_to_string(path)?;
-    let cfg: Config = from_str(&content)?;
+    let expanded = expand_env_vars(&content)?;
+    let cfg: Config = from_str(&expanded)?;
     Ok(cfg)
+}
+
+fn expand_env_vars(content: &str) -> Result<String> {
+    let re = Regex::new(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}").map_err(|e| Error::Server(e.to_string()))?;
+    let mut result = content.to_string();
+    let mut missing_vars = Vec::new();
+
+    for cap in re.captures_iter(content) {
+        let full_match = &cap[0];
+        let var_name = &cap[1];
+        match std::env::var(var_name) {
+            Ok(val) => {
+                result = result.replace(full_match, &val);
+            }
+            Err(_) => {
+                missing_vars.push(var_name.to_string());
+            }
+        }
+    }
+
+    if !missing_vars.is_empty() {
+        return Err(Error::Server(format!(
+            "Missing environment variables: {}",
+            missing_vars.join(", ")
+        )));
+    }
+
+    Ok(result)
 }
 
 impl Config {
@@ -190,5 +220,54 @@ impl Config {
 
     pub fn database_pool_size(&self) -> u32 {
         self.database.pool_size.unwrap_or(10)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_expand_env_vars_success() {
+        unsafe {
+            env::set_var("TEST_VAR_1", "value1");
+            env::set_var("TEST_VAR_2", "value2");
+        }
+
+        let content = "var1: ${TEST_VAR_1}, var2: ${TEST_VAR_2}";
+        let expanded = expand_env_vars(content).unwrap();
+
+        assert_eq!(expanded, "var1: value1, var2: value2");
+    }
+
+    #[test]
+    fn test_expand_env_vars_missing() {
+        unsafe {
+            env::remove_var("MISSING_VAR");
+        }
+
+        let content = "var: ${MISSING_VAR}";
+        let result = expand_env_vars(content);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Missing environment variables: MISSING_VAR"));
+    }
+
+    #[test]
+    fn test_expand_env_vars_multiple_missing() {
+        unsafe {
+            env::remove_var("MISSING_VAR_1");
+            env::remove_var("MISSING_VAR_2");
+        }
+
+        let content = "var1: ${MISSING_VAR_1}, var2: ${MISSING_VAR_2}";
+        let result = expand_env_vars(content);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("MISSING_VAR_1"));
+        assert!(err.contains("MISSING_VAR_2"));
     }
 }

@@ -877,6 +877,7 @@ dependencies = [
  "cuid",
  "diesel",
  "hex",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
