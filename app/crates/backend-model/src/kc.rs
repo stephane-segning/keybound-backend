@@ -115,7 +115,6 @@ pub struct SmsSendRequest {
     pub client_id: String,
     pub user_id: Option<String>,
     pub phone_number: String,
-    pub otp: String,
     pub session_id: Option<String>,
     pub trace_id: Option<String>,
     #[map(metadata)]

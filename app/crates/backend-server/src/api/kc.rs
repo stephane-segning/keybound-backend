@@ -616,9 +616,8 @@ impl Enrollment<Error> for BackendApi {
     ) -> Result<SendSmsResponse, Error> {
         let req = SmsSendRequest::from(body.clone());
 
-        let mut hasher = Sha256::new();
-        hasher.update(req.otp.as_bytes());
-        let otp_sha256 = hasher.finalize().to_vec();
+        let otp = "todo!();";
+        let otp_sha256 = "todo!();";
 
         let insert = backend_repository::SmsPendingInsert {
             realm: req.realm,
