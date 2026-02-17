@@ -1,9 +1,11 @@
-use backend_core::Config;
+use crate::sms_provider::{ConsoleSmsProvider, SmsProvider, SnsSmsProvider};
+use backend_core::{Config, SmsProviderType};
 use backend_repository::{
     ApprovalRepository, DeviceRepository, KycRepository, SmsRepository, UserRepository,
 };
-use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::AsyncPgConnection;
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Clone)]
@@ -15,6 +17,7 @@ pub struct AppState {
     pub sms: SmsRepository,
     pub s3: aws_sdk_s3::Client,
     pub sns: aws_sdk_sns::Client,
+    pub sms_provider: Arc<dyn SmsProvider>,
     pub config: Config,
 }
 
@@ -28,6 +31,7 @@ impl std::fmt::Debug for AppState {
             .field("sms", &"<SmsRepository>")
             .field("s3", &"<S3Client>")
             .field("sns", &"<SnsClient>")
+            .field("sms_provider", &"<SmsProvider>")
             .field("config", &self.config)
             .field("http_cache", &"<HttpCache>")
             .finish()
@@ -71,6 +75,15 @@ impl AppState {
             aws_sdk_sns::Client::from_conf(builder.build())
         };
 
+        let sms_provider: Arc<dyn SmsProvider> = if let Some(sms_cfg) = &cfg.sms {
+            match sms_cfg.provider {
+                SmsProviderType::Console => Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>,
+                SmsProviderType::Sns => Arc::new(SnsSmsProvider::new(sns.clone())) as Arc<dyn SmsProvider>,
+            }
+        } else {
+            Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>
+        };
+
         let kyc = KycRepository::new(pool.clone());
         let user = UserRepository::new(pool.clone());
         let device = DeviceRepository::new(pool.clone());
@@ -85,6 +98,7 @@ impl AppState {
             sms,
             s3,
             sns,
+            sms_provider,
             config: cfg.clone(),
         })
     }

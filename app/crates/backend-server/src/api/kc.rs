@@ -1,5 +1,9 @@
-use super::{BackendApi, kc_error};
+use super::{kc_error, BackendApi};
 use crate::worker;
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use axum_extra::extract::CookieJar;
 use backend_auth::SignatureContext;
 use backend_core::Error;
@@ -26,8 +30,7 @@ use gen_oas_server_kc::apis::users::{
 use gen_oas_server_kc::models;
 use headers::Host;
 use http::Method;
-use sha2::{Digest, Sha256};
-use std::ops::Deref;
+use rand::RngExt;
 
 #[backend_core::async_trait]
 impl Approvals<Error> for BackendApi {
@@ -430,13 +433,17 @@ impl Enrollment<Error> for BackendApi {
         // Actually, the repository should probably handle the OTP verification logic.
         // But looking at SmsRepo, it only has mark_sms_confirmed.
 
-        // Let's check if OTP matches.
-        // Note: otp_sha256 is in the DB.
-        let mut hasher = Sha256::new();
-        hasher.update(req.otp.as_bytes());
-        let hash = hasher.finalize();
+        // Verify OTP using Argon2
+        let parsed_hash = PasswordHash::new(
+            std::str::from_utf8(&sms.otp_sha256)
+                .map_err(|_| Error::Server("Stored OTP hash is not valid UTF-8".to_string()))?,
+        )
+        .map_err(|e| Error::Server(format!("Failed to parse stored hash: {}", e)))?;
 
-        if hash.deref() != sms.otp_sha256.as_slice() {
+        if Argon2::default()
+            .verify_password(req.otp.as_bytes(), &parsed_hash)
+            .is_err()
+        {
             return Ok(ConfirmSmsResponse::Status400_BadRequest(kc_error(
                 "INVALID_OTP",
                 "Invalid OTP",
@@ -616,15 +623,30 @@ impl Enrollment<Error> for BackendApi {
     ) -> Result<SendSmsResponse, Error> {
         let req = SmsSendRequest::from(body.clone());
 
-        let otp = "todo!();";
-        let otp_sha256 = "todo!();".as_bytes().to_vec();
+        // Generate 6-digit OTP
+        let otp: String = (0..6)
+            .map(|_| rand::rng().random_range(0..10).to_string())
+            .collect();
+
+        // Hash OTP with Argon2
+        let salt = SaltString::generate(&mut OsRng);
+        let otp_hash = Argon2::default()
+            .hash_password(otp.as_bytes(), &salt)
+            .map_err(|e| Error::Server(format!("Failed to hash OTP: {}", e)))?
+            .to_string();
+
+        // Send OTP via configured provider
+        self.state
+            .sms_provider
+            .send_otp(&req.phone_number, &otp)
+            .await?;
 
         let insert = backend_repository::SmsPendingInsert {
             realm: req.realm,
             client_id: req.client_id,
             user_id: req.user_id,
             phone_number: req.phone_number,
-            otp_sha256,
+            otp_sha256: otp_hash.into_bytes(),
             ttl_seconds: 300, // 5 minutes
             max_attempts: 3,
             metadata: req

@@ -100,6 +100,18 @@ pub struct AwsSns {
     pub initial_backoff_seconds: u64,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SmsProviderType {
+    Console,
+    Sns,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SmsConfig {
+    pub provider: SmsProviderType,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub server: Server,
@@ -112,6 +124,7 @@ pub struct Config {
     pub redis: Redis,
     pub s3: Option<AwsS3>,
     pub sns: Option<AwsSns>,
+    pub sms: Option<SmsConfig>,
 
     pub kc: KcAuth,
     pub bff: BffAuth,
