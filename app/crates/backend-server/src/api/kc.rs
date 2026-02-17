@@ -1,6 +1,7 @@
-use super::{BackendApi, kc_error};
+use super::{kc_error, BackendApi};
 use crate::worker;
 use axum_extra::extract::CookieJar;
+use backend_auth::SignatureContext;
 use backend_core::Error;
 use backend_model::kc::{
     ApprovalDecisionRequest, ApprovalStatusDto, DeviceRecordDto, SmsConfirmRequest, SmsSendRequest,
@@ -26,14 +27,18 @@ use gen_oas_server_kc::models;
 use headers::Host;
 use http::Method;
 use sha2::{Digest, Sha256};
+use std::ops::Deref;
 
 #[backend_core::async_trait]
 impl Approvals<Error> for BackendApi {
+    type Claims = SignatureContext;
+
     async fn cancel_approval(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::CancelApprovalPathParams,
     ) -> Result<CancelApprovalResponse, Error> {
         self.state
@@ -58,6 +63,7 @@ impl Approvals<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         header_params: &models::CreateApprovalHeaderParams,
         body: &models::ApprovalCreateRequest,
     ) -> Result<CreateApprovalResponse, Error> {
@@ -84,6 +90,7 @@ impl Approvals<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::DecideApprovalPathParams,
         body: &models::ApprovalDecisionRequest,
     ) -> Result<DecideApprovalResponse, Error> {
@@ -110,6 +117,7 @@ impl Approvals<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::GetApprovalPathParams,
     ) -> Result<GetApprovalResponse, Error> {
         self.state
@@ -134,6 +142,7 @@ impl Approvals<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::ListUserApprovalsPathParams,
         query_params: &models::ListUserApprovalsQueryParams,
     ) -> Result<ListUserApprovalsResponse, Error> {
@@ -163,11 +172,14 @@ impl Approvals<Error> for BackendApi {
 
 #[backend_core::async_trait]
 impl Devices<Error> for BackendApi {
+    type Claims = SignatureContext;
+
     async fn disable_user_device(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::DisableUserDevicePathParams,
     ) -> Result<DisableUserDeviceResponse, Error> {
         let device = self
@@ -207,6 +219,7 @@ impl Devices<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::ListUserDevicesPathParams,
         query_params: &models::ListUserDevicesQueryParams,
     ) -> Result<ListUserDevicesResponse, Error> {
@@ -235,6 +248,7 @@ impl Devices<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::DeviceLookupRequest,
     ) -> Result<LookupDeviceResponse, Error> {
         let req = backend_model::kc::DeviceLookupRequest {
@@ -267,11 +281,14 @@ impl Devices<Error> for BackendApi {
 
 #[backend_core::async_trait]
 impl Users<Error> for BackendApi {
+    type Claims = SignatureContext;
+
     async fn create_user(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::UserUpsertRequest,
     ) -> Result<CreateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
@@ -291,6 +308,7 @@ impl Users<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::DeleteUserPathParams,
     ) -> Result<DeleteUserResponse, Error> {
         self.state
@@ -312,6 +330,7 @@ impl Users<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::GetUserPathParams,
     ) -> Result<GetUserResponse, Error> {
         self.state
@@ -335,6 +354,7 @@ impl Users<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::UserSearchRequest,
     ) -> Result<SearchUsersResponse, Error> {
         let req = UserSearch::from(body.clone());
@@ -360,6 +380,7 @@ impl Users<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         path_params: &models::UpdateUserPathParams,
         body: &models::UserUpsertRequest,
     ) -> Result<UpdateUserResponse, Error> {
@@ -383,11 +404,14 @@ impl Users<Error> for BackendApi {
 
 #[backend_core::async_trait]
 impl Enrollment<Error> for BackendApi {
+    type Claims = SignatureContext;
+
     async fn confirm_sms(
         &self,
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::SmsConfirmRequest,
     ) -> Result<ConfirmSmsResponse, Error> {
         let req = SmsConfirmRequest::from(body.clone());
@@ -412,7 +436,7 @@ impl Enrollment<Error> for BackendApi {
         hasher.update(req.otp.as_bytes());
         let hash = hasher.finalize();
 
-        if hash.as_slice() != sms.otp_sha256.as_slice() {
+        if hash.deref() != sms.otp_sha256.as_slice() {
             return Ok(ConfirmSmsResponse::Status400_BadRequest(kc_error(
                 "INVALID_OTP",
                 "Invalid OTP",
@@ -437,6 +461,7 @@ impl Enrollment<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         _header_params: &models::EnrollmentBindHeaderParams,
         body: &models::EnrollmentBindRequest,
     ) -> Result<EnrollmentBindResponse, Error> {
@@ -479,6 +504,7 @@ impl Enrollment<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         _header_params: &models::EnrollmentPrecheckHeaderParams,
         body: &models::EnrollmentPrecheckRequest,
     ) -> Result<EnrollmentPrecheckResponse, Error> {
@@ -519,6 +545,7 @@ impl Enrollment<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::PhoneResolveOrCreateRequest,
     ) -> Result<ResolveOrCreateUserByPhoneResponse, Error> {
         self.state
@@ -543,6 +570,7 @@ impl Enrollment<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::PhoneResolveRequest,
     ) -> Result<ResolveUserByPhoneResponse, Error> {
         self.state
@@ -583,6 +611,7 @@ impl Enrollment<Error> for BackendApi {
         _method: &Method,
         _host: &Host,
         _cookies: &CookieJar,
+        _claims: &Self::Claims,
         body: &models::SmsSendRequest,
     ) -> Result<SendSmsResponse, Error> {
         let req = SmsSendRequest::from(body.clone());

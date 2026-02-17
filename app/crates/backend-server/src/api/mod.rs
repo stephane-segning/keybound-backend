@@ -4,9 +4,9 @@ pub mod staff;
 
 use crate::state::AppState;
 use axum::response::IntoResponse;
-use backend_auth::ServiceContext;
+use backend_auth::{ServiceContext, SignatureContext};
 use backend_core::{AppResult, Error};
-use http::{HeaderMap, HeaderValue, Request, header::AUTHORIZATION};
+use http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request};
 use std::sync::Arc;
 use tracing::debug;
 
@@ -90,10 +90,19 @@ impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
     async fn extract_claims_from_auth_header(
         &self,
         _kind: gen_oas_server_bff::apis::BasicAuthKind,
-        headers: &axum::http::header::HeaderMap,
+        headers: &HeaderMap,
         key: &str,
     ) -> Option<Self::Claims> {
         claims_from_header_key(headers, key)
+    }
+}
+
+#[backend_core::async_trait]
+impl gen_oas_server_kc::apis::ApiKeyAuthHeader for BackendApi {
+    type Claims = SignatureContext;
+
+    async fn extract_claims_from_header(&self, _: &HeaderMap, _: &str) -> Option<Self::Claims> {
+        Some(SignatureContext {})
     }
 }
 
@@ -104,7 +113,7 @@ impl gen_oas_server_staff::apis::ApiAuthBasic for BackendApi {
     async fn extract_claims_from_auth_header(
         &self,
         _kind: gen_oas_server_staff::apis::BasicAuthKind,
-        headers: &axum::http::header::HeaderMap,
+        headers: &HeaderMap,
         key: &str,
     ) -> Option<Self::Claims> {
         claims_from_header_key(headers, key)

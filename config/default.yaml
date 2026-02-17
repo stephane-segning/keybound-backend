@@ -10,8 +10,6 @@ server:
 logging:
   level: "info"
   log_requests_enabled: false
-  request_logging:
-    enabled: false
 
 database:
   url: "postgres://postgres:postgres@localhost:5432/user-storage"

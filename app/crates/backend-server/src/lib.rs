@@ -108,7 +108,7 @@ fn build_router(api: api::BackendApi, config: &Config) -> Router {
         jwks_base_paths,
     ));
 
-    if config.logging.request_logging.enabled || config.logging.log_requests_enabled {
+    if config.logging.log_requests_enabled {
         router.layer(
             TraceLayer::new_for_http().make_span_with(|req: &HttpRequest<_>| {
                 tracing::info_span!(

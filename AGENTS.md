@@ -2,9 +2,9 @@
 
 ## Purpose
 Tokenization/user-storage backend with three HTTP surfaces:
-- KC: `/v1/*`
-- BFF: `/api/registration/*`
-- Staff: `/api/kyc/staff/*`
+- KC: `/kc/*`
+- BFF: `/bff/*`
+- Staff: `/staff/*`
 
 `app/backend` starts the server; `crates/backend-server` is a library crate.
 
@@ -34,6 +34,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 6. Use `backend_core::Error` only; avoid scattered custom error mapping.
 7. Keep server config source in `backend-core::Config` only.
 8. Keep `backend-server` as library; app binary wires and starts it.
+9. `backend-core::Config` supports environment variable expansion in YAML files using `${VAR}` or `${VAR:-default}` syntax.
 
 ## IDs (Mandatory)
 Always use prefix + CUID from `backend-id`:
@@ -191,7 +192,11 @@ All backends:
 ### KYC Case/Submission Model
 - **Architecture**: Uses a relational model with `kyc_case` (lifecycle) and `kyc_submission` (versioned data).
 - **Data Storage**: Identity data (Name, DOB, etc.) is captured in each `kyc_submission` to maintain a historical snapshot.
-- **Status Tracking**: `kyc_case` tracks the current tier and active submission, while `kyc_submission` tracks the state of individual attempts.
+- **Status Tracking**: `kyc_case` tracks the active submission and overall lifecycle. Tiers are no longer persisted but are calculated dynamically based on approved documents (Tier 1: Identity, Tier 2: Identity + Address).
+
+### Optimized Staff Submissions Query
+- **Endpoint**: `/api/kyc/staff/submissions`
+- **Performance**: Uses SQL-level filtering, sorting, and pagination (limit/offset) to handle large volumes of submissions efficiently.
 
 ### KYC Profile Patch (Optimistic Locking)
 - **Endpoint**: `PATCH /api/registration/kyc/profile`

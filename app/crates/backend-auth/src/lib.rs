@@ -36,6 +36,9 @@ impl Has<XSpanIdString> for KcContext {
 }
 
 #[derive(Debug, Clone)]
+pub struct SignatureContext {}
+
+#[derive(Debug, Clone)]
 pub struct ServiceContext {
     x_span_id: XSpanIdString,
     authorization: Option<Authorization>,
