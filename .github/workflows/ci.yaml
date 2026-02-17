@@ -46,6 +46,9 @@ jobs:
 
   container-build-dev:
     name: Container Build (Dev)
+    permissions:
+      contents: read
+      packages: write
     needs:
       - release-build
       - tests
@@ -72,6 +75,9 @@ jobs:
 
   container-build-prod:
     name: Container Build (Prod)
+    permissions:
+      contents: read
+      packages: write
     needs:
       - cargo-version
       - release-build

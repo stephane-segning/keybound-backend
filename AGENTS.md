@@ -70,6 +70,11 @@ Required scenarios to keep covered in tests:
   - invalid signature
   - request body larger than `max_body_bytes`
   - valid signature with body preservation
+  - url encoded paths
+  - nested router paths
+  - method mismatch
+  - path mismatch
+  - body mismatch
 
 Suggested verification commands:
 - `cargo test -p backend-core --features axum --test error_response`

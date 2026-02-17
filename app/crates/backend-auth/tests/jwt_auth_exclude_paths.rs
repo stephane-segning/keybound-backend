@@ -307,6 +307,96 @@ async fn kc_signature_works_with_nested_router() {
 }
 
 #[tokio::test]
+async fn kc_signature_rejects_when_method_mismatch() {
+    let cfg = build_kc_auth();
+    let timestamp = now_unix_seconds();
+    let body = "";
+    let path = "/v1/users";
+    // Sign for POST
+    let signature = kc_signature(&cfg.signature_secret, timestamp, "POST", path, body);
+
+    // Request is GET
+    let mut request = Request::builder()
+        .method("GET")
+        .uri(path)
+        .body(Body::empty())
+        .unwrap();
+
+    request.headers_mut().insert(
+        "x-kc-timestamp",
+        HeaderValue::from_str(&timestamp.to_string()).unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert("x-kc-signature", HeaderValue::from_str(&signature).unwrap());
+
+    let result = require_kc_signature(&cfg, request).await;
+
+    assert!(result.is_err());
+    let payload = read_error_body(result.err().unwrap()).await;
+    assert_eq!(payload["message"], "invalid x-kc-signature");
+}
+
+#[tokio::test]
+async fn kc_signature_rejects_when_path_mismatch() {
+    let cfg = build_kc_auth();
+    let timestamp = now_unix_seconds();
+    let body = "";
+    // Sign for /v1/other
+    let signature = kc_signature(&cfg.signature_secret, timestamp, "GET", "/v1/other", body);
+
+    // Request is /v1/users
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/v1/users")
+        .body(Body::empty())
+        .unwrap();
+
+    request.headers_mut().insert(
+        "x-kc-timestamp",
+        HeaderValue::from_str(&timestamp.to_string()).unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert("x-kc-signature", HeaderValue::from_str(&signature).unwrap());
+
+    let result = require_kc_signature(&cfg, request).await;
+
+    assert!(result.is_err());
+    let payload = read_error_body(result.err().unwrap()).await;
+    assert_eq!(payload["message"], "invalid x-kc-signature");
+}
+
+#[tokio::test]
+async fn kc_signature_rejects_when_body_mismatch() {
+    let cfg = build_kc_auth();
+    let timestamp = now_unix_seconds();
+    // Sign for "foo"
+    let signature = kc_signature(&cfg.signature_secret, timestamp, "POST", "/v1/users", "foo");
+
+    // Request has "bar"
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/v1/users")
+        .body(Body::from("bar"))
+        .unwrap();
+
+    request.headers_mut().insert(
+        "x-kc-timestamp",
+        HeaderValue::from_str(&timestamp.to_string()).unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert("x-kc-signature", HeaderValue::from_str(&signature).unwrap());
+
+    let result = require_kc_signature(&cfg, request).await;
+
+    assert!(result.is_err());
+    let payload = read_error_body(result.err().unwrap()).await;
+    assert_eq!(payload["message"], "invalid x-kc-signature");
+}
+
+#[tokio::test]
 async fn jwks_auth_layer_enforces_when_path_matches_base_path() {
     let jwks_url = "http://localhost/jwks".to_string();
     let base_paths = vec!["/api/registration".to_string()];
