@@ -199,25 +199,36 @@ impl KycRepo for KycRepository {
 
     async fn list_kyc_submissions(
         &self,
-        status_val: Option<String>,
-        search_val: Option<String>,
-        limit_val: i64,
-        offset_val: i64,
-    ) -> RepoResult<Vec<db::KycSubmissionRow>> {
+        filter: KycSubmissionFilter,
+    ) -> RepoResult<(Vec<db::KycSubmissionRow>, i64)> {
         use backend_model::schema::kyc_submission::dsl::*;
 
+        let filter = filter.normalized();
+        let status_filter = filter.status.clone();
+        let search_filter = filter.search.clone();
         let mut conn = self.get_conn().await?;
-        let mut query = backend_model::schema::kyc_submission::table
+        let mut count_query = backend_model::schema::kyc_submission::table
+            .count()
+            .into_boxed();
+        let mut rows_query = backend_model::schema::kyc_submission::table
             .select(db::KycSubmissionRow::as_select())
             .into_boxed();
 
-        if let Some(s) = status_val {
-            query = query.filter(status.eq(s));
+        if let Some(s) = status_filter {
+            let s_for_count = s.clone();
+            count_query = count_query.filter(status.eq(s_for_count));
+            rows_query = rows_query.filter(status.eq(s));
         }
 
-        if let Some(s) = search_val {
+        if let Some(s) = search_filter {
             let pattern = format!("%{}%", s);
-            query = query.filter(
+            let count_search = first_name
+                .ilike(pattern.clone())
+                .or(last_name.ilike(pattern.clone()))
+                .or(email.ilike(pattern.clone()));
+            count_query = count_query.filter(count_search);
+
+            rows_query = rows_query.filter(
                 first_name
                     .ilike(pattern.clone())
                     .or(last_name.ilike(pattern.clone()))
@@ -225,48 +236,20 @@ impl KycRepo for KycRepository {
             );
         }
 
-        let rows = query
-            .limit(limit_val)
-            .offset(offset_val)
-            .load::<db::KycSubmissionRow>(&mut conn)
-            .await
-            .map_err(|e| backend_core::Error::Diesel(e))?;
-
-        Ok(rows)
-    }
-
-    async fn count_kyc_submissions(
-        &self,
-        status_val: Option<String>,
-        search_val: Option<String>,
-    ) -> RepoResult<i64> {
-        use backend_model::schema::kyc_submission::dsl::*;
-
-        let mut conn = self.get_conn().await?;
-        let mut query = backend_model::schema::kyc_submission::table
-            .count()
-            .into_boxed();
-
-        if let Some(s) = status_val {
-            query = query.filter(status.eq(s));
-        }
-
-        if let Some(s) = search_val {
-            let pattern = format!("%{}%", s);
-            query = query.filter(
-                first_name
-                    .ilike(pattern.clone())
-                    .or(last_name.ilike(pattern.clone()))
-                    .or(email.ilike(pattern)),
-            );
-        }
-
-        let total = query
+        let total = count_query
             .get_result::<i64>(&mut conn)
             .await
-            .map_err(|e| backend_core::Error::Diesel(e))?;
+            .map_err(backend_core::Error::Diesel)?;
 
-        Ok(total)
+        let rows = rows_query
+            .order(updated_at.desc())
+            .limit(i64::from(filter.limit))
+            .offset(filter.offset())
+            .load::<db::KycSubmissionRow>(&mut conn)
+            .await
+            .map_err(backend_core::Error::Diesel)?;
+
+        Ok((rows, total))
     }
 
     async fn get_kyc_submission(&self, user_id: &str) -> RepoResult<Option<db::KycSubmissionRow>> {

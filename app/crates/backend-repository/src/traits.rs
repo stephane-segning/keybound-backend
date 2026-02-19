@@ -105,16 +105,8 @@ pub trait KycRepo: Send + Sync {
     fn get_kyc_tier(&self, user_id: &str) -> impl Future<Output = RepoResult<Option<i32>>> + Send;
     fn list_kyc_submissions(
         &self,
-        status: Option<String>,
-        search: Option<String>,
-        limit: i64,
-        offset: i64,
-    ) -> impl Future<Output = RepoResult<Vec<backend_model::db::KycSubmissionRow>>> + Send;
-    fn count_kyc_submissions(
-        &self,
-        status: Option<String>,
-        search: Option<String>,
-    ) -> impl Future<Output = RepoResult<i64>> + Send;
+        filter: KycSubmissionFilter,
+    ) -> impl Future<Output = RepoResult<(Vec<backend_model::db::KycSubmissionRow>, i64)>> + Send;
     fn get_kyc_submission(
         &self,
         user_id: &str,

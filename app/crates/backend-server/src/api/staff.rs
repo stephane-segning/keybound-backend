@@ -7,7 +7,7 @@ use backend_model::staff::{
     KycApprovalRequest, KycDocumentDto, KycRejectionRequest, KycRequestInfoRequest,
     KycSubmissionDetailResponseDto, KycSubmissionSummaryDto, KycSubmissionsResponseDto,
 };
-use backend_repository::KycRepo;
+use backend_repository::{KycRepo, KycSubmissionFilter};
 use gen_oas_server_staff::apis::kyc_review::{
     ApiKycStaffSubmissionsGetResponse, ApiKycStaffSubmissionsUserIdApprovePostResponse,
     ApiKycStaffSubmissionsUserIdDocumentsDocumentIdDownloadUrlPostResponse,
@@ -38,24 +38,14 @@ impl KycReview<Error> for BackendApi {
         query_params: &models::ApiKycStaffSubmissionsGetQueryParams,
     ) -> Result<ApiKycStaffSubmissionsGetResponse, Error> {
         let (page, limit) = Self::normalize_page_limit(query_params.page, query_params.limit);
-        let offset = i64::from((page - 1) * limit);
+        let filter = KycSubmissionFilter {
+            status: query_params.status.clone(),
+            search: query_params.search.clone(),
+            page,
+            limit,
+        };
 
-        let rows = self
-            .state
-            .kyc
-            .list_kyc_submissions(
-                query_params.status.clone(),
-                query_params.search.clone(),
-                i64::from(limit),
-                offset,
-            )
-            .await?;
-
-        let total_count = self
-            .state
-            .kyc
-            .count_kyc_submissions(query_params.status.clone(), query_params.search.clone())
-            .await?;
+        let (rows, total_count) = self.state.kyc.list_kyc_submissions(filter).await?;
 
         let items = rows
             .into_iter()
