@@ -359,3 +359,165 @@ fn value_as_string(source: &Value, key: &str) -> Option<String> {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{
+        MockKycRepo, MockSmsProvider, MockUserRepo, MockWorkerHttpClient, TestAppStateBuilder,
+    };
+    use backend_model::db::{KycSessionRow, KycStepRow, UserRow};
+    use chrono::Utc;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_process_fineract_provisioning_job_missing_user() {
+        let mut user_repo = MockUserRepo::new();
+        user_repo
+            .expect_get_user()
+            .with(mockall::predicate::eq("usr_123"))
+            .returning(|_| Ok(None));
+
+        let state = TestAppStateBuilder::new()
+            .with_user(Arc::new(user_repo))
+            .build()
+            .await;
+
+        let job = FineractProvisioningJob {
+            user_id: "usr_123".to_string(),
+        };
+
+        let result = process_fineract_provisioning_job(Arc::new(state), job).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_fineract_provisioning_job_success() {
+        let mut user_repo = MockUserRepo::new();
+        let user = UserRow {
+            user_id: "usr_123".to_string(),
+            realm: "test".to_string(),
+            username: "testuser".to_string(),
+            first_name: Some("John".to_string()),
+            last_name: Some("Doe".to_string()),
+            email: Some("john@example.com".to_string()),
+            email_verified: true,
+            phone_number: Some("+123456789".to_string()),
+            fineract_customer_id: None,
+            disabled: false,
+            attributes: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        user_repo
+            .expect_get_user()
+            .with(mockall::predicate::eq("usr_123"))
+            .returning(move |_| Ok(Some(user.clone())));
+
+        let mut kyc_repo = MockKycRepo::new();
+        let session = KycSessionRow {
+            id: "sess_123".to_string(),
+            user_id: "usr_123".to_string(),
+            status: "OPEN".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        kyc_repo
+            .expect_start_or_resume_session()
+            .with(mockall::predicate::eq("usr_123"))
+            .returning(move |_| Ok((session.clone(), vec!["step_123".to_string()])));
+
+        let step = KycStepRow {
+            id: "step_123".to_string(),
+            session_id: "sess_123".to_string(),
+            user_id: "usr_123".to_string(),
+            step_type: "IDENTITY".to_string(),
+            status: "COMPLETED".to_string(),
+            data: json!({
+                "first_name": "John",
+                "last_name": "Doe",
+                "email": "john@example.com",
+                "phone_number": "+123456789",
+                "date_of_birth": "1990-01-01",
+                "gender": "MALE",
+                "national_id": "123456789"
+            }),
+            policy: json!({}),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            submitted_at: Some(Utc::now()),
+        };
+        kyc_repo
+            .expect_get_step()
+            .with(mockall::predicate::eq("step_123"))
+            .returning(move |_| Ok(Some(step.clone())));
+
+        let mut http_client = MockWorkerHttpClient::new();
+        http_client
+            .expect_post_json()
+            .with(
+                mockall::predicate::eq("http://localhost:8082/api/registration/register"),
+                mockall::predicate::always(),
+            )
+            .returning(|_, _| {
+                Ok((
+                    http::StatusCode::OK,
+                    json!({
+                        "external_id": "ext_123",
+                        "status": "PROVISIONED"
+                    })
+                    .to_string(),
+                ))
+            });
+
+        let state = TestAppStateBuilder::new()
+            .with_user(Arc::new(user_repo))
+            .with_kyc(Arc::new(kyc_repo))
+            .with_worker_http_client(Arc::new(http_client))
+            .build()
+            .await;
+
+        let job = FineractProvisioningJob {
+            user_id: "usr_123".to_string(),
+        };
+
+        let result = process_fineract_provisioning_job(Arc::new(state), job).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_notification_job_otp() {
+        let mut sms_provider = MockSmsProvider::new();
+        sms_provider
+            .expect_send_otp()
+            .with(
+                mockall::predicate::eq("+123456789"),
+                mockall::predicate::eq("123456"),
+            )
+            .returning(|_, _| Ok(()));
+
+        let job = NotificationJob::Otp {
+            step_id: "step_123".to_string(),
+            msisdn: "+123456789".to_string(),
+            otp: "123456".to_string(),
+        };
+
+        let result = process_notification_job(Arc::new(sms_provider), job).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_notification_job_magic_email() {
+        let sms_provider = MockSmsProvider::new();
+        // No expectations on sms_provider as MagicEmail only logs for now
+
+        let job = NotificationJob::MagicEmail {
+            step_id: "step_123".to_string(),
+            email: "test@example.com".to_string(),
+            token: "magic-token".to_string(),
+        };
+
+        let result = process_notification_job(Arc::new(sms_provider), job).await;
+        assert!(result.is_ok());
+    }
+}
