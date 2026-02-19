@@ -12,14 +12,14 @@ logging:
   log_requests_enabled: false
 
 database:
-  url: "postgres://postgres:postgres@postgres:5432/user-storage"
+  url: ${DATABASE_URL}
   pool_size: 10
 
 runtime:
   mode: shared
 
 redis:
-  url: "redis://redis:6379"
+  url: ${REDIS_URL}
 
 s3:
   region: "us-east-1"

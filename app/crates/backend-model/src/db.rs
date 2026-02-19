@@ -97,7 +97,6 @@ pub struct KycCaseRow {
 pub struct KycSubmissionRow {
     pub id: String,
     pub kyc_case_id: String,
-    pub version: i32,
     pub status: String,
     pub submitted_at: Option<DateTime<Utc>>,
     pub decided_at: Option<DateTime<Utc>>,

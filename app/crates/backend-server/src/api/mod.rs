@@ -5,15 +5,16 @@ pub mod staff;
 
 use crate::state::AppState;
 use axum::response::IntoResponse;
-use backend_auth::{ServiceContext, SignatureContext};
+use backend_auth::{JwtToken, OidcState};
 use backend_core::{AppResult, Error};
-use http::{HeaderMap, HeaderValue, Request, header::AUTHORIZATION};
+use http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request};
 use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Clone)]
 pub struct BackendApi {
     pub(crate) state: Arc<AppState>,
+    pub(crate) oidc_state: Arc<OidcState>,
 }
 
 impl AsRef<Self> for BackendApi {
@@ -23,8 +24,8 @@ impl AsRef<Self> for BackendApi {
 }
 
 impl BackendApi {
-    pub fn new(state: Arc<AppState>) -> Self {
-        Self { state }
+    pub fn new(state: Arc<AppState>, oidc_state: Arc<OidcState>) -> Self {
+        Self { state, oidc_state }
     }
 
     pub(crate) fn require_user_id(context: &ServiceContext) -> AppResult<String> {
@@ -86,7 +87,7 @@ impl gen_oas_server_staff::apis::ErrorHandler<Error> for BackendApi {
 
 #[backend_core::async_trait]
 impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
-    type Claims = ServiceContext;
+    type Claims = JwtToken;
 
     async fn extract_claims_from_auth_header(
         &self,
@@ -94,13 +95,13 @@ impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
         headers: &HeaderMap,
         key: &str,
     ) -> Option<Self::Claims> {
-        claims_from_header_key(headers, key)
+        claims_from_header_key(headers, key, self.oidc_state.clone())
     }
 }
 
 #[backend_core::async_trait]
 impl gen_oas_server_kc::apis::ApiKeyAuthHeader for BackendApi {
-    type Claims = SignatureContext;
+    type Claims = ();
 
     async fn extract_claims_from_header(&self, _: &HeaderMap, _: &str) -> Option<Self::Claims> {
         Some(SignatureContext {})
@@ -109,7 +110,7 @@ impl gen_oas_server_kc::apis::ApiKeyAuthHeader for BackendApi {
 
 #[backend_core::async_trait]
 impl gen_oas_server_staff::apis::ApiAuthBasic for BackendApi {
-    type Claims = ServiceContext;
+    type Claims = JwtToken;
 
     async fn extract_claims_from_auth_header(
         &self,
@@ -117,18 +118,18 @@ impl gen_oas_server_staff::apis::ApiAuthBasic for BackendApi {
         headers: &HeaderMap,
         key: &str,
     ) -> Option<Self::Claims> {
-        claims_from_header_key(headers, key)
+        claims_from_header_key(headers, key, self.oidc_state.clone())
     }
 }
 
-fn claims_from_header_key(headers: &HeaderMap<HeaderValue>, key: &str) -> Option<ServiceContext> {
-    let auth = headers
-        .get(key)
-        .or_else(|| headers.get(AUTHORIZATION))?
-        .clone();
-    let mut req = Request::new(());
-    req.headers_mut().insert(AUTHORIZATION, auth);
-    let ctx = ServiceContext::from_request(&req);
+fn claims_from_header_key(
+    headers: &HeaderMap<HeaderValue>,
+    key: &str,
+    oidc_state: Arc<OidcState>,
+) -> Option<JwtToken> {
+    let auth_header = headers.get(key).clone();
+    let ctx = JwtToken::from_request(auth_header);
+    
     debug!(
         has_user_id = ctx.user_id().is_some(),
         "constructed auth claims from header"

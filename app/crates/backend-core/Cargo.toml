@@ -21,12 +21,14 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = { workspace = true, optional = true }
 utoipa.workspace = true
+reqwest = { workspace = true, optional = true }
 aws-sdk-s3 = "1"
 aws-sdk-sns = "1"
 
 [features]
 default = []
 axum = ["dep:axum"]
+reqwest = ["dep:reqwest"]
 
 [dev-dependencies]
 tokio.workspace = true

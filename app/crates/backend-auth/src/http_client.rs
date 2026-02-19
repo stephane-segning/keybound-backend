@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use crate::models::errors::AppResult;
+use backend_core::AppResult;
 use reqwest::Client;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tracing::instrument;
 
 #[derive(Clone)]

@@ -32,7 +32,6 @@ CREATE TABLE kyc_case (
 CREATE TABLE kyc_submission (
   id text PRIMARY KEY,
   kyc_case_id text NOT NULL REFERENCES kyc_case(id) ON DELETE CASCADE,
-  version int NOT NULL,
   status kyc_submission_status NOT NULL DEFAULT 'DRAFT',
   requested_tier int NOT NULL DEFAULT 1,
   decided_tier int,
@@ -42,7 +41,6 @@ CREATE TABLE kyc_submission (
   provisioning_status kyc_provisioning_status NOT NULL DEFAULT 'NONE',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(kyc_case_id, version)
 );
 
 ALTER TABLE kyc_case

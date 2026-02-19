@@ -15,136 +15,6 @@ tags:
     description: Transaction limits derived from KYC tier.
 
 paths:
-  /api/kyc/cases/mine:
-    get:
-      tags: [ KYC ]
-      summary: Get my KYC case
-      description: Retrieve the KYC case and active submission summary for the authenticated user.
-      security: [ { bearerAuth: [ ] } ]
-      responses:
-        '200':
-          description: KYC case + active submission.
-          headers:
-            ETag:
-              description: Entity tag for optimistic concurrency on PATCH.
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycCaseResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /api/kyc/cases/mine:open-submission:
-    post:
-      tags: [ KYC ]
-      summary: Open a new submission version
-      description: >
-        Creates a new KYC submission version (e.g., for resubmission or re-KYC) and makes it active.
-      security: [ { bearerAuth: [ ] } ]
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OpenSubmissionRequest' }
-      responses:
-        '201':
-          description: New submission opened.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycCaseResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  /api/kyc/submissions/{submissionId}:
-    get:
-      tags: [ KYC ]
-      summary: Get submission detail
-      description: Retrieve detailed information for a submission (documents, comments visible to customer, etc.).
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - $ref: '#/components/parameters/SubmissionId'
-      responses:
-        '200':
-          description: Submission detail.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycSubmissionDetailResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /api/kyc/submissions/{submissionId}/submit:
-    post:
-      tags: [ KYC ]
-      summary: Submit a KYC submission
-      description: >
-        Submits the submission for review. After submission, profile fields become read-only until staff requests more info.
-        Idempotency-Key is recommended for safe retries.
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - $ref: '#/components/parameters/SubmissionId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '200':
-          description: Submission submitted.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycSubmissionDetailResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /api/kyc/submissions/{submissionId}/documents/init:
-    post:
-      tags: [ KYC ]
-      summary: Initialize a document upload
-      description: >
-        Returns a pre-signed URL to upload a document to S3 and creates a document record.
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - $ref: '#/components/parameters/SubmissionId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/InitDocumentUploadRequest' }
-      responses:
-        '201':
-          description: Upload initialized.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InitDocumentUploadResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /api/kyc/documents/{documentId}/confirm:
-    post:
-      tags: [ KYC ]
-      summary: Confirm an uploaded document
-      description: >
-        Confirms the S3 upload and stores hashes/metadata. Idempotency-Key is recommended.
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - $ref: '#/components/parameters/DocumentId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ConfirmDocumentUploadRequest' }
-      responses:
-        '200':
-          description: Document confirmed.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KycDocument' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
   /api/limits:
     get:
       tags: [ Limits ]
@@ -169,8 +39,6 @@ paths:
         Applies RFC 6902 JSON Patch operations against the authenticated user's KYC profile.
         Supports nested field updates.
       security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -225,14 +93,6 @@ components:
         minLength: 8
         maxLength: 128
       description: Idempotency key for safe retries.
-
-    IfMatch:
-      name: If-Match
-      in: header
-      required: false
-      schema:
-        type: string
-      description: ETag value from the most recent GET response.
 
   responses:
     BadRequest:

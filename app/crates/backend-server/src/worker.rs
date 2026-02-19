@@ -164,7 +164,7 @@ async fn process_fineract_provisioning_job(
 
     let config = Configuration {
         base_path: state.config.cuss.api_url.clone(),
-        user_agent: Some("backend-server/1.0.0".to_owned()),
+        user_agent: Some("user-storage/1.0.0".to_owned()),
         ..Default::default()
     };
 

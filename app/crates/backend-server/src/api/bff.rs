@@ -1,205 +1,17 @@
 use super::BackendApi;
 use backend_auth::ServiceContext;
 use backend_core::Error;
-use backend_repository::{KycDocumentInsert, KycRepo};
-use gen_oas_server_bff::apis::kyc::{
-    ApiKycCasesMineGetResponse, ApiKycCasesMineOpenSubmissionPostResponse,
-    ApiKycDocumentsDocumentIdConfirmPostResponse,
-    ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse,
-    ApiKycSubmissionsSubmissionIdGetResponse, ApiKycSubmissionsSubmissionIdSubmitPostResponse,
-    ApiRegistrationKycProfilePatchResponse, Kyc,
-};
+use backend_repository::KycRepo;
+use gen_oas_server_bff::apis::kyc::{ApiRegistrationKycProfilePatchResponse, Kyc};
 use gen_oas_server_bff::apis::limits::{ApiLimitsGetResponse, Limits};
 use gen_oas_server_bff::models;
 use gen_oas_server_bff::types::Nullable;
 use http::Method;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 #[backend_core::async_trait]
 impl Kyc<Error> for BackendApi {
     type Claims = ServiceContext;
-
-    async fn api_kyc_cases_mine_get(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        claims: &Self::Claims,
-    ) -> Result<ApiKycCasesMineGetResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
-
-        match profile {
-            Some(p) => Ok(ApiKycCasesMineGetResponse::Status200_KYCCase {
-                body: Self::kyc_case_from_profile(p),
-                e_tag: None,
-            }),
-            None => Ok(ApiKycCasesMineGetResponse::Status404_NotFound(
-                Self::not_found_problem("KYC case not found"),
-            )),
-        }
-    }
-
-    async fn api_kyc_cases_mine_open_submission_post(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        claims: &Self::Claims,
-        _body: &Option<models::OpenSubmissionRequest>,
-    ) -> Result<ApiKycCasesMineOpenSubmissionPostResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
-
-        match profile {
-            Some(p) => Ok(
-                ApiKycCasesMineOpenSubmissionPostResponse::Status201_NewSubmissionOpened(
-                    Self::kyc_case_from_profile(p),
-                ),
-            ),
-            None => Ok(
-                ApiKycCasesMineOpenSubmissionPostResponse::Status401_Unauthorized(
-                    Self::unauthorized_problem(),
-                ),
-            ),
-        }
-    }
-
-    async fn api_kyc_documents_document_id_confirm_post(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        _claims: &Self::Claims,
-        _header_params: &models::ApiKycDocumentsDocumentIdConfirmPostHeaderParams,
-        _path_params: &models::ApiKycDocumentsDocumentIdConfirmPostPathParams,
-        _body: &models::ConfirmDocumentUploadRequest,
-    ) -> Result<ApiKycDocumentsDocumentIdConfirmPostResponse, Error> {
-        Err(Error::internal(
-            "NOT_IMPLEMENTED",
-            "Endpoint not implemented",
-        ))
-    }
-
-    async fn api_kyc_submissions_submission_id_documents_init_post(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        claims: &Self::Claims,
-        _header_params: &models::ApiKycSubmissionsSubmissionIdDocumentsInitPostHeaderParams,
-        _path_params: &models::ApiKycSubmissionsSubmissionIdDocumentsInitPostPathParams,
-        body: &models::InitDocumentUploadRequest,
-    ) -> Result<ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        self.state.kyc.ensure_kyc_profile(&user_id).await?;
-
-        let input = KycDocumentInsert {
-            external_id: user_id,
-            document_type: body.document_type.to_string(),
-            file_name: body.file_name.clone(),
-            mime_type: body.mime_type.clone(),
-            content_length: body
-                .size_bytes
-                .as_ref()
-                .and_then(|size| match size {
-                    Nullable::Present(value) => Some(i64::from(*value)),
-                    Nullable::Null => None,
-                })
-                .unwrap_or(0),
-            s3_bucket: "azamra-kyc".to_owned(),
-            s3_key: "temp/key".to_owned(),
-            presigned_expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-        };
-
-        let row = self.state.kyc.insert_kyc_document_intent(input).await?;
-
-        Ok(
-            ApiKycSubmissionsSubmissionIdDocumentsInitPostResponse::Status201_UploadInitialized(
-                models::InitDocumentUploadResponse {
-                    document_id: row.id,
-                    upload_url: "https://s3.example.com/upload".to_owned(),
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1), // TODO: Fix this
-                    required_headers: None,
-                },
-            ),
-        )
-    }
-
-    async fn api_kyc_submissions_submission_id_get(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        claims: &Self::Claims,
-        _path_params: &models::ApiKycSubmissionsSubmissionIdGetPathParams,
-    ) -> Result<ApiKycSubmissionsSubmissionIdGetResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
-
-        match profile {
-            Some(p) => Ok(
-                ApiKycSubmissionsSubmissionIdGetResponse::Status200_SubmissionDetail(
-                    Self::kyc_submission_detail_from_profile(p),
-                ),
-            ),
-            None => Ok(
-                ApiKycSubmissionsSubmissionIdGetResponse::Status404_NotFound(
-                    Self::not_found_problem("KYC submission not found"),
-                ),
-            ),
-        }
-    }
-
-    async fn api_kyc_submissions_submission_id_submit_post(
-        &self,
-        _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        claims: &Self::Claims,
-        _header_params: &models::ApiKycSubmissionsSubmissionIdSubmitPostHeaderParams,
-        path_params: &models::ApiKycSubmissionsSubmissionIdSubmitPostPathParams,
-    ) -> Result<ApiKycSubmissionsSubmissionIdSubmitPostResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        // let expected_submission_id = format!("sub_{user_id}");
-
-        // if expected_submission_id != path_params.submission_id {
-        //     return Ok(
-        //         ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-        //             Self::not_found_problem("KYC submission not found"),
-        //         ),
-        //     );
-        // }
-
-        let updated = self
-            .state
-            .kyc
-            .submit_kyc_profile(&user_id, &path_params.submission_id)
-            .await?;
-
-        if !updated {
-            return Ok(
-                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-                    Self::not_found_problem("KYC submission not found"),
-                ),
-            );
-        }
-
-        let profile = self.state.kyc.get_kyc_profile(&user_id).await?;
-
-        match profile {
-            Some(p) => Ok(
-                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status200_SubmissionSubmitted(
-                    Self::kyc_submission_detail_from_profile(p),
-                ),
-            ),
-            None => Ok(
-                ApiKycSubmissionsSubmissionIdSubmitPostResponse::Status404_NotFound(
-                    Self::not_found_problem("KYC submission not found"),
-                ),
-            ),
-        }
-    }
 
     async fn api_registration_kyc_profile_patch(
         &self,
@@ -207,7 +19,6 @@ impl Kyc<Error> for BackendApi {
         _host: &headers::Host,
         _cookies: &axum_extra::extract::CookieJar,
         claims: &Self::Claims,
-        header_params: &models::ApiRegistrationKycProfilePatchHeaderParams,
         body: &Vec<models::JsonPatchOperation>,
     ) -> Result<ApiRegistrationKycProfilePatchResponse, Error> {
         let user_id = Self::require_user_id(claims)?;
@@ -220,22 +31,6 @@ impl Kyc<Error> for BackendApi {
             .await?
             .ok_or_else(|| Error::not_found("KYC_PROFILE_NOT_FOUND", "KYC profile not found"))?;
 
-        // Optimistic concurrency check
-        let expected_version = header_params
-            .if_match
-            .as_ref()
-            .and_then(|etag: &String| etag.trim_matches('"').parse::<i32>().ok());
-
-        if let Some(expected) = expected_version {
-            if current_profile.version != expected {
-                return Ok(
-                    ApiRegistrationKycProfilePatchResponse::Status412_ETagMismatch(
-                        Self::precondition_failed_problem("ETag mismatch"),
-                    ),
-                );
-            }
-        }
-
         let mut target = Self::profile_target_from_row(&current_profile);
 
         let operations = body
@@ -247,11 +42,7 @@ impl Kyc<Error> for BackendApi {
             .map_err(|error| Error::bad_request("INVALID_JSON_PATCH", error.to_string()))?;
 
         let req = Self::kyc_information_patch_request_from_target(&target)?;
-        let updated = self
-            .state
-            .kyc
-            .patch_kyc_profile(&user_id, expected_version, &req)
-            .await?;
+        let updated = self.state.kyc.patch_kyc_profile(&user_id, &req).await?;
 
         match updated {
             Some(p) => Ok(

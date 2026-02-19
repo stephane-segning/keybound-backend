@@ -22,7 +22,7 @@ use tracing::error;
 pub async fn require_kc_signature(
     cfg: &KcAuth,
     req: Request<Body>,
-) -> std::result::Result<Request<Body>, Response> {
+) -> Result<Request<Body>, Response> {
     if !cfg.enabled {
         return Ok(req);
     }
@@ -149,14 +149,7 @@ where
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
         let jwks_url = self.jwks_url.clone();
-        let base_paths = if self.base_paths.is_empty() {
-            vec![
-                "/api/registration".to_string(),
-                "/api/kyc/staff".to_string(),
-            ]
-        } else {
-            self.base_paths.clone()
-        };
+        let base_paths = self.base_paths.clone();
         let jwks_cell = Arc::clone(&self.jwks);
         let provider = Arc::clone(&self.provider);
 
@@ -187,7 +180,7 @@ where
             {
                 Ok(jwks) => jwks,
                 Err(e) => {
-                    tracing::error!("failed to load JWKS: {}", e);
+                    error!("failed to load JWKS: {}", e);
                     return Ok(unauthorized("failed to load JWKS"));
                 }
             };

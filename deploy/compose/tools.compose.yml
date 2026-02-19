@@ -2,7 +2,7 @@ services:
   download-core-tools:
     image: alpine/curl
     environment:
-      KEYCLOAK_PLUGIN_VERSION: "0.1.12"
+      KEYCLOAK_PLUGIN_VERSION: "0.2.0"
       OPENAPI_GENERATOR_VERSION: "7.19.0"
     command:
       - /bin/sh
@@ -23,12 +23,8 @@ services:
         echo "Download keybound...";
         curl -sLo /data/kc-plugins/keycloak-keybound-all.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-all-$$KEYCLOAK_PLUGIN_VERSION-all.jar"
         curl -sLo /data/kc-plugins/keycloak-keybound-api-gateway-http.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-api-gateway-http-$$KEYCLOAK_PLUGIN_VERSION.jar"
-        curl -sLo /data/kc-plugins/keycloak-keybound-authenticator-enrollment.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-authenticator-enrollment-$$KEYCLOAK_PLUGIN_VERSION.jar"
-        curl -sLo /data/kc-plugins/keycloak-keybound-credentials-device-key.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-credentials-device-key-$$KEYCLOAK_PLUGIN_VERSION.jar"
         curl -sLo /data/kc-plugins/keycloak-keybound-custom-endpoint.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-custom-endpoint-$$KEYCLOAK_PLUGIN_VERSION.jar"
         curl -sLo /data/kc-plugins/keycloak-keybound-grant-device-key.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-grant-device-key-$$KEYCLOAK_PLUGIN_VERSION.jar"
-        curl -sLo /data/kc-plugins/keycloak-keybound-protocol-mapper.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-protocol-mapper-$$KEYCLOAK_PLUGIN_VERSION.jar"
-        curl -sLo /data/kc-plugins/keycloak-keybound-theme.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-theme-$$KEYCLOAK_PLUGIN_VERSION.jar"
         curl -sLo /data/kc-plugins/keycloak-keybound-user-storage-backend.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-user-storage-backend-$$KEYCLOAK_PLUGIN_VERSION.jar"
         echo "Downloaded keybound";
 
@@ -56,8 +52,8 @@ services:
         uid: "1001"
         gid: "1001"
         mode: 0600
-      - source: oas_client_cuss_registration
-        target: /tmp/oas_client_cuss_registration.gson
+      - source: oas_server_cuss
+        target: /tmp/oas_server_cuss.gson
         uid: "1001"
         gid: "1001"
         mode: 0600
@@ -73,7 +69,7 @@ services:
         
         export JAR_FILE=/data/bin/openapi-generator-cli.jar
         
-        generations=('oas_server_kc' 'oas_server_bff' 'oas_server_staff' 'oas_client_cuss_registration')
+        generations=('oas_server_kc' 'oas_server_cuss' 'oas_server_staff' 'oas_server_bff')
         for item in "$${generations[@]}"; do
             rm -rf "/work/$$item"
             java -jar $$JAR_FILE generate \
@@ -93,27 +89,27 @@ configs:
         "packageName": "gen_oas_server_kc",
         "packageVersion": "9.9.9"
       }
+  oas_server_cuss:
+    content: |
+      {
+        "inputSpec": "/openapi/user-storage--cuss.yaml",
+        "generatorName": "rust-axum",
+        "packageName": "gen_oas_server_cuss",
+        "packageVersion": "9.9.9"
+      }
+  oas_server_staff:
+    content: |
+      {
+        "inputSpec": "/openapi/user-storage--staff.yaml",
+        "generatorName": "rust-axum",
+        "packageName": "gen_oas_server_staff",
+        "packageVersion": "9.9.9"
+      }
   oas_server_bff:
     content: |
       {
         "inputSpec": "/openapi/user-storage-bff.yaml",
         "generatorName": "rust-axum",
         "packageName": "gen_oas_server_bff",
-        "packageVersion": "9.9.9"
-      }
-  oas_server_staff:
-    content: |
-      {
-        "inputSpec": "/openapi/user-storage-staff.yaml",
-        "generatorName": "rust-axum",
-        "packageName": "gen_oas_server_staff",
-        "packageVersion": "9.9.9"
-      }
-  oas_client_cuss_registration:
-    content: |
-      {
-        "inputSpec": "/openapi/user-storage-registration.yaml",
-        "generatorName": "rust",
-        "packageName": "gen_oas_client_cuss_registration",
         "packageVersion": "9.9.9"
       }

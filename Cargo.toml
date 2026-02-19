@@ -10,7 +10,7 @@ members = [
     "app/crates/backend-repository",
     "app/crates/backend-otlp",
     "app/crates/backend-server",
-    "app/gen/oas_client_cuss_registration",
+    "app/gen/oas_server_cuss",
     "app/gen/oas_server_bff",
     "app/gen/oas_server_kc",
     "app/gen/oas_server_staff",
@@ -28,7 +28,7 @@ backend-repository = { path = "app/crates/backend-repository" }
 backend-otlp = { path = "app/crates/backend-otlp" }
 backend-server = { path = "app/crates/backend-server" }
 
-gen_oas_client_cuss_registration = { path = "app/gen/oas_client_cuss_registration" }
+gen_oas_server_cuss = { path = "app/gen/oas_server_cuss" }
 gen_oas_server_bff = { path = "app/gen/oas_server_bff" }
 gen_oas_server_kc = { path = "app/gen/oas_server_kc" }
 gen_oas_server_staff = { path = "app/gen/oas_server_staff" }
@@ -72,14 +72,12 @@ cuid = { version = "1" }
 regex = "1"
 getrandom = "0.4"
 goose = "0.18"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "http2", "gzip", "brotli", "deflate"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 utoipa = { version = "5", features = ["macros", "chrono"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 bytes = "1"
-
-swagger = "7"
 
 diesel = { version = "2.3", features = ["postgres", "chrono", "serde_json", "r2d2"] }
 openssl = { version = "0.10", features = ["vendored"] }

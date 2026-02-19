@@ -39,6 +39,8 @@ up-single service: # Start a single service (pass service=...)
 
 generate: # Start a single service (pass service=...)
 	docker compose -p {{project}} -f {{compose_file}} up generate-code {{c}}
+	cargo fmt -p gen_oas_server_cuss -p gen_oas_server_bff -p gen_oas_server_kc -p gen_oas_server_staff
+	cargo fix --allow-dirty -p gen_oas_server_cuss -p gen_oas_server_bff -p gen_oas_server_kc -p gen_oas_server_staff
 
 up-no-build: # Start services without rebuilding
 	docker compose -p {{project}} -f {{compose_file}} up -d --remove-orphans {{c}}

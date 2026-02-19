@@ -4,10 +4,10 @@ pub(crate) mod sms_retry;
 pub(crate) mod state;
 pub(crate) mod worker;
 
-use axum::Router;
 use axum::body::Body;
 use axum::http::Request as HttpRequest;
 use axum::response::Response;
+use axum::Router;
 use backend_auth::{jwks_auth_layer, kc_signature_layer};
 use backend_core::{Config, Result};
 use backend_migrate::connect_postgres_and_migrate;
@@ -70,21 +70,22 @@ fn build_router(api: api::BackendApi, config: &Config) -> Router {
     // Mount KC router if base path is provided
     let kc_base = config.kc.base_path.trim();
     if !kc_base.is_empty() && kc_base != "/" {
-        let kc_router = build_kc_router(api.clone(), config.kc.clone());
+        let layer = kc_signature_layer(config.kc.clone());
+        let kc_router = gen_oas_server_kc::server::new(api.clone()).layer(layer);
         router = router.nest(kc_base, kc_router);
     }
 
     // Mount BFF router if base path is provided
     let bff_base = config.bff.base_path.trim();
     if !bff_base.is_empty() && bff_base != "/" {
-        let bff_router = build_bff_router(api.clone(), config.bff.clone());
+        let bff_router = gen_oas_server_bff::server::new(api.clone());
         router = router.nest(bff_base, bff_router);
     }
 
     // Mount Staff router if base path is provided
     let staff_base = config.staff.base_path.trim();
     if !staff_base.is_empty() && staff_base != "/" {
-        let staff_router = build_staff_router(api.clone(), config.staff.clone());
+        let staff_router = gen_oas_server_staff::server::new(api.clone());
         router = router.nest(staff_base, staff_router);
     }
 
@@ -128,14 +129,6 @@ fn build_kc_router(api: api::BackendApi, cfg: backend_core::KcAuth) -> Router {
     let layer = kc_signature_layer(cfg);
     let router = gen_oas_server_kc::server::new(api);
     router.layer(layer)
-}
-
-fn build_bff_router(api: api::BackendApi, _cfg: backend_core::BffAuth) -> Router {
-    gen_oas_server_bff::server::new(api)
-}
-
-fn build_staff_router(api: api::BackendApi, _cfg: backend_core::StaffAuth) -> Router {
-    gen_oas_server_staff::server::new(api)
 }
 
 fn request_path(req: &HttpRequest<Body>) -> String {

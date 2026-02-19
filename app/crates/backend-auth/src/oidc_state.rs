@@ -1,24 +1,36 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use backend_core::AppResult;
 use tokio::sync::RwLock;
 
-use wazuh_cert_oauth2_model::models::document::DiscoveryDocument;
-use wazuh_cert_oauth2_model::models::errors::AppResult;
-use wazuh_cert_oauth2_model::services::http_client::HttpClient;
+use crate::document::DiscoveryDocument;
+use crate::http_client::HttpClient;
 
+#[derive(Clone)]
 pub struct OidcState {
     pub(crate) audiences: Option<Vec<String>>,
     issuer: String,
     discovery_ttl: Duration,
     jwks_ttl: Duration,
     http: HttpClient,
-    inner: RwLock<Inner>,
 }
 
+#[derive(Clone)]
 struct Inner {
     discovery: Option<(Arc<DiscoveryDocument>, Instant)>,
     jwks: Option<(Arc<jsonwebtoken::jwk::JwkSet>, Instant)>,
+}
+
+impl std::fmt::Debug for OidcState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("issuer", &"<String>")
+            .field("discovery_ttl", &"<Duration>")
+            .field("jwks_ttl", &"<Duration>")
+            .field("http", &"<HttpClient>")
+            .finish()
+    }
 }
 
 impl OidcState {

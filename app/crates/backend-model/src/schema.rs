@@ -73,7 +73,6 @@ diesel::table! {
         id -> Varchar,
         #[max_length = 40]
         kyc_case_id -> Varchar,
-        version -> Int4,
         status -> Varchar,
         submitted_at -> Nullable<Timestamptz>,
         decided_at -> Nullable<Timestamptz>,

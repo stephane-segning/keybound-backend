@@ -86,6 +86,10 @@ pub enum Error {
         message: String,
         context: Option<Value>,
     },
+
+    #[cfg(feature = "reqwest")]
+    #[error("HTTP error: {0}")]
+    ServerHttp(#[from] reqwest::Error),
 }
 
 impl Error {

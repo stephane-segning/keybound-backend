@@ -1,3 +1,8 @@
+x-env: &env
+  DATABASE_URL: "postgres://postgres:postgres@postgres:5432/user-storage"
+  REDIS_URL: "redis://redis:6379"
+  RUST_LOG: debug
+
 services:
   app:
     build:
@@ -14,8 +19,7 @@ services:
     ports:
       - "3001:3000"
     environment:
-      REDIS_HOST: redis
-      RUST_LOG: debug
+      <<: *env
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,8 +39,7 @@ services:
     volumes:
       - ../../config:/app/config/
     environment:
-      REDIS_HOST: redis
-      RUST_LOG: debug
+      <<: *env
     depends_on:
       postgres:
         condition: service_healthy

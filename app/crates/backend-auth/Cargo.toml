@@ -8,7 +8,7 @@ authors.workspace = true
 
 [dependencies]
 axum.workspace = true
-backend-core.workspace = true
+backend-core = { workspace = true, features = ["reqwest"] }
 base64.workspace = true
 http.workspace = true
 ring.workspace = true
@@ -18,10 +18,10 @@ tracing.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tower.workspace = true
-swagger.workspace = true
 jsonwebtoken.workspace = true
 jwks.workspace = true
 async-trait.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
