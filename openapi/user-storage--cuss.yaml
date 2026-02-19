@@ -4,22 +4,22 @@ info:
   version: 0.1.2
   description: User registration endpoint for new customers.
 servers:
-  - url: 'https://api.example.com'
-    description: Example production server
+- url: 'https://api.example.com'
+  description: Example production server
 tags:
-  - name: Registration
-    description: Customer self-registration operations.
+- name: Registration
+  description: Customer self-registration operations.
 security:
-  - BearerAuth: []
+- BearerAuth: []
 paths:
   /api/registration/register:
     post:
       tags:
-        - Registration
+      - Registration
       summary: Register a new customer
       description: Creates Fineract client and Keycloak user for self-service customer.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -48,10 +48,10 @@ components:
     RegistrationRequest:
       type: object
       required:
-        - firstName
-        - lastName
-        - email
-        - phone
+      - firstName
+      - lastName
+      - email
+      - phone
       properties:
         firstName:
           type: string

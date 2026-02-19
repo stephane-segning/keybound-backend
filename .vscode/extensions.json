@@ -8,6 +8,7 @@
         "pkief.material-icon-theme",
         "dustypomerleau.rust-syntax",
         "rooveterinaryinc.roo-cline",
-        "asciidoctor.asciidoctor-vscode"
+        "asciidoctor.asciidoctor-vscode",
+        "kennylong.kubernetes-yaml-formatter"
     ]
 }

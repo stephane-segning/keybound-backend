@@ -4,27 +4,27 @@ info:
   version: 0.1.2
   description: KYC review endpoints available only to staff reviewers.
 servers:
-  - url: 'https://api.example.com'
-    description: Example production server
+- url: 'https://api.example.com'
+  description: Example production server
 tags:
-  - name: KYC Review
-    description: Endpoints for review staff to operate on KYC submissions.
+- name: KYC Review
+  description: Endpoints for review staff to operate on KYC submissions.
 security:
-  - BearerAuth: []
+- BearerAuth: []
 paths:
   /api/kyc/staff/submissions:
     get:
       tags:
-        - KYC Review
+      - KYC Review
       summary: List submissions
       description: Return paginated KYC submissions filtered by status or search text, so reviewers can scan pending/processed work with optional filters.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/StatusFilter'
-        - $ref: '#/components/parameters/SearchQuery'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/StatusFilter'
+      - $ref: '#/components/parameters/SearchQuery'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: Page of KYC submissions.
@@ -37,15 +37,15 @@ paths:
   '/api/kyc/staff/submissions/{userId}':
     get:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Get submission
       description: Return detailed submission for a single customer, including the latest state and evidence list to support review decisions.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/UserId'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: Detailed submission.
@@ -60,13 +60,13 @@ paths:
   '/api/kyc/staff/submissions/{userId}/approve':
     post:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Approve KYC
       description: Records an approval ticket for the user and optionally triggers downstream tier migration.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/UserId'
       requestBody:
         required: true
         content:
@@ -83,13 +83,13 @@ paths:
   '/api/kyc/staff/submissions/{userId}/reject':
     post:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Reject KYC
       description: Logs a rejection reason and notes, maintaining the rejection history for compliance.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/UserId'
       requestBody:
         required: true
         content:
@@ -106,13 +106,13 @@ paths:
   '/api/kyc/staff/submissions/{userId}/request-info':
     post:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Request more info
       description: Sends a request for additional customer data so the user can complete missing evidence.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/UserId'
       requestBody:
         required: true
         content:
@@ -129,14 +129,14 @@ paths:
   '/api/kyc/staff/submissions/{userId}/documents/{documentId}/download-url':
     post:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Get presigned download URL for a document
       description: Returns a short-lived presigned URL to download a document from S3 so staff tooling can download stored evidence securely.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/UserId'
-        - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/DocumentId'
       requestBody:
         required: false
         content:
@@ -162,14 +162,14 @@ paths:
   /staff/review/queue:
     get:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Get pending review queue
       description: Produces a paginated queue view of pending review cases so reviewers can claim cases based on oldest submissions.
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
       responses:
         "200":
           description: Paginated list of cases
@@ -181,12 +181,12 @@ paths:
   /staff/review/cases/{caseId}:
     get:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Get a single review case (includes evidence refs)
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/CaseId'
+      - $ref: '#/components/parameters/CaseId'
       description: Fetches a case record with its evidence references so the reviewer can inspect all attachments.
       responses:
         "200":
@@ -199,12 +199,12 @@ paths:
   /staff/review/cases/{caseId}/decision:
     post:
       tags:
-        - KYC Review
+      - KYC Review
       summary: Approve or reject a case
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/CaseId'
+      - $ref: '#/components/parameters/CaseId'
       description: Persists the reviewer's decision and reason, updating the case status and notifying downstream systems.
       requestBody:
         required: true
@@ -383,7 +383,7 @@ components:
     KycApprovalRequest:
       type: object
       required:
-        - newTier
+      - newTier
       properties:
         newTier:
           type: integer
@@ -394,7 +394,7 @@ components:
     KycRejectionRequest:
       type: object
       required:
-        - reason
+      - reason
       properties:
         reason:
           type: string
@@ -405,7 +405,7 @@ components:
     KycRequestInfoRequest:
       type: object
       required:
-        - message
+      - message
       properties:
         message:
           type: string
@@ -427,8 +427,8 @@ components:
     PresignedDownloadUrlResponse:
       type: object
       required:
-        - url
-        - expiresAt
+      - url
+      - expiresAt
       properties:
         url:
           type: string
@@ -517,32 +517,32 @@ components:
     IdentityAssetType:
       type: string
       enum:
-        - SELFIE_CLOSEUP
-        - SELFIE_WITH_ID
-        - ID_FRONT
-        - ID_BACK
+      - SELFIE_CLOSEUP
+      - SELFIE_WITH_ID
+      - ID_FRONT
+      - ID_BACK
     ReviewDecisionOutcome:
       type: string
       enum:
-        - APPROVE
-        - REJECT
+      - APPROVE
+      - REJECT
     ReviewReasonCode:
       type: string
       enum:
-        - OK
-        - BLURRY
-        - MISSING_FACE
-        - ID_NOT_READABLE
-        - ID_MISMATCH
-        - FRAUD_SUSPECTED
-        - OTHER
+      - OK
+      - BLURRY
+      - MISSING_FACE
+      - ID_NOT_READABLE
+      - ID_MISMATCH
+      - FRAUD_SUSPECTED
+      - OTHER
     KycStatus:
       type: string
       enum:
-        - NOT_STARTED
-        - IN_PROGRESS
-        - CAPTURED
-        - PENDING_REVIEW
-        - VERIFIED
-        - REJECTED
-        - FAILED
+      - NOT_STARTED
+      - IN_PROGRESS
+      - CAPTURED
+      - PENDING_REVIEW
+      - VERIFIED
+      - REJECTED
+      - FAILED

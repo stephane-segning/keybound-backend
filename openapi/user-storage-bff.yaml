@@ -3,18 +3,17 @@ info:
   title: KYC Backend Internal API
   version: 0.1.2
   description: >
-    Internal API for KYC orchestration, evidence storage metadata, OTP/email issuance,
-    and staff review operations. Intended for trusted callers only (BFF, staff console, jobs).
+    Internal API for KYC orchestration, evidence storage metadata, OTP/email issuance, and staff review operations. Intended for trusted callers only (BFF, staff console, jobs).
 servers:
-  - url: https://kyc-internal.example.local
+- url: https://kyc-internal.example.local
 tags:
-  - name: steps
-  - name: uploads
-  - name: notifications
-  - name: staff
+- name: steps
+- name: uploads
+- name: notifications
+- name: staff
 
 security:
-  - BearerAuth: [ ]
+- BearerAuth: []
 
 paths:
   /internal/kyc/sessions:
@@ -24,7 +23,7 @@ paths:
       description: Allocates or refreshes a backend session tied to a user ID, ensuring steps are tracked consistently.
       operationId: internalStartSession
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -46,7 +45,7 @@ paths:
       description: Adds a new verification step (phone, email, address, or identity) to the ongoing session and returns its metadata.
       operationId: internalCreateStep
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -68,9 +67,9 @@ paths:
       description: Retrieves the internal state, data payload, and policy of the specified step for orchestration or staff tooling.
       operationId: internalGetStep
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/StepId"
+      - $ref: "#/components/parameters/StepId"
       responses:
         "200":
           description: Step
@@ -86,7 +85,7 @@ paths:
       description: Requests the underlying SMS gateway to issue a one-time code for the given msisdn and step.
       operationId: internalIssueOtp
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -108,7 +107,7 @@ paths:
       description: Confirms the submitted OTP against the stored challenge, returning the verification outcome and updated step status.
       operationId: internalVerifyOtp
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -130,7 +129,7 @@ paths:
       description: Generates a magic email token tied to a step so the client can deliver a secure link or code to the user.
       operationId: internalIssueMagicEmail
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -152,7 +151,7 @@ paths:
       description: Validates the email token and surfaces the result (verified/invalid/expired) along with the current step status.
       operationId: internalVerifyMagicEmail
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -174,7 +173,7 @@ paths:
       description: Provides presigned upload details (single/multipart) and encryption policy for evidence ingestion.
       operationId: internalPresignUpload
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -196,7 +195,7 @@ paths:
       description: Closes the upload session, optionally verifies checksum, and registers evidence metadata with the step.
       operationId: internalCompleteUpload
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -245,21 +244,21 @@ components:
     KycStatus:
       type: string
       enum:
-        - NOT_STARTED
-        - IN_PROGRESS
-        - CAPTURED
-        - PENDING_REVIEW
-        - VERIFIED
-        - REJECTED
-        - FAILED
+      - NOT_STARTED
+      - IN_PROGRESS
+      - CAPTURED
+      - PENDING_REVIEW
+      - VERIFIED
+      - REJECTED
+      - FAILED
 
     StepType:
       type: string
       enum:
-        - PHONE
-        - EMAIL
-        - ADDRESS
-        - IDENTITY
+      - PHONE
+      - EMAIL
+      - ADDRESS
+      - IDENTITY
 
     StepIdValue:
       type: string
@@ -278,9 +277,9 @@ components:
     KycSessionInternalStatus:
       type: string
       enum:
-        - OPEN
-        - COMPLETED
-        - LOCKED
+      - OPEN
+      - COMPLETED
+      - LOCKED
 
     KycSessionInternal:
       type: object
@@ -338,8 +337,8 @@ components:
     IssueOtpRequestChannel:
       type: string
       enum:
-        - SMS
-        - VOICE
+      - SMS
+      - VOICE
     IssueOtpRequest:
       type: object
       additionalProperties: false
@@ -399,11 +398,11 @@ components:
     VerifyOutcomeReason:
       type: string
       enum:
-        - VERIFIED
-        - INVALID
-        - EXPIRED
-        - LOCKED
-        - RATE_LIMITED
+      - VERIFIED
+      - INVALID
+      - EXPIRED
+      - LOCKED
+      - RATE_LIMITED
 
     VerifyOutcome:
       type: object
@@ -501,41 +500,41 @@ components:
     IdentityAssetType:
       type: string
       enum:
-        - SELFIE_CLOSEUP
-        - SELFIE_WITH_ID
-        - ID_FRONT
-        - ID_BACK
+      - SELFIE_CLOSEUP
+      - SELFIE_WITH_ID
+      - ID_FRONT
+      - ID_BACK
 
     InternalUploadPurpose:
       type: string
       enum:
-        - KYC_IDENTITY
+      - KYC_IDENTITY
 
     SseMode:
       type: string
       enum:
-        - SSE_S3
-        - SSE_KMS
-        - SSE_C
+      - SSE_S3
+      - SSE_KMS
+      - SSE_C
 
     UploadMethod:
       type: string
       enum:
-        - PUT
+      - PUT
 
     ReviewDecisionOutcome:
       type: string
       enum:
-        - APPROVE
-        - REJECT
+      - APPROVE
+      - REJECT
 
     ReviewReasonCode:
       type: string
       enum:
-        - OK
-        - BLURRY
-        - MISSING_FACE
-        - ID_NOT_READABLE
-        - ID_MISMATCH
-        - FRAUD_SUSPECTED
-        - OTHER
+      - OK
+      - BLURRY
+      - MISSING_FACE
+      - ID_NOT_READABLE
+      - ID_MISMATCH
+      - FRAUD_SUSPECTED
+      - OTHER
