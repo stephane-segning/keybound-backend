@@ -28,7 +28,7 @@ pub async fn serve(core_config: &Config) -> Result<()> {
         state.oidc_state.clone(),
         state.signature_state.clone(),
     );
-    let app = build_router(api, &state.config);
+    let app = build_router(api, &state.config, state.oidc_state.clone());
 
     info!("Listening on {}", listen_addr);
 
@@ -67,7 +67,7 @@ pub async fn run_worker(core_config: &Config) -> Result<()> {
     worker::run(state).await
 }
 
-fn build_router(api: api::BackendApi, config: &Config) -> Router {
+fn build_router(api: api::BackendApi, config: &Config, oidc_state: Arc<backend_auth::OidcState>) -> Router {
     // Mount sub-routers onto a fresh root router
     let mut router = Router::new();
 
@@ -110,7 +110,7 @@ fn build_router(api: api::BackendApi, config: &Config) -> Router {
     }
 
     router = router.layer(jwks_auth_layer(
-        config.oauth2.jwks_url.clone(),
+        oidc_state,
         jwks_base_paths,
     ));
 

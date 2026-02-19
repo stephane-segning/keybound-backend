@@ -37,7 +37,7 @@ sms:
   provider: console # options are 'console' (default) or 'sns'
 
 oauth2:
-  jwks_url: "http://keycloak:9026/realms/e2e-testing/protocol/openid-connect/certs"
+  issuer: "http://keycloak:9026/realms/e2e-testing"
   base-paths: []
 
 kc:

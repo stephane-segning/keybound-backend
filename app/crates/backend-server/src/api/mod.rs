@@ -7,7 +7,7 @@ use crate::state::AppState;
 use axum::response::IntoResponse;
 use backend_auth::{JwtToken, OidcState, SignatureContext, SignatureState};
 use backend_core::{AppResult, Error};
-use http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Request};
+use http::{HeaderMap, HeaderValue};
 use std::sync::Arc;
 use tracing::{debug, instrument};
 

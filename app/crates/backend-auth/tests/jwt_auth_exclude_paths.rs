@@ -5,7 +5,7 @@ use axum::http::{HeaderValue, Request, StatusCode};
 use axum::routing::get;
 use axum::{body::to_bytes, response::Response};
 use backend_auth::{
-    JwksProvider, SignatureState, jwks_auth_layer, kc_signature_layer, require_kc_signature,
+    SignatureState, jwks_auth_layer, kc_signature_layer, require_kc_signature, OidcState, HttpClient
 };
 use backend_core::KcAuth;
 use base64::Engine;
@@ -53,16 +53,15 @@ fn kc_signature(secret: &str, timestamp: i64, method: &str, path: &str, body: &s
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest.as_ref())
 }
 
-#[derive(Clone)]
-struct MockJwksProvider;
-
-#[async_trait]
-impl JwksProvider for MockJwksProvider {
-    async fn get_jwks(&self, _url: &str) -> Result<Jwks, String> {
-        // Return a dummy JWKS or error as needed for tests
-        // For now, we can return an error to simulate failure or empty JWKS
-        Err("mock error".to_string())
-    }
+fn build_oidc_state() -> Arc<OidcState> {
+    let http_client = HttpClient::new_with_defaults().unwrap();
+    Arc::new(OidcState::new(
+        "http://localhost".to_string(),
+        None,
+        std::time::Duration::from_secs(3600),
+        std::time::Duration::from_secs(3600),
+        http_client,
+    ))
 }
 
 #[tokio::test]
@@ -430,14 +429,11 @@ async fn kc_signature_rejects_when_body_mismatch() {
 
 #[tokio::test]
 async fn jwks_auth_layer_enforces_when_path_matches_base_path() {
-    let jwks_url = "http://localhost/jwks".to_string();
+    let oidc_state = build_oidc_state();
     let base_paths = vec!["/api/registration".to_string()];
     let router = Router::new()
         .route("/api/registration/users", get(|| async { "ok" }))
-        .layer(
-            jwks_auth_layer(jwks_url, base_paths)
-                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
-        );
+        .layer(jwks_auth_layer(oidc_state, base_paths));
 
     let request = Request::builder()
         .uri("/api/registration/users")
@@ -452,14 +448,11 @@ async fn jwks_auth_layer_enforces_when_path_matches_base_path() {
 
 #[tokio::test]
 async fn jwks_auth_layer_bypasses_when_path_does_not_match_base_path() {
-    let jwks_url = "http://localhost/jwks".to_string();
+    let oidc_state = build_oidc_state();
     let base_paths = vec!["/api/registration".to_string()];
     let router = Router::new()
         .route("/public/info", get(|| async { "ok" }))
-        .layer(
-            jwks_auth_layer(jwks_url, base_paths)
-                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
-        );
+        .layer(jwks_auth_layer(oidc_state, base_paths));
 
     let request = Request::builder()
         .uri("/public/info")
@@ -473,14 +466,11 @@ async fn jwks_auth_layer_bypasses_when_path_does_not_match_base_path() {
 
 #[tokio::test]
 async fn jwks_auth_layer_bypasses_when_empty_base_paths() {
-    let jwks_url = "http://localhost/jwks".to_string();
+    let oidc_state = build_oidc_state();
     let base_paths = vec![];
     let router = Router::new()
         .route("/api/registration/users", get(|| async { "ok" }))
-        .layer(
-            jwks_auth_layer(jwks_url, base_paths)
-                .with_provider(Box::new(MockJwksProvider) as Box<dyn JwksProvider>),
-        );
+        .layer(jwks_auth_layer(oidc_state, base_paths));
 
     let request = Request::builder()
         .uri("/api/registration/users")

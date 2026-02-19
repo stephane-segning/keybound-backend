@@ -1,17 +1,15 @@
-use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use axum::extract::OriginalUri;
 use axum::http::{Request, StatusCode, header::AUTHORIZATION};
 use axum::response::{IntoResponse, Response};
 use crate::signature_principal::SignatureState;
-use jsonwebtoken::{Validation, decode, decode_header};
-use jwks::Jwks;
+use crate::oidc_state::OidcState;
+use jsonwebtoken::{Validation, decode, decode_header, jwk::JwkSet, DecodingKey};
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::OnceCell;
 use tower::{Layer, Service};
 use tracing::error;
 
@@ -48,46 +46,22 @@ pub fn kc_signature_layer(enabled: bool, state: Arc<SignatureState>) -> KcSignat
     KcSignatureLayer::new(enabled, state)
 }
 
-#[async_trait]
-pub trait JwksProvider: Send + Sync + 'static {
-    async fn get_jwks(&self, url: &str) -> Result<Jwks, String>;
-}
-
-#[derive(Clone, Default)]
-pub struct DefaultJwksProvider;
-
-#[async_trait]
-impl JwksProvider for DefaultJwksProvider {
-    async fn get_jwks(&self, url: &str) -> Result<Jwks, String> {
-        Jwks::from_jwks_url(url).await.map_err(|e| e.to_string())
-    }
-}
-
-pub fn jwks_auth_layer(jwks_url: String, base_paths: Vec<String>) -> JwksAuthLayer {
-    JwksAuthLayer::new(jwks_url, base_paths)
+pub fn jwks_auth_layer(oidc_state: Arc<OidcState>, base_paths: Vec<String>) -> JwksAuthLayer {
+    JwksAuthLayer::new(oidc_state, base_paths)
 }
 
 #[derive(Clone)]
 pub struct JwksAuthLayer {
-    jwks_url: String,
+    oidc_state: Arc<OidcState>,
     base_paths: Vec<String>,
-    jwks: Arc<OnceCell<Jwks>>,
-    provider: Arc<Box<dyn JwksProvider>>,
 }
 
 impl JwksAuthLayer {
-    pub fn new(jwks_url: String, base_paths: Vec<String>) -> Self {
+    pub fn new(oidc_state: Arc<OidcState>, base_paths: Vec<String>) -> Self {
         Self {
-            jwks_url,
+            oidc_state,
             base_paths,
-            jwks: Arc::new(OnceCell::new()),
-            provider: Arc::new(Box::new(DefaultJwksProvider)),
         }
-    }
-
-    pub fn with_provider(mut self, provider: Box<dyn JwksProvider>) -> Self {
-        self.provider = Arc::new(provider);
-        self
     }
 }
 
@@ -97,10 +71,8 @@ impl<S> Layer<S> for JwksAuthLayer {
     fn layer(&self, inner: S) -> Self::Service {
         JwksAuthService {
             inner,
-            jwks_url: self.jwks_url.clone(),
+            oidc_state: Arc::clone(&self.oidc_state),
             base_paths: self.base_paths.clone(),
-            jwks: Arc::clone(&self.jwks),
-            provider: Arc::clone(&self.provider),
         }
     }
 }
@@ -108,10 +80,8 @@ impl<S> Layer<S> for JwksAuthLayer {
 #[derive(Clone)]
 pub struct JwksAuthService<S> {
     inner: S,
-    jwks_url: String,
+    oidc_state: Arc<OidcState>,
     base_paths: Vec<String>,
-    jwks: Arc<OnceCell<Jwks>>,
-    provider: Arc<Box<dyn JwksProvider>>,
 }
 
 impl<S> Service<Request<Body>> for JwksAuthService<S>
@@ -129,10 +99,8 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
-        let jwks_url = self.jwks_url.clone();
+        let oidc_state = Arc::clone(&self.oidc_state);
         let base_paths = self.base_paths.clone();
-        let jwks_cell = Arc::clone(&self.jwks);
-        let provider = Arc::clone(&self.provider);
 
         Box::pin(async move {
             let path = req
@@ -152,13 +120,7 @@ where
                 None => return Ok(unauthorized("missing bearer token")),
             };
 
-            let jwks = match jwks_cell
-                .get_or_try_init(|| async {
-                    tracing::info!("Lazy-loading JWKS from {}", jwks_url);
-                    provider.get_jwks(&jwks_url).await
-                })
-                .await
-            {
+            let jwks = match oidc_state.get_jwks().await {
                 Ok(jwks) => jwks,
                 Err(e) => {
                     error!("failed to load JWKS: {}", e);
@@ -166,7 +128,7 @@ where
                 }
             };
 
-            if validate_token(&token, jwks) {
+            if validate_token(&token, &jwks, &oidc_state) {
                 inner.call(req).await
             } else {
                 Ok(unauthorized("invalid bearer token"))
@@ -175,7 +137,7 @@ where
     }
 }
 
-fn validate_token(token: &str, jwks: &Jwks) -> bool {
+fn validate_token(token: &str, jwks: &JwkSet, oidc_state: &OidcState) -> bool {
     let header = match decode_header(token) {
         Ok(h) => h,
         Err(e) => {
@@ -192,21 +154,33 @@ fn validate_token(token: &str, jwks: &Jwks) -> bool {
         }
     };
 
-    let jwk = match jwks.keys.get(&kid) {
+    let jwk = match jwks.find(&kid) {
         Some(j) => j,
         None => {
-            error!("decode header error: jwk");
+            error!("decode header error: jwk not found for kid: {}", kid);
+            return false;
+        }
+    };
+
+    let decoding_key = match DecodingKey::from_jwk(jwk) {
+        Ok(k) => k,
+        Err(e) => {
+            error!("failed to create decoding key from JWK: {}", e);
             return false;
         }
     };
 
     let mut validation = Validation::new(header.alg);
-    validation.validate_aud = false;
+    if let Some(audiences) = &oidc_state.audiences {
+        validation.set_audience(audiences);
+    } else {
+        validation.validate_aud = false;
+    }
 
-    let result = decode::<JwtClaims>(token, &jwk.decoding_key, &validation);
+    let result = decode::<JwtClaims>(token, &decoding_key, &validation);
 
     if let Err(e) = result {
-        error!("decode header error: {e}");
+        error!("token validation error: {e}");
         false
     } else {
         true
