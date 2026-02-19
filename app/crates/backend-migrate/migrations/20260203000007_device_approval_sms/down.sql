@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS approval;
-DROP TABLE IF EXISTS device;
