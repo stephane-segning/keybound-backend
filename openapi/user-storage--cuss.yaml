@@ -1,14 +1,16 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Customer Registration Service - Register
   version: 1.0.0
-  description: Public registration endpoint for new customers.
+  description: User registration endpoint for new customers.
 servers:
   - url: 'https://api.example.com'
     description: Example production server
 tags:
   - name: Registration
     description: Customer self-registration operations.
+security:
+  - BearerAuth: []
 paths:
   /api/registration/register:
     post:
@@ -16,6 +18,8 @@ paths:
         - Registration
       summary: Register a new customer
       description: Creates Fineract client and Keycloak user for self-service customer.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -34,6 +38,12 @@ paths:
         '500':
           description: Registration failed.
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token for user registration service.
   schemas:
     RegistrationRequest:
       type: object
