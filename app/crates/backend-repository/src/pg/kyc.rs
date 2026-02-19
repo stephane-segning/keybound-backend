@@ -526,9 +526,12 @@ impl KycRepo for KycRepository {
                         .load::<String>(conn)
                         .await?;
 
-                    let has_all_assets = Self::required_identity_assets()
-                        .iter()
-                        .all(|required_asset| present_assets.iter().any(|asset| asset == required_asset));
+                    let has_all_assets =
+                        Self::required_identity_assets()
+                            .iter()
+                            .all(|required_asset| {
+                                present_assets.iter().any(|asset| asset == required_asset)
+                            });
 
                     if has_all_assets {
                         let now = Utc::now();
@@ -707,20 +710,18 @@ impl KycRepo for KycRepository {
             .optional()
             .map_err(Error::from)?;
 
-        let Some(
-            (
-                submission_id,
-                user_id,
-                first_name,
-                last_name,
-                email,
-                phone_number,
-                user_attributes,
-                status,
-                submitted_at,
-                step_data,
-            ),
-        ) = row
+        let Some((
+            submission_id,
+            user_id,
+            first_name,
+            last_name,
+            email,
+            phone_number,
+            user_attributes,
+            status,
+            submitted_at,
+            step_data,
+        )) = row
         else {
             return Ok(None);
         };
@@ -735,7 +736,13 @@ impl KycRepo for KycRepository {
                 kyc_review_decision::decided_at,
                 kyc_review_decision::reviewer_id,
             ))
-            .first::<(String, String, Option<String>, DateTime<Utc>, Option<String>)>(&mut conn)
+            .first::<(
+                String,
+                String,
+                Option<String>,
+                DateTime<Utc>,
+                Option<String>,
+            )>(&mut conn)
             .await
             .optional()
             .map_err(Error::from)?;
@@ -773,24 +780,19 @@ impl KycRepo for KycRepository {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
 
-        let (reviewed_at, reviewed_by, rejection_reason, review_notes) = if let Some((
-            outcome,
-            reason_code,
-            comment,
-            decided_at,
-            reviewer_id,
-        )) = latest_decision
-        {
-            let rejection_reason = if outcome == "REJECT" {
-                rejection_reason_from_data.or(Some(reason_code))
-            } else {
-                None
-            };
+        let (reviewed_at, reviewed_by, rejection_reason, review_notes) =
+            if let Some((outcome, reason_code, comment, decided_at, reviewer_id)) = latest_decision
+            {
+                let rejection_reason = if outcome == "REJECT" {
+                    rejection_reason_from_data.or(Some(reason_code))
+                } else {
+                    None
+                };
 
-            (Some(decided_at), reviewer_id, rejection_reason, comment)
-        } else {
-            (None, None, rejection_reason_from_data, None)
-        };
+                (Some(decided_at), reviewer_id, rejection_reason, comment)
+            } else {
+                (None, None, rejection_reason_from_data, None)
+            };
 
         Ok(Some(KycStaffSubmissionDetailRow {
             submission_id,
@@ -866,7 +868,9 @@ impl KycRepo for KycRepository {
         submission_id_val: &str,
         document_id_val: &str,
     ) -> RepoResult<Option<KycStaffDocumentRow>> {
-        let rows = self.list_staff_submission_documents(submission_id_val).await?;
+        let rows = self
+            .list_staff_submission_documents(submission_id_val)
+            .await?;
         Ok(rows.into_iter().find(|row| row.id == document_id_val))
     }
 
@@ -1108,7 +1112,10 @@ impl KycRepo for KycRepository {
             .inner_join(app_user::table.on(app_user::user_id.eq(kyc_step::user_id)))
             .filter(kyc_review_queue::status.eq(REVIEW_STATUS_PENDING))
             .filter(kyc_step::step_type.eq(IDENTITY_STEP_TYPE))
-            .order((kyc_review_queue::priority.desc(), kyc_review_queue::created_at.asc()))
+            .order((
+                kyc_review_queue::priority.desc(),
+                kyc_review_queue::created_at.asc(),
+            ))
             .limit(i64::from(limit))
             .offset(offset)
             .select((

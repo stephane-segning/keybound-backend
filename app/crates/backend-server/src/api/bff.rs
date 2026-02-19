@@ -49,7 +49,11 @@ impl Steps<Error> for BackendApi {
     ) -> Result<InternalStartSessionResponse, Error> {
         ensure_user_match(claims, &body.user_id)?;
 
-        let (session, step_ids) = self.state.kyc.start_or_resume_session(&body.user_id).await?;
+        let (session, step_ids) = self
+            .state
+            .kyc
+            .start_or_resume_session(&body.user_id)
+            .await?;
 
         Ok(InternalStartSessionResponse::Status201_Session(
             models::KycSessionInternal::new(
@@ -83,9 +87,9 @@ impl Steps<Error> for BackendApi {
             })
             .await?;
 
-        Ok(InternalCreateStepResponse::Status201_StepCreated(step_from_row(
-            row,
-        )?))
+        Ok(InternalCreateStepResponse::Status201_StepCreated(
+            step_from_row(row)?,
+        ))
     }
 
     async fn internal_get_step(
@@ -99,7 +103,9 @@ impl Steps<Error> for BackendApi {
         let user_id = Self::require_user_id(claims)?;
         let step = load_owned_step(self, &path_params.step_id, &user_id).await?;
 
-        Ok(InternalGetStepResponse::Status200_Step(step_from_row(step)?))
+        Ok(InternalGetStepResponse::Status200_Step(step_from_row(
+            step,
+        )?))
     }
 }
 
@@ -240,20 +246,24 @@ impl Notifications<Error> for BackendApi {
         let user_id = Self::require_user_id(claims)?;
 
         let Some((token_ref, secret)) = body.token.split_once('.') else {
-            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-                false,
-                models::VerifyOutcomeReason::Invalid,
-                models::KycStatus::Failed,
-            )));
+            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+                models::VerifyOutcome::new(
+                    false,
+                    models::VerifyOutcomeReason::Invalid,
+                    models::KycStatus::Failed,
+                ),
+            ));
         };
 
         let challenge = self.state.kyc.get_magic_challenge(token_ref).await?;
         let Some(challenge) = challenge else {
-            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-                false,
-                models::VerifyOutcomeReason::Invalid,
-                models::KycStatus::Failed,
-            )));
+            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+                models::VerifyOutcome::new(
+                    false,
+                    models::VerifyOutcomeReason::Invalid,
+                    models::KycStatus::Failed,
+                ),
+            ));
         };
 
         let step = load_owned_step(self, &challenge.step_id, &user_id).await?;
@@ -268,37 +278,48 @@ impl Notifications<Error> for BackendApi {
             )
             .await?;
         if recent_count >= MAGIC_RATE_LIMIT_MAX_ISSUES {
-            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-                false,
-                models::VerifyOutcomeReason::RateLimited,
-                parse_step_status(&step.status),
-            )));
+            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+                models::VerifyOutcome::new(
+                    false,
+                    models::VerifyOutcomeReason::RateLimited,
+                    parse_step_status(&step.status),
+                ),
+            ));
         }
 
         if challenge.expires_at < Utc::now() {
-            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-                false,
-                models::VerifyOutcomeReason::Expired,
-                parse_step_status(&step.status),
-            )));
+            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+                models::VerifyOutcome::new(
+                    false,
+                    models::VerifyOutcomeReason::Expired,
+                    parse_step_status(&step.status),
+                ),
+            ));
         }
 
         if verify_secret(secret, &challenge.token_hash)? {
             self.state.kyc.mark_magic_verified(token_ref).await?;
-            self.state.kyc.update_step_status(&step.id, "VERIFIED").await?;
+            self.state
+                .kyc
+                .update_step_status(&step.id, "VERIFIED")
+                .await?;
 
-            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-                true,
-                models::VerifyOutcomeReason::Verified,
-                models::KycStatus::Verified,
-            )));
+            return Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+                models::VerifyOutcome::new(
+                    true,
+                    models::VerifyOutcomeReason::Verified,
+                    models::KycStatus::Verified,
+                ),
+            ));
         }
 
-        Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(models::VerifyOutcome::new(
-            false,
-            models::VerifyOutcomeReason::Invalid,
-            parse_step_status(&step.status),
-        )))
+        Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(
+            models::VerifyOutcome::new(
+                false,
+                models::VerifyOutcomeReason::Invalid,
+                parse_step_status(&step.status),
+            ),
+        ))
     }
 
     async fn internal_verify_otp(
@@ -358,7 +379,10 @@ impl Notifications<Error> for BackendApi {
         }
 
         if challenge.tries_left <= 0 {
-            self.state.kyc.update_step_status(&step.id, "FAILED").await?;
+            self.state
+                .kyc
+                .update_step_status(&step.id, "FAILED")
+                .await?;
             return Ok(InternalVerifyOtpResponse::Status200_VerificationOutcome(
                 models::VerifyOutcome::new(
                     false,
@@ -373,7 +397,10 @@ impl Notifications<Error> for BackendApi {
                 .kyc
                 .mark_otp_verified(&body.step_id, &body.otp_ref)
                 .await?;
-            self.state.kyc.update_step_status(&step.id, "VERIFIED").await?;
+            self.state
+                .kyc
+                .update_step_status(&step.id, "VERIFIED")
+                .await?;
 
             return Ok(InternalVerifyOtpResponse::Status200_VerificationOutcome(
                 models::VerifyOutcome::new(
@@ -391,7 +418,10 @@ impl Notifications<Error> for BackendApi {
             .await?;
 
         if remaining <= 0 {
-            self.state.kyc.update_step_status(&step.id, "FAILED").await?;
+            self.state
+                .kyc
+                .update_step_status(&step.id, "FAILED")
+                .await?;
             return Ok(InternalVerifyOtpResponse::Status200_VerificationOutcome(
                 models::VerifyOutcome::new(
                     false,
@@ -445,15 +475,15 @@ impl Uploads<Error> for BackendApi {
             );
         }
 
-        Ok(InternalCompleteUploadResponse::Status200_EvidenceRegistered(
-            models::EvidenceRef {
+        Ok(
+            InternalCompleteUploadResponse::Status200_EvidenceRegistered(models::EvidenceRef {
                 evidence_id: completed.evidence.evidence_id,
                 step_id: completed.evidence.step_id,
                 asset_type: completed.evidence.asset_type,
                 sha256: completed.evidence.sha256,
                 created_at: completed.evidence.created_at,
-            },
-        ))
+            }),
+        )
     }
 
     async fn internal_presign_upload(
@@ -559,7 +589,9 @@ impl Uploads<Error> for BackendApi {
 fn ensure_user_match(claims: &JwtToken, body_user_id: &str) -> Result<(), Error> {
     let claims_user_id = claims.user_id();
     if claims_user_id != body_user_id {
-        return Err(Error::unauthorized("Authenticated user does not match request userId"));
+        return Err(Error::unauthorized(
+            "Authenticated user does not match request userId",
+        ));
     }
     Ok(())
 }

@@ -226,10 +226,7 @@ pub trait KycRepo: Send + Sync {
         token_ref: &str,
     ) -> impl Future<Output = RepoResult<Option<backend_model::db::KycMagicEmailChallengeRow>>> + Send;
 
-    fn mark_magic_verified(
-        &self,
-        token_ref: &str,
-    ) -> impl Future<Output = RepoResult<()>> + Send;
+    fn mark_magic_verified(&self, token_ref: &str) -> impl Future<Output = RepoResult<()>> + Send;
 
     fn update_step_status(
         &self,

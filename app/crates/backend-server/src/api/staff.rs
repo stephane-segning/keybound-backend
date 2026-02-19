@@ -55,12 +55,16 @@ impl KycReview<Error> for BackendApi {
             })
             .collect::<Vec<_>>();
 
-        Ok(ApiKycStaffSubmissionsGetResponse::Status200_PageOfKYCSubmissions(models::KycSubmissionsResponse {
-            items: Some(items),
-            total: Some(i32::try_from(total_count).unwrap_or(i32::MAX)),
-            page: Some(page),
-            page_size: Some(limit),
-        }))
+        Ok(
+            ApiKycStaffSubmissionsGetResponse::Status200_PageOfKYCSubmissions(
+                models::KycSubmissionsResponse {
+                    items: Some(items),
+                    total: Some(i32::try_from(total_count).unwrap_or(i32::MAX)),
+                    page: Some(page),
+                    page_size: Some(limit),
+                },
+            ),
+        )
     }
 
     async fn api_kyc_staff_submissions_submission_id_approve_post(
@@ -97,23 +101,24 @@ impl KycReview<Error> for BackendApi {
             "staff approved KYC, enqueuing fineract provisioning job"
         );
 
-        if let Err(err) = worker::enqueue_fineract_provisioning(
-            &self.state.config.redis.url,
-            &self
-                .state
-                .kyc
-                .get_staff_submission(&path_params.submission_id)
-                .await?
-                .map(|submission| submission.user_id)
-                .unwrap_or_else(|| path_params.submission_id.clone()),
-        )
-        .await
+        if let Some(submission) = self
+            .state
+            .kyc
+            .get_staff_submission(&path_params.submission_id)
+            .await?
         {
-            warn!(
-                submission_id = %path_params.submission_id,
-                error = %err,
-                "failed to enqueue fineract provisioning job"
-            );
+            if let Err(err) = worker::enqueue_fineract_provisioning(
+                &self.state.config.redis.url,
+                &submission.user_id,
+            )
+            .await
+            {
+                warn!(
+                    submission_id = %path_params.submission_id,
+                    error = %err,
+                    "failed to enqueue fineract provisioning job"
+                );
+            }
         }
 
         Ok(ApiKycStaffSubmissionsSubmissionIdApprovePostResponse::Status200_KYCApproved)
@@ -237,27 +242,31 @@ impl KycReview<Error> for BackendApi {
             })
             .collect::<Vec<_>>();
 
-        Ok(ApiKycStaffSubmissionsSubmissionIdGetResponse::Status200_DetailedSubmission(models::KycSubmissionDetailResponse {
-            submission_id: Some(detail.submission_id),
-            user_id: Some(detail.user_id),
-            first_name: detail.first_name,
-            last_name: detail.last_name,
-            email: detail.email,
-            phone_number: detail.phone_number,
-            date_of_birth: detail.date_of_birth,
-            nationality: detail.nationality,
-            kyc_tier: None,
-            kyc_status: parse_staff_status(&detail.status),
-            documents: Some(paged_documents),
-            submitted_at: detail.submitted_at.map(|ts| ts.to_rfc3339()),
-            reviewed_at: detail.reviewed_at.map(|ts| ts.to_rfc3339()),
-            reviewed_by: detail.reviewed_by,
-            rejection_reason: detail.rejection_reason,
-            review_notes: detail.review_notes,
-            page: Some(page),
-            page_size: Some(limit),
-            total_documents: Some(total_documents),
-        }))
+        Ok(
+            ApiKycStaffSubmissionsSubmissionIdGetResponse::Status200_DetailedSubmission(
+                models::KycSubmissionDetailResponse {
+                    submission_id: Some(detail.submission_id),
+                    user_id: Some(detail.user_id),
+                    first_name: detail.first_name,
+                    last_name: detail.last_name,
+                    email: detail.email,
+                    phone_number: detail.phone_number,
+                    date_of_birth: detail.date_of_birth,
+                    nationality: detail.nationality,
+                    kyc_tier: None,
+                    kyc_status: parse_staff_status(&detail.status),
+                    documents: Some(paged_documents),
+                    submitted_at: detail.submitted_at.map(|ts| ts.to_rfc3339()),
+                    reviewed_at: detail.reviewed_at.map(|ts| ts.to_rfc3339()),
+                    reviewed_by: detail.reviewed_by,
+                    rejection_reason: detail.rejection_reason,
+                    review_notes: detail.review_notes,
+                    page: Some(page),
+                    page_size: Some(limit),
+                    total_documents: Some(total_documents),
+                },
+            ),
+        )
     }
 
     async fn api_kyc_staff_submissions_submission_id_reject_post(
@@ -334,7 +343,10 @@ impl KycReview<Error> for BackendApi {
             .await?;
 
         let Some(record) = record else {
-            return Err(Error::not_found("REVIEW_CASE_NOT_FOUND", "Review case not found"));
+            return Err(Error::not_found(
+                "REVIEW_CASE_NOT_FOUND",
+                "Review case not found",
+            ));
         };
 
         if record.decision == models::ReviewDecisionOutcome::Approve.to_string()
@@ -353,9 +365,11 @@ impl KycReview<Error> for BackendApi {
         }
 
         let decision = parse_review_outcome(&record.decision)?;
-        Ok(StaffReviewCasesCaseIdDecisionPostResponse::Status200_DecisionRecorded(
-            models::ReviewDecisionResult::new(record.case_id, decision, record.decided_at),
-        ))
+        Ok(
+            StaffReviewCasesCaseIdDecisionPostResponse::Status200_DecisionRecorded(
+                models::ReviewDecisionResult::new(record.case_id, decision, record.decided_at),
+            ),
+        )
     }
 
     async fn staff_review_cases_case_id_get(
@@ -368,10 +382,15 @@ impl KycReview<Error> for BackendApi {
     ) -> Result<StaffReviewCasesCaseIdGetResponse, Error> {
         let row = self.state.kyc.get_review_case(&path_params.case_id).await?;
         let Some(row) = row else {
-            return Err(Error::not_found("REVIEW_CASE_NOT_FOUND", "Review case not found"));
+            return Err(Error::not_found(
+                "REVIEW_CASE_NOT_FOUND",
+                "Review case not found",
+            ));
         };
 
-        Ok(StaffReviewCasesCaseIdGetResponse::Status200_Case(review_case_from_row(row)?))
+        Ok(StaffReviewCasesCaseIdGetResponse::Status200_Case(
+            review_case_from_row(row)?,
+        ))
     }
 
     async fn staff_review_queue_get(
@@ -390,10 +409,16 @@ impl KycReview<Error> for BackendApi {
             .map(review_case_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(StaffReviewQueueGetResponse::Status200_PaginatedListOfCases(models::ReviewQueueResponse::new(
-            models::PaginationMeta::new(page, limit, i32::try_from(total_count).unwrap_or(i32::MAX)),
-            items,
-        )))
+        Ok(StaffReviewQueueGetResponse::Status200_PaginatedListOfCases(
+            models::ReviewQueueResponse::new(
+                models::PaginationMeta::new(
+                    page,
+                    limit,
+                    i32::try_from(total_count).unwrap_or(i32::MAX),
+                ),
+                items,
+            ),
+        ))
     }
 }
 

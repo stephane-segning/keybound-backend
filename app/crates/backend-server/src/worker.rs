@@ -39,8 +39,10 @@ pub async fn run(state: Arc<AppState>) -> backend_core::Result<()> {
     let conn = apalis_redis::connect(redis_url)
         .await
         .map_err(|error| backend_core::Error::Server(error.to_string()))?;
-    let fineract_storage =
-        RedisStorage::new_with_config(conn, RedisConfig::new(FINERACT_PROVISIONING_QUEUE_NAMESPACE));
+    let fineract_storage = RedisStorage::new_with_config(
+        conn,
+        RedisConfig::new(FINERACT_PROVISIONING_QUEUE_NAMESPACE),
+    );
 
     let worker_state = state.clone();
     let fineract_worker = WorkerBuilder::new("fineract-provisioning-worker")
@@ -161,7 +163,10 @@ async fn process_fineract_provisioning_job(
     Ok(())
 }
 
-async fn find_identity_step_data(state: &AppState, user_id: &str) -> backend_core::Result<Option<Value>> {
+async fn find_identity_step_data(
+    state: &AppState,
+    user_id: &str,
+) -> backend_core::Result<Option<Value>> {
     let (_session, step_ids) = state.kyc.start_or_resume_session(user_id).await?;
     let mut latest = None;
 
@@ -177,5 +182,8 @@ async fn find_identity_step_data(state: &AppState, user_id: &str) -> backend_cor
 }
 
 fn value_as_string(source: &Value, key: &str) -> Option<String> {
-    source.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
+    source
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
 }
