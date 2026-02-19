@@ -1,10 +1,16 @@
+use crate::file_storage::{FileStorage, S3FileStorage};
 use crate::sms_provider::SmsProvider;
-use crate::worker::{NotificationQueue, RedisNotificationQueue, WorkerHttpClient};
+use crate::worker::{
+    NotificationQueue, ProvisioningQueue, RedisNotificationQueue, RedisProvisioningQueue,
+    WorkerHttpClient,
+};
 use backend_auth::{HttpClient, OidcState, SignatureState};
 use backend_core::Config;
-use backend_repository::{DeviceRepo, DeviceRepository, KycRepo, KycRepository, UserRepo, UserRepository};
-use diesel_async::AsyncPgConnection;
+use backend_repository::{
+    DeviceRepo, DeviceRepository, KycRepo, KycRepository, UserRepo, UserRepository,
+};
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::AsyncPgConnection;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
@@ -16,7 +22,8 @@ pub struct AppState {
     pub device: Arc<dyn DeviceRepo>,
     pub sms: Arc<dyn SmsProvider>,
     pub notification_queue: Arc<dyn NotificationQueue>,
-    pub s3: aws_sdk_s3::Client,
+    pub provisioning_queue: Arc<dyn ProvisioningQueue>,
+    pub s3: Arc<dyn FileStorage>,
     pub config: Config,
     pub oidc_state: Arc<OidcState>,
     pub signature_state: Arc<SignatureState>,
@@ -29,7 +36,7 @@ impl std::fmt::Debug for AppState {
             .field("kyc", &"<KycRepository>")
             .field("user", &"<UserRepository>")
             .field("device", &"<DeviceRepository>")
-            .field("s3", &"<S3Client>")
+            .field("s3", &"<FileStorage>")
             .field("config", &self.config)
             .field("oidc_state", &"<OidcState>")
             .field("signature_state", &"<SignatureState>")
@@ -49,7 +56,7 @@ impl AppState {
             .load()
             .await;
 
-        let s3 = {
+        let s3_client = {
             let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
             if let Some(s3_cfg) = &cfg.s3 {
                 if let Some(region) = &s3_cfg.region {
@@ -64,6 +71,7 @@ impl AppState {
             }
             aws_sdk_s3::Client::from_conf(builder.build())
         };
+        let s3: Arc<dyn FileStorage> = Arc::new(S3FileStorage::new(s3_client));
 
         let kyc: Arc<dyn KycRepo> = Arc::new(KycRepository::new(pool.clone()));
         let user: Arc<dyn UserRepo> = Arc::new(UserRepository::new(pool.clone()));
@@ -97,6 +105,7 @@ impl AppState {
             Arc::new(reqwest::Client::builder().build()?);
 
         let notification_queue = Arc::new(RedisNotificationQueue::new(cfg.redis.url.clone()));
+        let provisioning_queue = Arc::new(RedisProvisioningQueue::new(cfg.redis.url.clone()));
 
         Ok(Self {
             kyc,
@@ -104,6 +113,7 @@ impl AppState {
             device,
             sms,
             notification_queue,
+            provisioning_queue,
             s3,
             config: cfg.clone(),
             oidc_state,

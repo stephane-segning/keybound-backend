@@ -1,5 +1,4 @@
 use super::BackendApi;
-use crate::worker;
 use axum_extra::extract::CookieJar;
 use backend_auth::JwtToken;
 use backend_core::Error;
@@ -107,11 +106,11 @@ impl KycReview<Error> for BackendApi {
             .get_staff_submission(&path_params.submission_id)
             .await?
         {
-            if let Err(err) = worker::enqueue_fineract_provisioning(
-                &self.state.config.redis.url,
-                &submission.user_id,
-            )
-            .await
+            if let Err(err) = self
+                .state
+                .provisioning_queue
+                .enqueue_fineract_provisioning(&submission.user_id)
+                .await
             {
                 warn!(
                     submission_id = %path_params.submission_id,
@@ -147,10 +146,7 @@ impl KycReview<Error> for BackendApi {
         if let Err(err) = self
             .state
             .s3
-            .head_object()
-            .bucket(&document.bucket)
-            .key(&document.object_key)
-            .send()
+            .head_object(&document.bucket, &document.object_key)
             .await
         {
             let message = err.to_string();
@@ -173,24 +169,19 @@ impl KycReview<Error> for BackendApi {
             .as_ref()
             .and_then(|request| request.response_content_disposition.clone());
 
-        let presigned_req = self
+        let url = self
             .state
             .s3
-            .get_object()
-            .bucket(&document.bucket)
-            .key(&document.object_key)
-            .set_response_content_disposition(content_disposition)
-            .presigned(
-                aws_sdk_s3::presigning::PresigningConfig::expires_in(
-                    std::time::Duration::from_secs(expires_in as u64),
-                )
-                .map_err(|e| Error::s3(e.to_string()))?,
+            .presign_get_object(
+                &document.bucket,
+                &document.object_key,
+                std::time::Duration::from_secs(expires_in as u64),
+                content_disposition,
             )
-            .await
-            .map_err(|e| Error::s3(e.to_string()))?;
+            .await?;
 
         Ok(ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostResponse::Status200_PresignedDownloadURLCreated(models::PresignedDownloadUrlResponse {
-            url: presigned_req.uri().to_string(),
+            url,
             expires_at: chrono::Utc::now() + chrono::Duration::seconds(i64::from(expires_in)),
             document_id: Some(document.id),
             file_name: Some(document.file_name),
@@ -351,11 +342,11 @@ impl KycReview<Error> for BackendApi {
 
         if record.decision == models::ReviewDecisionOutcome::Approve.to_string()
             && let Some(submission) = self.state.kyc.get_staff_submission(&record.case_id).await?
-            && let Err(err) = worker::enqueue_fineract_provisioning(
-                &self.state.config.redis.url,
-                &submission.user_id,
-            )
-            .await
+            && let Err(err) = self
+                .state
+                .provisioning_queue
+                .enqueue_fineract_provisioning(&submission.user_id)
+                .await
         {
             warn!(
                 case_id = %record.case_id,
@@ -467,4 +458,408 @@ fn review_case_from_row(row: KycReviewCaseRow) -> Result<models::ReviewCase, Err
         models::ReviewCaseFullName::new(row.first_name, row.last_name),
         evidence,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{create_fake_jwt, MockFileStorage, MockKycRepo, TestAppStateBuilder};
+    use backend_repository::{
+        KycStaffDocumentRow, KycStaffSubmissionDetailRow, KycStaffSubmissionSummaryRow,
+    };
+    use chrono::Utc;
+    use mockall::predicate::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_api_kyc_staff_submissions_get_success() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_list_staff_submissions()
+            .returning(|filter| {
+                assert_eq!(filter.page, 1);
+                assert_eq!(filter.limit, 10);
+                Ok((
+                    vec![KycStaffSubmissionSummaryRow {
+                        submission_id: "sub123".to_string(),
+                        user_id: "user123".to_string(),
+                        first_name: Some("John".to_string()),
+                        last_name: Some("Doe".to_string()),
+                        email: Some("john@example.com".to_string()),
+                        phone_number: Some("+1234567890".to_string()),
+                        status: "PENDING_REVIEW".to_string(),
+                        submitted_at: Some(Utc::now()),
+                    }],
+                    1,
+                ))
+            });
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let query_params = models::ApiKycStaffSubmissionsGetQueryParams {
+            page: Some(1),
+            limit: Some(10),
+            status: None,
+            search: None,
+        };
+
+        let result = api
+            .api_kyc_staff_submissions_get(
+                &Method::GET,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &query_params,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        match result.unwrap() {
+            ApiKycStaffSubmissionsGetResponse::Status200_PageOfKYCSubmissions(resp) => {
+                assert_eq!(resp.total, Some(1));
+                let items = resp.items.unwrap();
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].submission_id, Some("sub123".to_string()));
+            }
+            _ => panic!("Unexpected response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_api_kyc_staff_submissions_submission_id_approve_post_success() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_approve_submission()
+            .with(
+                eq("sub123".to_string()),
+                eq(Some("staff123".to_string())),
+                eq(Some("Looks good".to_string())),
+            )
+            .returning(|_, _, _| Ok(true));
+
+        kyc_repo
+            .expect_get_staff_submission()
+            .with(eq("sub123"))
+            .returning(|_| {
+                Ok(Some(KycStaffSubmissionDetailRow {
+                    submission_id: "sub123".to_string(),
+                    user_id: "user123".to_string(),
+                    first_name: Some("John".to_string()),
+                    last_name: Some("Doe".to_string()),
+                    email: Some("john@example.com".to_string()),
+                    phone_number: Some("+1234567890".to_string()),
+                    date_of_birth: None,
+                    nationality: None,
+                    status: "APPROVED".to_string(),
+                    submitted_at: Some(Utc::now()),
+                    reviewed_at: Some(Utc::now()),
+                    reviewed_by: Some("staff123".to_string()),
+                    rejection_reason: None,
+                    review_notes: Some("Looks good".to_string()),
+                }))
+            });
+
+        let mut provisioning_queue = crate::test_utils::MockProvisioningQueue::new();
+        provisioning_queue
+            .expect_enqueue_fineract_provisioning()
+            .with(eq("user123"))
+            .returning(|_| Ok(()));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .with_provisioning_queue(Arc::new(provisioning_queue))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params = models::ApiKycStaffSubmissionsSubmissionIdApprovePostPathParams {
+            submission_id: "sub123".to_string(),
+        };
+        let body = models::KycApprovalRequest {
+            new_tier: 1,
+            notes: Some("Looks good".to_string()),
+        };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_approve_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &body,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ApiKycStaffSubmissionsSubmissionIdApprovePostResponse::Status200_KYCApproved
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_api_kyc_staff_submissions_submission_id_reject_post_success() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_reject_submission()
+            .with(
+                eq("sub123".to_string()),
+                eq(Some("staff123".to_string())),
+                eq("Invalid ID".to_string()),
+                eq(Some("Please re-upload".to_string())),
+            )
+            .returning(|_, _, _, _| Ok(true));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params = models::ApiKycStaffSubmissionsSubmissionIdRejectPostPathParams {
+            submission_id: "sub123".to_string(),
+        };
+        let body = models::KycRejectionRequest {
+            reason: "Invalid ID".to_string(),
+            notes: Some("Please re-upload".to_string()),
+        };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_reject_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &body,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ApiKycStaffSubmissionsSubmissionIdRejectPostResponse::Status200_KYCRejected
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_api_kyc_staff_submissions_submission_id_request_info_post_success() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_request_submission_info()
+            .with(eq("sub123"), eq("Need more info"))
+            .returning(|_, _| Ok(true));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params = models::ApiKycStaffSubmissionsSubmissionIdRequestInfoPostPathParams {
+            submission_id: "sub123".to_string(),
+        };
+        let body = models::KycRequestInfoRequest {
+            message: "Need more info".to_string(),
+        };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_request_info_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &body,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ApiKycStaffSubmissionsSubmissionIdRequestInfoPostResponse::Status200_AdditionalInfoRequested
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_download_document_not_found() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_get_staff_submission_document()
+            .returning(|_, _| Ok(None));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params =
+            models::ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostPathParams {
+                submission_id: "sub123".to_string(),
+                document_id: "doc123".to_string(),
+            };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_documents_document_id_download_url_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostResponse::Status404_SubmissionOrDocumentNotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_download_document_expired() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_get_staff_submission_document()
+            .returning(|_, _| {
+                Ok(Some(KycStaffDocumentRow {
+                    id: "doc123".to_string(),
+                    submission_id: "sub123".to_string(),
+                    document_type: "IDENTITY".to_string(),
+                    file_name: "id.jpg".to_string(),
+                    mime_type: "image/jpeg".to_string(),
+                    bucket: "bucket".to_string(),
+                    object_key: "key".to_string(),
+                    uploaded_at: Utc::now(),
+                }))
+            });
+
+        let mut s3 = MockFileStorage::new();
+        s3.expect_head_object()
+            .returning(|_, _| Err(Error::s3("NotFound")));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .with_s3(Arc::new(s3))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params =
+            models::ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostPathParams {
+                submission_id: "sub123".to_string(),
+                document_id: "doc123".to_string(),
+            };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_documents_document_id_download_url_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostResponse::Status410_DocumentNoLongerAvailable
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_download_document_success() {
+        let mut kyc_repo = MockKycRepo::new();
+        kyc_repo
+            .expect_get_staff_submission_document()
+            .returning(|_, _| {
+                Ok(Some(KycStaffDocumentRow {
+                    id: "doc123".to_string(),
+                    submission_id: "sub123".to_string(),
+                    document_type: "IDENTITY".to_string(),
+                    file_name: "id.jpg".to_string(),
+                    mime_type: "image/jpeg".to_string(),
+                    bucket: "bucket".to_string(),
+                    object_key: "key".to_string(),
+                    uploaded_at: Utc::now(),
+                }))
+            });
+
+        let mut s3 = MockFileStorage::new();
+        s3.expect_head_object().returning(|_, _| Ok(()));
+        s3.expect_presign_get_object()
+            .returning(|_, _, _, _| Ok("http://presigned-url".to_string()));
+
+        let state = TestAppStateBuilder::new()
+            .with_kyc(Arc::new(kyc_repo))
+            .with_s3(Arc::new(s3))
+            .build()
+            .await;
+        let api = BackendApi::new(
+            Arc::new(state.clone()),
+            state.oidc_state.clone(),
+            state.signature_state.clone(),
+        );
+
+        let path_params =
+            models::ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostPathParams {
+                submission_id: "sub123".to_string(),
+                document_id: "doc123".to_string(),
+            };
+
+        let result = api
+            .api_kyc_staff_submissions_submission_id_documents_document_id_download_url_post(
+                &Method::POST,
+                &Host::from(http::uri::Authority::from_static("localhost")),
+                &CookieJar::new(),
+                &create_fake_jwt("staff123"),
+                &path_params,
+                &None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        match result.unwrap() {
+            ApiKycStaffSubmissionsSubmissionIdDocumentsDocumentIdDownloadUrlPostResponse::Status200_PresignedDownloadURLCreated(
+                resp,
+            ) => {
+                assert_eq!(resp.url, "http://presigned-url");
+                assert_eq!(resp.document_id, Some("doc123".to_string()));
+            }
+            _ => panic!("Unexpected response"),
+        }
+    }
 }

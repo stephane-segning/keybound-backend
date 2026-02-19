@@ -1,9 +1,10 @@
+use crate::file_storage::{EncryptionMode, FileStorage, PresignedUpload};
 use crate::sms_provider::SmsProvider;
 use crate::state::AppState;
-use crate::worker::{NotificationJob, NotificationQueue, WorkerHttpClient};
+use crate::worker::{NotificationJob, NotificationQueue, ProvisioningQueue, WorkerHttpClient};
 use backend_auth::{OidcState, SignatureState};
 use backend_core::async_trait;
-use backend_core::{Config, Result};
+use backend_core::{Config, Error, Result};
 use backend_repository::{
     DeviceRepo, KycRepo, KycReviewCaseRow, KycReviewDecisionRecord, KycStaffDocumentRow,
     KycStaffSubmissionDetailRow, KycStaffSubmissionSummaryRow, KycStepCreateInput,
@@ -34,6 +35,39 @@ mock! {
     #[async_trait]
     impl NotificationQueue for NotificationQueue {
         async fn enqueue(&self, job: NotificationJob) -> backend_core::Result<()>;
+    }
+}
+
+mock! {
+    pub ProvisioningQueue {}
+    #[async_trait]
+    impl ProvisioningQueue for ProvisioningQueue {
+        async fn enqueue_fineract_provisioning(&self, user_id: &str) -> backend_core::Result<()>;
+    }
+}
+
+mock! {
+    pub FileStorage {}
+    #[async_trait]
+    impl FileStorage for FileStorage {
+        async fn head_object(&self, bucket: &str, key: &str) -> std::result::Result<(), Error>;
+
+        async fn presign_get_object(
+            &self,
+            bucket: &str,
+            key: &str,
+            expires_in: Duration,
+            content_disposition: Option<String>,
+        ) -> std::result::Result<String, Error>;
+
+        async fn presign_put_object(
+            &self,
+            bucket: &str,
+            key: &str,
+            mime_type: &str,
+            encryption: EncryptionMode,
+            expires_in: Duration,
+        ) -> std::result::Result<PresignedUpload, Error>;
     }
 }
 
@@ -268,7 +302,9 @@ pub struct TestAppStateBuilder {
     pub device: Option<Arc<dyn DeviceRepo>>,
     pub sms: Option<Arc<dyn SmsProvider>>,
     pub notification_queue: Option<Arc<dyn NotificationQueue>>,
+    pub provisioning_queue: Option<Arc<dyn ProvisioningQueue>>,
     pub worker_http_client: Option<Arc<dyn WorkerHttpClient>>,
+    pub s3: Option<Arc<dyn FileStorage>>,
     pub config: Option<Config>,
 }
 
@@ -280,7 +316,9 @@ impl Default for TestAppStateBuilder {
             device: None,
             sms: None,
             notification_queue: None,
+            provisioning_queue: None,
             worker_http_client: None,
+            s3: None,
             config: None,
         }
     }
@@ -316,8 +354,18 @@ impl TestAppStateBuilder {
         self
     }
 
+    pub fn with_provisioning_queue(mut self, queue: Arc<dyn ProvisioningQueue>) -> Self {
+        self.provisioning_queue = Some(queue);
+        self
+    }
+
     pub fn with_worker_http_client(mut self, client: Arc<dyn WorkerHttpClient>) -> Self {
         self.worker_http_client = Some(client);
+        self
+    }
+
+    pub fn with_s3(mut self, s3: Arc<dyn FileStorage>) -> Self {
+        self.s3 = Some(s3);
         self
     }
 
@@ -376,11 +424,6 @@ cuss:
             max_body_bytes: config.kc.max_body_bytes,
         });
 
-        let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .load()
-            .await;
-        let s3 = aws_sdk_s3::Client::new(&shared_config);
-
         AppState {
             kyc: self.kyc.unwrap_or_else(|| Arc::new(MockKycRepo::new())),
             user: self.user.unwrap_or_else(|| Arc::new(MockUserRepo::new())),
@@ -389,10 +432,13 @@ cuss:
             notification_queue: self
                 .notification_queue
                 .unwrap_or_else(|| Arc::new(MockNotificationQueue::new())),
+            provisioning_queue: self
+                .provisioning_queue
+                .unwrap_or_else(|| Arc::new(MockProvisioningQueue::new())),
             worker_http_client: self
                 .worker_http_client
                 .unwrap_or_else(|| Arc::new(reqwest::Client::new())),
-            s3,
+            s3: self.s3.unwrap_or_else(|| Arc::new(MockFileStorage::new())),
             config,
             oidc_state,
             signature_state,

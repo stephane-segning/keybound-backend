@@ -1,6 +1,5 @@
 use super::BackendApi;
 use crate::worker::{NotificationJob, NotificationQueue};
-use aws_sdk_s3::types::ServerSideEncryption;
 use axum_extra::extract::CookieJar;
 use backend_auth::JwtToken;
 use backend_core::Error;
@@ -524,41 +523,28 @@ impl Uploads<Error> for BackendApi {
             backend_id::kyc_upload_id()?
         );
 
-        let mut builder = self.state.s3.put_object().bucket(&bucket).key(&object_key);
-        let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_owned(), body.mime.clone());
-
-        if let Some(enc) = &body.encryption {
+        let encryption_mode = if let Some(enc) = &body.encryption {
             match enc.mode {
-                models::SseMode::SseS3 => {
-                    builder = builder.server_side_encryption(ServerSideEncryption::Aes256);
-                    headers.insert(
-                        "x-amz-server-side-encryption".to_owned(),
-                        "AES256".to_owned(),
-                    );
-                }
-                models::SseMode::SseKms => {
-                    builder = builder.server_side_encryption(ServerSideEncryption::AwsKms);
-                    headers.insert(
-                        "x-amz-server-side-encryption".to_owned(),
-                        "aws:kms".to_owned(),
-                    );
-                }
-                models::SseMode::SseC => {}
+                models::SseMode::SseS3 => crate::file_storage::EncryptionMode::S3,
+                models::SseMode::SseKms => crate::file_storage::EncryptionMode::Kms,
+                models::SseMode::SseC => crate::file_storage::EncryptionMode::None,
             }
-        }
+        } else {
+            crate::file_storage::EncryptionMode::None
+        };
 
         let presign_ttl = s3_config.presign_ttl_seconds;
-        let presign_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
-            StdDuration::from_secs(presign_ttl),
-        )
-        .map_err(|err| Error::internal("PRESIGN_CONFIG_ERROR", err.to_string()))?;
-
-        let presigned = builder
-            .content_type(body.mime.clone())
-            .presigned(presign_config)
-            .await
-            .map_err(|err| Error::s3(err.to_string()))?;
+        let presigned = self
+            .state
+            .s3
+            .presign_put_object(
+                &bucket,
+                &object_key,
+                &body.mime,
+                encryption_mode,
+                StdDuration::from_secs(presign_ttl),
+            )
+            .await?;
 
         let upload = self
             .state
@@ -573,8 +559,8 @@ impl Uploads<Error> for BackendApi {
                 bucket: bucket.clone(),
                 object_key: object_key.clone(),
                 method: models::UploadMethod::Put.to_string(),
-                url: presigned.uri().to_string(),
-                headers: serde_json::to_value(&headers)
+                url: presigned.url.clone(),
+                headers: serde_json::to_value(&presigned.headers)
                     .map_err(|err| Error::internal("JSON_SERIALIZATION", err.to_string()))?,
                 multipart: None,
                 expires_at: Utc::now() + Duration::seconds(presign_ttl as i64),
@@ -588,7 +574,7 @@ impl Uploads<Error> for BackendApi {
                 object_key,
                 method: models::UploadMethod::Put,
                 url: Some(upload.url),
-                headers: Some(headers),
+                headers: Some(presigned.headers),
                 multipart: None,
                 expires_at: upload.expires_at,
             },

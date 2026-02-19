@@ -1,4 +1,5 @@
 pub(crate) mod api;
+pub(crate) mod file_storage;
 pub(crate) mod health;
 pub(crate) mod sms_provider;
 pub(crate) mod state;
