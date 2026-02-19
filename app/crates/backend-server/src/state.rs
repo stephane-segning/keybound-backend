@@ -1,6 +1,5 @@
-use crate::sms_provider::{ConsoleSmsProvider, SmsProvider, SnsSmsProvider};
 use backend_auth::{HttpClient, OidcState, SignatureState};
-use backend_core::{Config, SmsProviderType};
+use backend_core::Config;
 use backend_repository::{DeviceRepository, KycRepository, UserRepository};
 use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::deadpool::Pool;
@@ -14,8 +13,6 @@ pub struct AppState {
     pub user: UserRepository,
     pub device: DeviceRepository,
     pub s3: aws_sdk_s3::Client,
-    pub sns: aws_sdk_sns::Client,
-    pub sms_provider: Arc<dyn SmsProvider>,
     pub config: Config,
     pub oidc_state: Arc<OidcState>,
     pub signature_state: Arc<SignatureState>,
@@ -28,8 +25,6 @@ impl std::fmt::Debug for AppState {
             .field("user", &"<UserRepository>")
             .field("device", &"<DeviceRepository>")
             .field("s3", &"<S3Client>")
-            .field("sns", &"<SnsClient>")
-            .field("sms_provider", &"<SmsProvider>")
             .field("config", &self.config)
             .field("oidc_state", &"<OidcState>")
             .field("signature_state", &"<SignatureState>")
@@ -64,27 +59,6 @@ impl AppState {
             aws_sdk_s3::Client::from_conf(builder.build())
         };
 
-        let sns = {
-            let mut builder = aws_sdk_sns::config::Builder::from(&shared_config);
-            if let Some(sns_cfg) = &cfg.sns {
-                if let Some(region) = &sns_cfg.region {
-                    builder = builder.region(aws_types::region::Region::new(region.clone()));
-                }
-            }
-            aws_sdk_sns::Client::from_conf(builder.build())
-        };
-
-        let sms_provider: Arc<dyn SmsProvider> = if let Some(sms_cfg) = &cfg.sms {
-            match sms_cfg.provider {
-                SmsProviderType::Console => Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>,
-                SmsProviderType::Sns => {
-                    Arc::new(SnsSmsProvider::new(sns.clone())) as Arc<dyn SmsProvider>
-                }
-            }
-        } else {
-            Arc::new(ConsoleSmsProvider) as Arc<dyn SmsProvider>
-        };
-
         let kyc = KycRepository::new(pool.clone());
         let user = UserRepository::new(pool.clone());
         let device = DeviceRepository::new(pool.clone());
@@ -110,8 +84,6 @@ impl AppState {
             user,
             device,
             s3,
-            sns,
-            sms_provider,
             config: cfg.clone(),
             oidc_state,
             signature_state,

@@ -1,4 +1,5 @@
 use super::BackendApi;
+use crate::worker::{self, NotificationJob};
 use aws_sdk_s3::types::ServerSideEncryption;
 use axum_extra::extract::CookieJar;
 use backend_auth::JwtToken;
@@ -158,11 +159,17 @@ impl Notifications<Error> for BackendApi {
             })
             .await?;
 
-        tracing::info!(
-            email = %body.email,
-            token = %format!("{}.{}", challenge.token_ref, secret),
-            "magic email token issued"
-        );
+        let token = format!("{}.{}", challenge.token_ref, secret);
+        worker::enqueue_notification(
+            &self.state.config.redis.url,
+            NotificationJob::MagicEmail {
+                step_id: challenge.step_id.clone(),
+                email: body.email.clone(),
+                token,
+            },
+        )
+        .await
+        .map_err(|err| Error::internal("NOTIFICATION_ENQUEUE_FAILED", err.to_string()))?;
 
         Ok(InternalIssueMagicEmailResponse::Status200_Challenge(
             models::MagicEmailChallengeInternal::new(challenge.token_ref, challenge.expires_at),
@@ -220,11 +227,16 @@ impl Notifications<Error> for BackendApi {
             })
             .await?;
 
-        self.state
-            .sms_provider
-            .send_otp(&body.msisdn, &otp)
-            .await
-            .map_err(|err| Error::internal("SMS_SEND_FAILED", err.to_string()))?;
+        worker::enqueue_notification(
+            &self.state.config.redis.url,
+            NotificationJob::Otp {
+                step_id: body.step_id.clone(),
+                msisdn: body.msisdn.clone(),
+                otp,
+            },
+        )
+        .await
+        .map_err(|err| Error::internal("NOTIFICATION_ENQUEUE_FAILED", err.to_string()))?;
 
         Ok(InternalIssueOtpResponse::Status200_Challenge(
             models::OtpChallengeInternal::new(
