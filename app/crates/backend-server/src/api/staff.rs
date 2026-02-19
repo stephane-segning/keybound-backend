@@ -39,7 +39,7 @@ impl KycReview<Error> for BackendApi {
     ) -> Result<ApiKycStaffSubmissionsGetResponse, Error> {
         let (page, limit) = Self::normalize_page_limit(query_params.page, query_params.limit);
         let filter = KycSubmissionFilter {
-            status: query_params.status.clone(),
+            status: query_params.status.clone().map(|status| status.to_string()),
             search: query_params.search.clone(),
             page,
             limit,

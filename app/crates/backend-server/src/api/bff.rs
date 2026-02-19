@@ -1,357 +1,286 @@
 use super::BackendApi;
+use aws_sdk_s3::types::ServerSideEncryption;
+use axum_extra::extract::CookieJar;
 use backend_auth::JwtToken;
 use backend_core::Error;
-use backend_repository::KycRepo;
-use gen_oas_server_bff::apis::kyc::{ApiRegistrationKycProfilePatchResponse, Kyc};
-use gen_oas_server_bff::apis::limits::{ApiLimitsGetResponse, Limits};
+use backend_id;
+use chrono::{Duration, Utc};
+use gen_oas_server_bff::apis::notifications::{
+    InternalIssueMagicEmailResponse, InternalIssueOtpResponse, InternalVerifyMagicEmailResponse,
+    InternalVerifyOtpResponse, Notifications,
+};
+use gen_oas_server_bff::apis::steps::{
+    InternalCreateStepResponse, InternalGetStepResponse, InternalStartSessionResponse, Steps,
+};
+use gen_oas_server_bff::apis::uploads::{
+    InternalCompleteUploadResponse, InternalPresignUploadResponse, Uploads,
+};
 use gen_oas_server_bff::models;
-use gen_oas_server_bff::types::Nullable;
+use headers::Host;
 use http::Method;
-use serde_json::{Map, Value, json};
+use rand::random;
+use std::collections::HashMap;
+use std::time::Duration as StdDuration;
 
 #[backend_core::async_trait]
-impl Kyc<Error> for BackendApi {
+impl Steps<Error> for BackendApi {
     type Claims = JwtToken;
 
-    async fn api_registration_kyc_profile_patch(
+    async fn internal_start_session(
         &self,
         _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
+        _host: &Host,
+        _cookies: &CookieJar,
         claims: &Self::Claims,
-        body: &Vec<models::JsonPatchOperation>,
-    ) -> Result<ApiRegistrationKycProfilePatchResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        self.state.kyc.ensure_kyc_profile(&user_id).await?;
+        body: &models::InternalStartSessionRequest,
+    ) -> Result<InternalStartSessionResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let session_id = backend_id::prefixed("bffsess")?;
+        let session = models::KycSessionInternal::new(
+            session_id,
+            body.user_id.clone(),
+            models::KycSessionInternalStatus::Open,
+            vec![],
+            Utc::now(),
+        );
+        Ok(InternalStartSessionResponse::Status201_Session(session))
+    }
 
-        let current_profile = self
-            .state
-            .kyc
-            .get_kyc_profile(&user_id)
-            .await?
-            .ok_or_else(|| Error::not_found("KYC_PROFILE_NOT_FOUND", "KYC profile not found"))?;
+    async fn internal_create_step(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        body: &models::CreateStepRequest,
+    ) -> Result<InternalCreateStepResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let step_id = backend_id::prefixed("bffstep")?;
+        let now = Utc::now();
+        let step = models::KycStepInternal {
+            id: step_id,
+            session_id: body.session_id.clone(),
+            user_id: body.user_id.clone(),
+            r_type: body.r_type.clone(),
+            status: models::KycStatus::InProgress,
+            data: None,
+            policy: body.policy.clone(),
+            created_at: now,
+            updated_at: now,
+        };
+        Ok(InternalCreateStepResponse::Status201_StepCreated(step))
+    }
 
-        let mut target = Self::profile_target_from_row(&current_profile);
-
-        let operations = body
-            .iter()
-            .map(Self::json_patch_op_from_model)
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        json_patch::patch(&mut target, &json_patch::Patch(operations))
-            .map_err(|error| Error::bad_request("INVALID_JSON_PATCH", error.to_string()))?;
-
-        let req = Self::kyc_information_patch_request_from_target(&target)?;
-        let updated = self.state.kyc.patch_kyc_profile(&user_id, &req).await?;
-
-        match updated {
-            Some(p) => Ok(
-                ApiRegistrationKycProfilePatchResponse::Status200_ProfileUpdated(
-                    Self::kyc_case_from_profile(p),
-                ),
-            ),
-            None => {
-                // If update returned None but profile existed, it means version mismatch race
-                Ok(
-                    ApiRegistrationKycProfilePatchResponse::Status412_ETagMismatch(
-                        Self::precondition_failed_problem("Concurrent modification detected"),
-                    ),
-                )
-            }
-        }
+    async fn internal_get_step(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        path_params: &models::InternalGetStepPathParams,
+    ) -> Result<InternalGetStepResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let now = Utc::now();
+        let step = models::KycStepInternal {
+            id: path_params.step_id.clone(),
+            session_id: format!("session_{}", path_params.step_id),
+            user_id: claims.user_id().to_owned(),
+            r_type: models::StepType::Phone,
+            status: models::KycStatus::InProgress,
+            data: None,
+            policy: None,
+            created_at: now,
+            updated_at: now,
+        };
+        Ok(InternalGetStepResponse::Status200_Step(step))
     }
 }
 
 #[backend_core::async_trait]
-impl Limits<Error> for BackendApi {
+impl Notifications<Error> for BackendApi {
     type Claims = JwtToken;
 
-    async fn api_limits_get(
+    async fn internal_issue_magic_email(
         &self,
         _method: &Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
+        _host: &Host,
+        _cookies: &CookieJar,
         claims: &Self::Claims,
-    ) -> Result<ApiLimitsGetResponse, Error> {
-        let user_id = Self::require_user_id(claims)?;
-        let tier = self.state.kyc.get_kyc_tier(&user_id).await?;
+        body: &models::IssueMagicEmailRequest,
+    ) -> Result<InternalIssueMagicEmailResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let token_ref = backend_id::prefixed("magic")?;
+        let token = Self::generate_magic_token();
+        let expires_at = Utc::now() + Duration::seconds(body.ttl_seconds.unwrap_or(300) as i64);
+        tracing::info!(email = %body.email, token = %token, "magic email token issued");
+        let challenge = models::MagicEmailChallengeInternal {
+            token_ref,
+            expires_at,
+        };
+        Ok(InternalIssueMagicEmailResponse::Status200_Challenge(
+            challenge,
+        ))
+    }
 
-        match tier {
-            Some(value) => {
-                let limits = models::LimitsResponse {
-                    kyc_tier: Some(value),
-                    tier_name: Some(format!("Tier {value}")),
-                    currency: Some("EUR".to_owned()),
-                    effective_at: None,
-                    limits: Some(models::LimitsResponseLimitsDto {
-                        daily_deposit_limit: Some(1000.0),
-                        daily_withdrawal_limit: Some(1000.0),
-                        per_transaction_limit: Some(500.0),
-                        monthly_transaction_limit: Some(5000.0),
-                    }),
-                    usage: Some(models::LimitsResponseUsageDto {
-                        daily_deposit_used: Some(0.0),
-                        daily_withdrawal_used: Some(0.0),
-                        monthly_used: Some(0.0),
-                    }),
-                    available: Some(models::LimitsResponseAvailableDto {
-                        deposit_remaining: Some(1000.0),
-                        withdrawal_remaining: Some(1000.0),
-                    }),
-                    allowed_payment_methods: Some(vec!["bank_transfer".to_owned()]),
-                    restricted_features: Some(vec![]),
-                };
-                Ok(ApiLimitsGetResponse::Status200_LimitsAndUsageDetails(
-                    limits,
-                ))
+    async fn internal_issue_otp(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        body: &models::IssueOtpRequest,
+    ) -> Result<InternalIssueOtpResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let otp_ref = backend_id::prefixed("otp")?;
+        let ttl = body.ttl_seconds.unwrap_or(300);
+        let expires_at = Utc::now() + Duration::seconds(ttl as i64);
+        let otp = Self::generate_otp_code();
+        tracing::info!(msisdn = %body.msisdn, otp = %otp, "issuing otp");
+        self.state
+            .sms_provider
+            .send_otp(&body.msisdn, &otp)
+            .await
+            .map_err(|err| Error::internal("SMS_SEND_FAILED", err.to_string()))?;
+        let challenge = models::OtpChallengeInternal {
+            otp_ref,
+            provider_message_id: None,
+            expires_at,
+            tries_left: 5,
+        };
+        Ok(InternalIssueOtpResponse::Status200_Challenge(challenge))
+    }
+
+    async fn internal_verify_magic_email(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        _body: &models::VerifyMagicEmailRequest,
+    ) -> Result<InternalVerifyMagicEmailResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let outcome = models::VerifyOutcome {
+            ok: true,
+            reason: models::VerifyOutcomeReason::Verified,
+            step_status: models::KycStatus::Verified,
+        };
+        Ok(InternalVerifyMagicEmailResponse::Status200_Outcome(outcome))
+    }
+
+    async fn internal_verify_otp(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        _body: &models::VerifyOtpInternalRequest,
+    ) -> Result<InternalVerifyOtpResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let outcome = models::VerifyOutcome {
+            ok: true,
+            reason: models::VerifyOutcomeReason::Verified,
+            step_status: models::KycStatus::Verified,
+        };
+        Ok(InternalVerifyOtpResponse::Status200_VerificationOutcome(
+            outcome,
+        ))
+    }
+}
+
+#[backend_core::async_trait]
+impl Uploads<Error> for BackendApi {
+    type Claims = JwtToken;
+
+    async fn internal_complete_upload(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        body: &models::InternalCompleteUploadRequest,
+    ) -> Result<InternalCompleteUploadResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let evidence = models::EvidenceRef {
+            evidence_id: backend_id::prefixed("evidence")?,
+            step_id: body.upload_id.clone(),
+            asset_type: models::IdentityAssetType::IdFront.to_string(),
+            sha256: Some(String::new()),
+            created_at: Utc::now(),
+        };
+        Ok(InternalCompleteUploadResponse::Status200_EvidenceRegistered(evidence))
+    }
+
+    async fn internal_presign_upload(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        claims: &Self::Claims,
+        body: &models::InternalPresignRequest,
+    ) -> Result<InternalPresignUploadResponse, Error> {
+        let _user_id = Self::require_user_id(claims)?;
+        let s3_config = self
+            .state
+            .config
+            .s3
+            .as_ref()
+            .ok_or_else(|| Error::internal("S3_CONFIG_MISSING", "S3 is not configured"))?;
+        let bucket = s3_config.bucket.clone();
+        let object_key = format!("{}/{}", body.user_id, backend_id::kyc_document_id()?);
+        let mut builder = self.state.s3.put_object().bucket(&bucket).key(&object_key);
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_owned(), body.mime.clone());
+        if let Some(enc) = &body.encryption {
+            match enc.mode {
+                models::SseMode::SseS3 => {
+                    builder = builder.server_side_encryption(ServerSideEncryption::Aes256);
+                    headers.insert(
+                        "x-amz-server-side-encryption".to_owned(),
+                        "AES256".to_owned(),
+                    );
+                }
+                models::SseMode::SseKms => {
+                    builder = builder.server_side_encryption(ServerSideEncryption::AwsKms);
+                    headers.insert(
+                        "x-amz-server-side-encryption".to_owned(),
+                        "aws:kms".to_owned(),
+                    );
+                }
+                models::SseMode::SseC => {}
             }
-            None => Ok(ApiLimitsGetResponse::Status404_NotFound(
-                Self::not_found_problem("Customer not found"),
-            )),
         }
+        let presign_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
+            StdDuration::from_secs(s3_config.presign_ttl_seconds),
+        )
+        .map_err(|err| Error::internal("PRESIGN_CONFIG_ERROR", err.to_string()))?;
+        let presigned = builder
+            .content_type(body.mime.clone())
+            .presigned(presign_config)
+            .await
+            .map_err(|err| Error::s3(err.to_string()))?;
+        let expires_at = Utc::now() + Duration::seconds(s3_config.presign_ttl_seconds as i64);
+        let response = models::PresignUploadResponseInternal {
+            upload_id: backend_id::prefixed("upload")?,
+            bucket: bucket.clone(),
+            object_key: object_key.clone(),
+            method: models::UploadMethod::Put,
+            url: Some(presigned.uri().to_string()),
+            headers: Some(headers),
+            multipart: None,
+            expires_at,
+        };
+        Ok(InternalPresignUploadResponse::Status200_PresignResponse(
+            response,
+        ))
     }
 }
 
 impl BackendApi {
-    fn not_found_problem(detail: &str) -> models::ProblemDetails {
-        models::ProblemDetails {
-            r_type: None,
-            title: "Not found".to_owned(),
-            status: 404,
-            detail: Some(detail.to_owned()),
-            instance: None,
-            code: None,
-            trace_id: None,
-            r_errors: None,
-        }
+    fn generate_otp_code() -> String {
+        format!("{:06}", random::<u32>() % 1_000_000)
     }
 
-    fn unauthorized_problem() -> models::ProblemDetails {
-        models::ProblemDetails {
-            r_type: None,
-            title: "Unauthorized".to_owned(),
-            status: 401,
-            detail: Some("Unauthorized".to_owned()),
-            instance: None,
-            code: None,
-            trace_id: None,
-            r_errors: None,
-        }
-    }
-
-    fn precondition_failed_problem(detail: &str) -> models::ProblemDetails {
-        models::ProblemDetails {
-            r_type: None,
-            title: "Precondition Failed".to_owned(),
-            status: 412,
-            detail: Some(detail.to_owned()),
-            instance: None,
-            code: Some("PRECONDITION_FAILED".to_owned()),
-            trace_id: None,
-            r_errors: None,
-        }
-    }
-
-    fn profile_target_from_row(profile: &backend_model::db::KycSubmissionRow) -> Value {
-        let mut user_profile = Map::new();
-        user_profile.insert(
-            "firstName".to_owned(),
-            profile
-                .first_name
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-        user_profile.insert(
-            "lastName".to_owned(),
-            profile
-                .last_name
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-        user_profile.insert(
-            "email".to_owned(),
-            profile
-                .email
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-        user_profile.insert(
-            "phoneNumber".to_owned(),
-            profile
-                .phone_number
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-        user_profile.insert(
-            "dateOfBirth".to_owned(),
-            profile
-                .date_of_birth
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-        user_profile.insert(
-            "nationality".to_owned(),
-            profile
-                .nationality
-                .as_ref()
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null),
-        );
-
-        let mut root = Map::new();
-        // root.insert("externalId".to_owned(), json!(profile.external_id));
-        root.insert("userProfile".to_owned(), Value::Object(user_profile));
-        Value::Object(root)
-    }
-
-    fn json_patch_op_from_model(
-        operation: &models::JsonPatchOperation,
-    ) -> Result<json_patch::PatchOperation, Error> {
-        let value = operation.value.as_ref().map(|nullable| match nullable {
-            Nullable::Present(object) => object.0.clone(),
-            Nullable::Null => Value::Null,
-        });
-
-        match operation.op.as_str() {
-            "move" | "copy" => {
-                let from = operation.from.clone().ok_or_else(|| {
-                    Error::bad_request(
-                        "INVALID_JSON_PATCH",
-                        format!("{} operation requires 'from'", operation.op),
-                    )
-                })?;
-
-                let patch_value = json!({
-                    "op": operation.op,
-                    "path": operation.path,
-                    "from": from,
-                });
-
-                serde_json::from_value(patch_value)
-                    .map_err(|error| Error::bad_request("INVALID_JSON_PATCH", error.to_string()))
-            }
-            "add" | "replace" | "test" => {
-                let patch_value = json!({
-                    "op": operation.op,
-                    "path": operation.path,
-                    "value": value.unwrap_or(Value::Null),
-                });
-
-                serde_json::from_value(patch_value)
-                    .map_err(|error| Error::bad_request("INVALID_JSON_PATCH", error.to_string()))
-            }
-            "remove" => {
-                let patch_value = json!({
-                    "op": operation.op,
-                    "path": operation.path,
-                });
-
-                serde_json::from_value(patch_value)
-                    .map_err(|error| Error::bad_request("INVALID_JSON_PATCH", error.to_string()))
-            }
-            other => Err(Error::bad_request(
-                "INVALID_JSON_PATCH",
-                format!("Unsupported JSON patch op: {other}"),
-            )),
-        }
-    }
-
-    fn kyc_information_patch_request_from_target(
-        target: &Value,
-    ) -> Result<backend_model::bff::KycInformationPatchRequest, Error> {
-        let user_profile = target
-            .get("userProfile")
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                Error::bad_request("INVALID_JSON_PATCH", "Missing /userProfile object")
-            })?;
-
-        Ok(backend_model::bff::KycInformationPatchRequest {
-            first_name: user_profile
-                .get("firstName")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            last_name: user_profile
-                .get("lastName")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            email: user_profile
-                .get("email")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            phone_number: user_profile
-                .get("phoneNumber")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            date_of_birth: user_profile
-                .get("dateOfBirth")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            nationality: user_profile
-                .get("nationality")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-        })
-    }
-
-    fn kyc_case_from_profile(
-        profile: backend_model::db::KycSubmissionRow,
-    ) -> models::KycCaseResponse {
-        models::KycCaseResponse {
-            case_id: format!("kyc_{}", profile.kyc_case_id),
-            case_status: models::KycCaseStatus::Open,
-            current_tier: None, // Calculated dynamically
-            active_submission: models::KycSubmissionSummary {
-                submission_id: profile.id,
-                version: 1,
-                status: profile
-                    .status
-                    .parse()
-                    .unwrap_or(models::KycSubmissionStatus::Draft),
-                requested_tier: None, // Calculated dynamically
-                decided_tier: None,
-                submitted_at: Some(match profile.submitted_at {
-                    Some(value) => Nullable::Present(value),
-                    None => Nullable::Null,
-                }),
-                decided_at: Some(match profile.decided_at {
-                    Some(value) => Nullable::Present(value),
-                    None => Nullable::Null,
-                }),
-                provisioning_status: Some(models::KycProvisioningStatus::None),
-                next_action: Some(models::KycNextAction::FixProfile),
-            },
-        }
-    }
-
-    fn kyc_submission_detail_from_profile(
-        profile: backend_model::db::KycSubmissionRow,
-    ) -> models::KycSubmissionDetailResponse {
-        models::KycSubmissionDetailResponse {
-            submission_id: profile.id,
-            version: 1,
-            status: profile
-                .status
-                .parse()
-                .unwrap_or(models::KycSubmissionStatus::Draft),
-            user_profile: models::UserProfile {
-                first_name: profile.first_name,
-                last_name: profile.last_name,
-                email: profile.email,
-                phone_number: profile.phone_number,
-                date_of_birth: profile
-                    .date_of_birth
-                    .and_then(|value: String| value.parse().ok()),
-                nationality: profile.nationality,
-                address: None,
-            },
-            documents: vec![],
-            staff_messages: None,
-        }
+    fn generate_magic_token() -> String {
+        format!("{:08x}", random::<u32>())
     }
 }
