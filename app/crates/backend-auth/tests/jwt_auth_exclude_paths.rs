@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderValue, Request, StatusCode};
@@ -10,7 +9,6 @@ use backend_auth::{
 };
 use backend_core::KcAuth;
 use base64::Engine;
-use jwks::Jwks;
 use ring::hmac;
 use serde_json::Value;
 use std::sync::Arc;
