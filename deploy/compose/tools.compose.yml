@@ -33,22 +33,25 @@ services:
 
   generate-code:
     image: amazoncorretto:21
-    user: "${UID:-1000}:${GID:-1000}"
+    user: root
+    environment:
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
     depends_on:
       download-core-tools:
         condition: service_completed_successfully
     configs:
     - source: oas_server_kc
-      target: /tmp/oas_server_kc.gson
+      target: /tmp/oas_server_kc.json
       mode: 444
     - source: oas_server_bff
-      target: /tmp/oas_server_bff.gson
+      target: /tmp/oas_server_bff.json
       mode: 444
     - source: oas_server_staff
-      target: /tmp/oas_server_staff.gson
+      target: /tmp/oas_server_staff.json
       mode: 444
     - source: oas_server_cuss
-      target: /tmp/oas_server_cuss.gson
+      target: /tmp/oas_server_cuss.json
       mode: 444
     volumes:
     - downloaded_data:/data
@@ -60,15 +63,31 @@ services:
     - |
       set -e;
 
-      export JAR_FILE=/data/bin/openapi-generator-cli.jar
+      JAR_FILE=/data/bin/openapi-generator-cli.jar
 
-      generations=('oas_server_kc' 'oas_server_cuss' 'oas_server_staff' 'oas_server_bff')
-      for item in "$${generations[@]}"; do
+      for item in oas_server_kc oas_server_cuss oas_server_staff oas_server_bff; do
+          echo "Generating $$item..."
+          
+          # Generate to a local container directory first to avoid bind mount issues
+          TMP_DIR="/tmp/gen_$$item"
+          rm -rf "$$TMP_DIR"
+          mkdir -p "$$TMP_DIR"
+          
+          java -jar "$$JAR_FILE" generate \
+            -c "/tmp/$$item.json" \
+            -o "$$TMP_DIR" \
+            --skip-validate-spec
+          
+          # Now move to the bind mount
+          echo "Moving $$item to /work..."
           rm -rf "/work/$$item"
-          java -jar $$JAR_FILE generate \
-            -c "/tmp/$$item.gson" \
-            -o "/work/$$item"
+          mkdir -p "/work/$$item"
+          cp -a "$$TMP_DIR"/. "/work/$$item/"
+          rm -rf "$$TMP_DIR"
       done
+
+      echo "Fixing permissions for $$USER_ID:$$GROUP_ID..."
+      chown -R "$$USER_ID:$$GROUP_ID" /work
 
 volumes:
   downloaded_data:

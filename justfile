@@ -19,8 +19,8 @@ c := ""
 compose_file := "compose.yml"
 project := "user-storage-backend"
 
-export UID := `id -u`
-export GID := `id -g`
+export USER_ID := `id -u`
+export GROUP_ID := `id -g`
 
 init: # Initialize docker compose services
 	docker compose -p {{project}} -f {{compose_file}} build {{c}}
@@ -40,8 +40,8 @@ up: # Start services with rebuild
 up-single service: # Start a single service (pass service=...)
 	docker compose -p {{project}} -f {{compose_file}} up -d --remove-orphans --build {{service}} {{c}}
 
-generate: # Start a single service (pass service=...)
-	docker compose -p {{project}} -f {{compose_file}} up generate-code {{c}}
+generate: # Generate code from OpenAPI specs
+	docker compose -p {{project}} -f {{compose_file}} run --rm generate-code
 	cargo fmt -p gen_oas_server_cuss -p gen_oas_server_bff -p gen_oas_server_kc -p gen_oas_server_staff
 	cargo fix --allow-dirty -p gen_oas_server_cuss -p gen_oas_server_bff -p gen_oas_server_kc -p gen_oas_server_staff
 
