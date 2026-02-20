@@ -19,6 +19,9 @@ c := ""
 compose_file := "compose.yml"
 project := "user-storage-backend"
 
+export UID := `id -u`
+export GID := `id -g`
+
 init: # Initialize docker compose services
 	docker compose -p {{project}} -f {{compose_file}} build {{c}}
 
