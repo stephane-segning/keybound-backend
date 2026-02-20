@@ -10,46 +10,54 @@ authors.workspace = true
 test-utils = []
 
 [dependencies]
-backend-auth.workspace = true
+backend-auth = { workspace = true }
 backend-core = { workspace = true, features = ["axum"] }
-backend-id.workspace = true
-backend-repository.workspace = true
-backend-model.workspace = true
-backend-migrate.workspace = true
-axum.workspace = true
+backend-id = { workspace = true }
+backend-repository = { workspace = true }
+backend-model = { workspace = true }
+backend-migrate = { workspace = true }
+axum = { workspace = true }
 axum-extra = { workspace = true, features = ["cookie"] }
-axum-server.workspace = true
-async-trait.workspace = true
-chrono.workspace = true
-diesel-async.workspace = true
-http.workspace = true
-hyper.workspace = true
-tokio.workspace = true
-tower.workspace = true
-tower-http.workspace = true
+axum-server = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+diesel-async = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-tracing.workspace = true
-headers.workspace = true
-sha2.workspace = true
-argon2.workspace = true
-rand.workspace = true
-serde_json.workspace = true
-json-patch.workspace = true
-serde.workspace = true
-serde_yaml.workspace = true
-redis.workspace = true
-apalis.workspace = true
-apalis-redis.workspace = true
+tracing = { workspace = true }
+headers = { workspace = true }
+sha2 = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+serde_json = { workspace = true }
+json-patch = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+redis = { workspace = true }
+apalis = { workspace = true }
+apalis-redis = { workspace = true }
 
-aws-config.workspace = true
-aws-sdk-s3.workspace = true
-aws-sdk-sns.workspace = true
-aws-types.workspace = true
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-sdk-sns = { workspace = true }
+aws-types = { workspace = true }
 
-gen_oas_server_bff.workspace = true
-gen_oas_server_kc.workspace = true
-gen_oas_server_staff.workspace = true
-gen_oas_server_cuss.workspace = true
+gen_oas_server_bff = { workspace = true }
+gen_oas_server_kc = { workspace = true }
+gen_oas_server_staff = { workspace = true }
+gen_oas_server_cuss = { workspace = true }
+
+openssl = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+diesel = { workspace = true, features = ["pq-src"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+diesel = { workspace = true }
 
 [dev-dependencies]
-mockall.workspace = true
+mockall = { workspace = true }

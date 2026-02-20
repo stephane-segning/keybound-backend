@@ -7,13 +7,19 @@ publish.workspace = true
 authors.workspace = true
 
 [dependencies]
-diesel.workspace = true
-diesel-async.workspace = true
-diesel_migrations.workspace = true
-deadpool-diesel.workspace = true
+diesel-async = { workspace = true, features = ["postgres", "deadpool"] }
+diesel_migrations = { workspace = true, features = ["postgres"] }
+deadpool-diesel = { workspace = true, features = ["postgres"] }
 tracing.workspace = true
 backend-core.workspace = true
 tempfile = "3"
 async-trait.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+openssl.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+diesel = { workspace = true, features = ["postgres", "chrono", "serde_json", "r2d2", "pq-src"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+diesel = { workspace = true, features = ["postgres", "chrono", "serde_json", "r2d2"] }

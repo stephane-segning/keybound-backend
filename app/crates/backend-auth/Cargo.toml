@@ -25,6 +25,7 @@ jsonwebtoken.workspace = true
 jwks.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
+openssl.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
