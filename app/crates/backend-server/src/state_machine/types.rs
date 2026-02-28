@@ -14,7 +14,6 @@ pub const ATTEMPT_STATUS_QUEUED: &str = "QUEUED";
 pub const ATTEMPT_STATUS_RUNNING: &str = "RUNNING";
 pub const ATTEMPT_STATUS_SUCCEEDED: &str = "SUCCEEDED";
 pub const ATTEMPT_STATUS_FAILED: &str = "FAILED";
-pub const ATTEMPT_STATUS_CANCELLED: &str = "CANCELLED";
 
 pub const STEP_PHONE_ISSUE_OTP: &str = "ISSUE_OTP";
 pub const STEP_PHONE_VERIFY_OTP: &str = "VERIFY_OTP";

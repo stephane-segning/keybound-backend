@@ -2,7 +2,7 @@ use crate::file_storage::{EncryptionMode, FileStorage, PresignedUpload};
 use crate::state::AppState;
 use crate::state_machine::jobs::StateMachineStepJob;
 use crate::state_machine::queue::StateMachineQueue;
-use crate::worker::{NotificationJob, NotificationQueue, ProvisioningQueue, WorkerHttpClient};
+use crate::worker::{NotificationJob, NotificationQueue};
 use backend_auth::{OidcState, SignatureState};
 use backend_core::async_trait;
 use backend_core::{Config, Error};
@@ -16,33 +16,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 mock! {
-    pub WorkerHttpClient {}
-    #[async_trait]
-    impl WorkerHttpClient for WorkerHttpClient {
-        async fn post_json(
-            &self,
-            url: &str,
-            body: &serde_json::Value,
-        ) -> std::result::Result<(http::StatusCode, String), apalis::prelude::BoxDynError>;
-    }
-    impl std::fmt::Debug for WorkerHttpClient {
-        fn fmt<'a>(&self, f: &mut std::fmt::Formatter<'a>) -> std::fmt::Result;
-    }
-}
-
-mock! {
     pub NotificationQueue {}
     #[async_trait]
     impl NotificationQueue for NotificationQueue {
         async fn enqueue(&self, job: NotificationJob) -> backend_core::Result<()>;
-    }
-}
-
-mock! {
-    pub ProvisioningQueue {}
-    #[async_trait]
-    impl ProvisioningQueue for ProvisioningQueue {
-        async fn enqueue_fineract_provisioning(&self, _user_id: &str) -> backend_core::Result<()>;
     }
 }
 
@@ -269,8 +246,6 @@ pub struct TestAppStateBuilder {
     pub device: Option<Arc<dyn DeviceRepo>>,
     pub sm_queue: Option<Arc<dyn StateMachineQueue>>,
     pub notification_queue: Option<Arc<dyn NotificationQueue>>,
-    pub provisioning_queue: Option<Arc<dyn ProvisioningQueue>>,
-    pub worker_http_client: Option<Arc<dyn WorkerHttpClient>>,
     pub s3: Option<Arc<dyn FileStorage>>,
     pub config: Option<Config>,
 }
@@ -302,16 +277,6 @@ impl TestAppStateBuilder {
 
     pub fn with_notification_queue(mut self, queue: Arc<dyn NotificationQueue>) -> Self {
         self.notification_queue = Some(queue);
-        self
-    }
-
-    pub fn with_provisioning_queue(mut self, queue: Arc<dyn ProvisioningQueue>) -> Self {
-        self.provisioning_queue = Some(queue);
-        self
-    }
-
-    pub fn with_worker_http_client(mut self, client: Arc<dyn WorkerHttpClient>) -> Self {
-        self.worker_http_client = Some(client);
         self
     }
 
@@ -388,12 +353,6 @@ cuss:
             notification_queue: self
                 .notification_queue
                 .unwrap_or_else(|| Arc::new(MockNotificationQueue::new())),
-            provisioning_queue: self
-                .provisioning_queue
-                .unwrap_or_else(|| Arc::new(MockProvisioningQueue::new())),
-            worker_http_client: self
-                .worker_http_client
-                .unwrap_or_else(|| Arc::new(reqwest::Client::new())),
             s3: self.s3.unwrap_or_else(|| Arc::new(MockFileStorage::new())),
             config,
             oidc_state,

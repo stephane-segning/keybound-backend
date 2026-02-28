@@ -1,9 +1,6 @@
 use crate::file_storage::{FileStorage, FsFileStorage, S3FileStorage};
 use crate::state_machine::queue::{RedisStateMachineQueue, StateMachineQueue};
-use crate::worker::{
-    NotificationQueue, ProvisioningQueue, RedisNotificationQueue, RedisProvisioningQueue,
-    WorkerHttpClient,
-};
+use crate::worker::{NotificationQueue, RedisNotificationQueue};
 use backend_auth::{HttpClient, OidcState, SignatureState};
 use backend_core::Config;
 use backend_repository::{
@@ -23,12 +20,10 @@ pub struct AppState {
     pub device: Arc<dyn DeviceRepo>,
     pub sm_queue: Arc<dyn StateMachineQueue>,
     pub notification_queue: Arc<dyn NotificationQueue>,
-    pub provisioning_queue: Arc<dyn ProvisioningQueue>,
     pub s3: Arc<dyn FileStorage>,
     pub config: Config,
     pub oidc_state: Arc<OidcState>,
     pub signature_state: Arc<SignatureState>,
-    pub worker_http_client: Arc<dyn WorkerHttpClient>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -42,7 +37,6 @@ impl std::fmt::Debug for AppState {
             .field("config", &self.config)
             .field("oidc_state", &"<OidcState>")
             .field("signature_state", &"<SignatureState>")
-            .field("worker_http_client", &self.worker_http_client)
             .finish()
     }
 }
@@ -113,13 +107,9 @@ impl AppState {
             max_body_bytes: cfg.kc.max_body_bytes,
         });
 
-        let worker_http_client: Arc<dyn WorkerHttpClient> =
-            Arc::new(reqwest::Client::builder().build()?);
-
         let sm_queue: Arc<dyn StateMachineQueue> =
             Arc::new(RedisStateMachineQueue::new(cfg.redis.url.clone()));
         let notification_queue = Arc::new(RedisNotificationQueue::new(cfg.redis.url.clone()));
-        let provisioning_queue = Arc::new(RedisProvisioningQueue::new(cfg.redis.url.clone()));
 
         Ok(Self {
             sm,
@@ -127,12 +117,10 @@ impl AppState {
             device,
             sm_queue,
             notification_queue,
-            provisioning_queue,
             s3,
             config: cfg.clone(),
             oidc_state,
             signature_state,
-            worker_http_client,
         })
     }
 }

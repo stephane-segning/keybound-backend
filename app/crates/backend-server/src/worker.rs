@@ -37,40 +37,6 @@ pub async fn ensure_redis_ready(redis_url: &str) -> backend_core::Result<()> {
     Ok(())
 }
 
-#[async_trait]
-pub trait WorkerHttpClient: Send + Sync + std::fmt::Debug {
-    async fn post_json(
-        &self,
-        url: &str,
-        body: &serde_json::Value,
-    ) -> Result<(http::StatusCode, String), BoxDynError>;
-}
-
-#[async_trait]
-impl WorkerHttpClient for reqwest::Client {
-    async fn post_json(
-        &self,
-        url: &str,
-        body: &serde_json::Value,
-    ) -> Result<(http::StatusCode, String), BoxDynError> {
-        let response = self
-            .post(url)
-            .header("User-Agent", "user-storage/1.0.0")
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| Box::new(e) as BoxDynError)?;
-
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| Box::new(e) as BoxDynError)?;
-
-        Ok((status, text))
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum NotificationJob {
@@ -116,29 +82,6 @@ impl NotificationQueue for RedisNotificationQueue {
         Ok(())
     }
 }
-
-// Legacy type kept for compatibility; the new revamp uses state machines instead.
-#[async_trait]
-pub trait ProvisioningQueue: Send + Sync {
-    async fn enqueue_fineract_provisioning(&self, _user_id: &str) -> backend_core::Result<()> {
-        Ok(())
-    }
-}
-
-pub struct RedisProvisioningQueue {
-    _redis_url: String,
-}
-
-impl RedisProvisioningQueue {
-    pub fn new(redis_url: String) -> Self {
-        Self {
-            _redis_url: redis_url,
-        }
-    }
-}
-
-#[async_trait]
-impl ProvisioningQueue for RedisProvisioningQueue {}
 
 pub async fn run(state: Arc<AppState>) -> backend_core::Result<()> {
     let redis_url = state.config.redis.url.clone();
