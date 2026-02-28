@@ -23,11 +23,9 @@ use gen_oas_server_bff::apis::uploads::{
     InternalCompleteUploadResponse, InternalPresignUploadResponse, Uploads,
 };
 use gen_oas_server_bff::models;
-use gen_oas_server_bff::types::Object;
 use headers::Host;
 use http::Method;
-use serde_json::{Map, Value, json};
-use std::collections::HashMap;
+use serde_json::{json, Value};
 
 const OTP_RATE_LIMIT_WINDOW_MINUTES: i64 = 10;
 const OTP_RATE_LIMIT_MAX_ISSUES: i64 = 5;
@@ -45,31 +43,6 @@ fn step_id(session_id: &str, step_type: &str) -> String {
 fn split_step_id(id: &str) -> Option<(String, String)> {
     let (session_id, step_type) = id.rsplit_once("__")?;
     Some((session_id.to_owned(), step_type.to_owned()))
-}
-
-fn map_objects_to_json(value: Option<&HashMap<String, Object>>) -> Value {
-    let Some(value) = value else {
-        return Value::Object(Map::new());
-    };
-    Value::Object(
-        value
-            .iter()
-            .map(|(key, value)| (key.clone(), value.0.clone()))
-            .collect(),
-    )
-}
-
-fn json_to_object_map(value: &Value) -> Option<HashMap<String, Object>> {
-    let Value::Object(entries) = value else {
-        return None;
-    };
-
-    Some(
-        entries
-            .iter()
-            .map(|(key, value)| (key.clone(), Object(value.clone())))
-            .collect(),
-    )
 }
 
 fn parse_session_status(instance_status: &str) -> models::KycSessionInternalStatus {
@@ -236,9 +209,10 @@ impl Steps<Error> for BackendApi {
         let mut ctx = session.context;
         let step_ids_val = ctx.get_mut("step_ids");
         if let Some(Value::Array(ids)) = step_ids_val
-            && !ids.iter().any(|v| v.as_str() == Some(&id)) {
-                ids.push(Value::String(id.clone()));
-            }
+            && !ids.iter().any(|v| v.as_str() == Some(&id))
+        {
+            ids.push(Value::String(id.clone()));
+        }
         self.state
             .sm
             .update_instance_context(&session.id, ctx.clone())

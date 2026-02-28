@@ -253,8 +253,7 @@ struct JwtClaims {
 fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
-    
-    
+
     if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() {
         Some(token.to_owned())
     } else {

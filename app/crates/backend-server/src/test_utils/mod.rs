@@ -275,7 +275,6 @@ pub struct TestAppStateBuilder {
     pub config: Option<Config>,
 }
 
-
 impl TestAppStateBuilder {
     pub fn new() -> Self {
         Self::default()

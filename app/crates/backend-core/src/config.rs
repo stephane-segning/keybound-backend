@@ -16,7 +16,6 @@ pub enum RuntimeMode {
     Shared,
 }
 
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Runtime {
     #[serde(default)]

@@ -52,7 +52,8 @@ impl Devices<Error> for BackendApi {
                     "NOT_FOUND",
                     "Device not found",
                 )),
-            })}
+            })
+    }
 }
 
 #[backend_core::async_trait]
@@ -68,14 +69,11 @@ impl Users<Error> for BackendApi {
         body: &models::UserUpsertRequest,
     ) -> Result<CreateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
-        self.state
-            .user
-            .create_user(&req)
-            .await
-            .map(|row| {
-                let dto = UserRecordDto::from(row);
-                CreateUserResponse::Status201_Created(dto.into())
-            })}
+        self.state.user.create_user(&req).await.map(|row| {
+            let dto = UserRecordDto::from(row);
+            CreateUserResponse::Status201_Created(dto.into())
+        })
+    }
 
     async fn delete_user(
         &self,
@@ -95,7 +93,8 @@ impl Users<Error> for BackendApi {
                 } else {
                     DeleteUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
-            })}
+            })
+    }
 
     async fn get_user(
         &self,
@@ -117,7 +116,8 @@ impl Users<Error> for BackendApi {
                 None => {
                     GetUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
-            })}
+            })
+    }
 
     async fn search_users(
         &self,
@@ -128,20 +128,17 @@ impl Users<Error> for BackendApi {
         body: &models::UserSearchRequest,
     ) -> Result<SearchUsersResponse, Error> {
         let req = UserSearch::from(body.clone());
-        self.state
-            .user
-            .search_users(&req)
-            .await
-            .map(|rows| {
-                let users = rows
-                    .into_iter()
-                    .map(|row| UserRecordDto::from(row).into())
-                    .collect();
-                SearchUsersResponse::Status200_SearchResults(models::UserSearchResponse {
-                    users,
-                    total_count: None,
-                })
-            })}
+        self.state.user.search_users(&req).await.map(|rows| {
+            let users = rows
+                .into_iter()
+                .map(|row| UserRecordDto::from(row).into())
+                .collect();
+            SearchUsersResponse::Status200_SearchResults(models::UserSearchResponse {
+                users,
+                total_count: None,
+            })
+        })
+    }
 
     async fn update_user(
         &self,
@@ -165,7 +162,8 @@ impl Users<Error> for BackendApi {
                 None => {
                     UpdateUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
                 }
-            })}
+            })
+    }
 }
 
 #[backend_core::async_trait]
@@ -191,24 +189,22 @@ impl Enrollment<Error> for BackendApi {
             .await?;
 
         if let Some((bound_user_id, _)) = existing
-            && bound_user_id != req.user_id {
-                return Ok(
-                    EnrollmentBindResponse::Status409_DeviceAlreadyBoundToADifferentUser(kc_error(
-                        "CONFLICT",
-                        "Device already bound to another user",
-                    )),
-                );
-            }
+            && bound_user_id != req.user_id
+        {
+            return Ok(
+                EnrollmentBindResponse::Status409_DeviceAlreadyBoundToADifferentUser(kc_error(
+                    "CONFLICT",
+                    "Device already bound to another user",
+                )),
+            );
+        }
 
-        self.state
-            .device
-            .bind_device(&req)
-            .await
-            .map(|record_id| {
-                EnrollmentBindResponse::Status200_Bound(models::EnrollmentBindResponse {
-                    status: models::EnrollmentBindResponseStatus::Bound,
-                    device_record_id: Some(record_id),
-                    bound_user_id: Some(req.user_id),
-                })
-            })}
+        self.state.device.bind_device(&req).await.map(|record_id| {
+            EnrollmentBindResponse::Status200_Bound(models::EnrollmentBindResponse {
+                status: models::EnrollmentBindResponseStatus::Bound,
+                device_record_id: Some(record_id),
+                bound_user_id: Some(req.user_id),
+            })
+        })
+    }
 }
