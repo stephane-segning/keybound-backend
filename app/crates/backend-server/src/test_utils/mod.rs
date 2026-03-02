@@ -1,4 +1,4 @@
-use crate::file_storage::{EncryptionMode, FileStorage, PresignedUpload};
+use crate::file_storage::{EncryptionMode, MinioStorage, PresignedUpload};
 use crate::state::AppState;
 use crate::state_machine::jobs::StateMachineStepJob;
 use crate::state_machine::queue::StateMachineQueue;
@@ -32,9 +32,9 @@ mock! {
 }
 
 mock! {
-    pub FileStorage {}
+    pub MinioStorage {}
     #[async_trait]
-    impl FileStorage for FileStorage {
+    impl MinioStorage for MinioStorage {
         async fn head_object(&self, bucket: &str, key: &str) -> std::result::Result<(), Error>;
 
         async fn upload(
@@ -246,7 +246,7 @@ pub struct TestAppStateBuilder {
     pub device: Option<Arc<dyn DeviceRepo>>,
     pub sm_queue: Option<Arc<dyn StateMachineQueue>>,
     pub notification_queue: Option<Arc<dyn NotificationQueue>>,
-    pub s3: Option<Arc<dyn FileStorage>>,
+    pub minio: Option<Arc<dyn MinioStorage>>,
     pub config: Option<Config>,
 }
 
@@ -280,8 +280,8 @@ impl TestAppStateBuilder {
         self
     }
 
-    pub fn with_s3(mut self, s3: Arc<dyn FileStorage>) -> Self {
-        self.s3 = Some(s3);
+    pub fn with_minio(mut self, minio: Arc<dyn MinioStorage>) -> Self {
+        self.minio = Some(minio);
         self
     }
 
@@ -353,7 +353,9 @@ cuss:
             notification_queue: self
                 .notification_queue
                 .unwrap_or_else(|| Arc::new(MockNotificationQueue::new())),
-            s3: self.s3.unwrap_or_else(|| Arc::new(MockFileStorage::new())),
+            minio: self
+                .minio
+                .unwrap_or_else(|| Arc::new(MockMinioStorage::new())),
             config,
             oidc_state,
             signature_state,

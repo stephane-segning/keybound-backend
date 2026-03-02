@@ -21,6 +21,17 @@ runtime:
 redis:
   url: "redis://127.0.0.1:6379"
 
+storage:
+  type: minio
+  minio:
+    endpoint: ${MINIO_ENDPOINT:-http://127.0.0.1:9000}
+    region: ${MINIO_REGION:-us-east-1}
+    access_key: ${MINIO_ACCESS_KEY:-minioadmin}
+    secret_key: ${MINIO_SECRET_KEY:-minioadmin}
+    bucket: ${MINIO_BUCKET:-user-storage-dev}
+    force_path_style: true
+    presign_ttl_seconds: 900
+
 s3:
   region: "us-east-1"
   bucket: "user-storage-dev"

@@ -86,16 +86,22 @@ pub struct AwsS3 {
     pub presign_ttl_seconds: u64,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum StorageType {
     S3,
-    Fs,
+    Minio,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct FsStorage {
-    pub base_dir: String,
+pub struct MinioStorage {
+    pub endpoint: String,
+    pub region: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub bucket: String,
+    pub force_path_style: Option<bool>,
+    pub presign_ttl_seconds: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -103,7 +109,7 @@ pub struct Storage {
     #[serde(rename = "type")]
     pub r#type: StorageType,
     #[serde(default)]
-    pub fs: Option<FsStorage>,
+    pub minio: Option<MinioStorage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

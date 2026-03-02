@@ -138,24 +138,26 @@ impl KycStateMachines<Error> for BackendApi {
             return Err(Error::bad_request("INVALID_STEP", "stepName is required"));
         }
 
+        if !steps_for_kind(&instance.kind).contains(&step_name) {
+            return Err(Error::bad_request(
+                "INVALID_STEP",
+                "stepName is not valid for this instance kind",
+            ));
+        }
+
+        if !is_retryable_async_step(&instance.kind, step_name) {
+            return Err(Error::bad_request(
+                "INVALID_RETRY_STEP",
+                "Only async steps can be retried with this endpoint",
+            ));
+        }
+
         let attempt_no = self
             .state
             .sm
             .next_attempt_no(&instance.id, step_name)
             .await?;
         let now = chrono::Utc::now();
-
-        let is_async = matches!(
-            step_name,
-            STEP_PHONE_ISSUE_OTP
-                | STEP_DEPOSIT_REGISTER_CUSTOMER
-                | STEP_DEPOSIT_APPROVE_AND_DEPOSIT
-        );
-        let status = if is_async {
-            ATTEMPT_STATUS_QUEUED
-        } else {
-            ATTEMPT_STATUS_RUNNING
-        };
 
         let attempt = self
             .state
@@ -165,13 +167,13 @@ impl KycStateMachines<Error> for BackendApi {
                 instance_id: instance.id.clone(),
                 step_name: step_name.to_owned(),
                 attempt_no,
-                status: status.to_owned(),
+                status: ATTEMPT_STATUS_QUEUED.to_owned(),
                 external_ref: None,
                 input: json!({"retry_mode": body.mode.to_string()}),
                 output: None,
                 error: None,
-                queued_at: if is_async { Some(now) } else { None },
-                started_at: if is_async { None } else { Some(now) },
+                queued_at: Some(now),
+                started_at: None,
                 finished_at: None,
                 next_retry_at: None,
             })
@@ -182,17 +184,15 @@ impl KycStateMachines<Error> for BackendApi {
             .cancel_other_attempts_for_step(&instance.id, step_name, &attempt.id)
             .await?;
 
-        if is_async {
-            self.state
-                .sm_queue
-                .enqueue(crate::state_machine::jobs::StateMachineStepJob {
-                    instance_id: instance.id.clone(),
-                    step_name: step_name.to_owned(),
-                    attempt_id: attempt.id.clone(),
-                })
-                .await
-                .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
-        }
+        self.state
+            .sm_queue
+            .enqueue(crate::state_machine::jobs::StateMachineStepJob {
+                instance_id: instance.id.clone(),
+                step_name: step_name.to_owned(),
+                attempt_id: attempt.id.clone(),
+            })
+            .await
+            .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
 
         Ok(
             StaffKycInstancesInstanceIdRetryPostResponse::Status200_RetryAccepted(
@@ -399,6 +399,17 @@ fn steps_for_kind(kind: &str) -> Vec<&'static str> {
             STEP_PHONE_VERIFY_OTP,
             STEP_MARK_COMPLETE,
         ],
+    }
+}
+
+fn is_retryable_async_step(kind: &str, step_name: &str) -> bool {
+    match kind {
+        KIND_KYC_PHONE_OTP => step_name == STEP_PHONE_ISSUE_OTP,
+        KIND_KYC_FIRST_DEPOSIT => {
+            step_name == STEP_DEPOSIT_REGISTER_CUSTOMER
+                || step_name == STEP_DEPOSIT_APPROVE_AND_DEPOSIT
+        }
+        _ => false,
     }
 }
 

@@ -153,10 +153,9 @@ The repository implementation is split into domain-specific modules under `src/p
 
 ## Abstractions & Mocking
 To support unit testing without external dependencies, `backend-server` uses trait-based abstractions in `AppState`:
-- **Storage**: `FileStorage` trait (in `app/crates/backend-server/src/file_storage.rs`) abstracts S3.
-- **Worker HTTP**: `WorkerHttpClient` trait (in `app/crates/backend-server/src/worker.rs`) abstracts external API calls.
-- **Queues**: `NotificationQueue` and `ProvisioningQueue` traits (in `app/crates/backend-server/src/worker.rs`) abstract Redis-backed job enqueueing.
-- **Repositories**: `KycRepo`, `UserRepo`, and `DeviceRepo` are used via `Arc<dyn Trait>`.
+- **Storage**: `MinioStorage` trait (in `app/crates/backend-server/src/file_storage.rs`) abstracts S3-compatible object storage (MinIO/S3).
+- **Queues**: `NotificationQueue` and `StateMachineQueue` traits abstract Redis-backed job enqueueing.
+- **Repositories**: `StateMachineRepo`, `UserRepo`, and `DeviceRepo` are used via `Arc<dyn Trait>`.
 
 Mocks for these traits are provided in `app/crates/backend-server/src/test_utils/mod.rs` using `mockall`.
 
@@ -290,4 +289,4 @@ All backends:
 ### Backend-Server Unit Testing Expansion
 - **Coverage**: Expanded coverage for `state`, `api::{bff, staff}`, and `worker` modules.
 - **Mocks**: Uses `mockall` and `test_utils` to exercise handlers without hitting real AWS/SNS/Redis/HTTP dependencies.
-- **Traits**: Introduced `FileStorage`, `WorkerHttpClient`, `NotificationQueue`, and `ProvisioningQueue` traits to enable clean dependency injection in `AppState`.
+- **Traits**: Introduced `MinioStorage`, `NotificationQueue`, and `StateMachineQueue` traits to enable clean dependency injection in `AppState`.

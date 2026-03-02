@@ -4,6 +4,7 @@ use backend_model::db;
 use chrono::{DateTime, Utc};
 use diesel::dsl::{count_star, max};
 use diesel::prelude::*;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::deadpool::Pool;
@@ -70,11 +71,30 @@ impl StateMachineRepo for StateMachineRepository {
             completed_at: None,
         };
 
-        diesel::insert_into(sm_instance::table)
+        let insert_result = diesel::insert_into(sm_instance::table)
             .values(&row)
             .get_result::<db::SmInstanceRow>(&mut conn)
-            .await
-            .map_err(Error::from)
+            .await;
+
+        match insert_result {
+            Ok(created) => Ok(created),
+            Err(err @ DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                let existing = sm_instance::table
+                    .filter(sm_instance::idempotency_key.eq(&row.idempotency_key))
+                    .select(db::SmInstanceRow::as_select())
+                    .first::<db::SmInstanceRow>(&mut conn)
+                    .await
+                    .optional()
+                    .map_err(Error::from)?;
+
+                if let Some(existing) = existing {
+                    Ok(existing)
+                } else {
+                    Err(Error::from(err))
+                }
+            }
+            Err(err) => Err(Error::from(err)),
+        }
     }
 
     async fn get_instance(&self, instance_id: &str) -> RepoResult<Option<db::SmInstanceRow>> {

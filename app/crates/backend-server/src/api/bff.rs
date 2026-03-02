@@ -6,7 +6,7 @@ use crate::state_machine::types::*;
 use crate::worker::NotificationJob;
 use axum_extra::extract::CookieJar;
 use backend_auth::JwtToken;
-use backend_core::Error;
+use backend_core::{Error, StorageType};
 use backend_repository::{SmStepAttemptCreateInput, SmStepAttemptPatch};
 use chrono::{Duration, Utc};
 use gen_oas_server_bff::apis::deposits::{
@@ -829,13 +829,33 @@ impl Uploads<Error> for BackendApi {
             ));
         }
 
-        let bucket = self
+        let (bucket, presign_ttl_seconds) = match self
             .state
             .config
-            .s3
+            .storage
             .as_ref()
-            .map(|s3| s3.bucket.clone())
-            .ok_or_else(|| Error::internal("S3_NOT_CONFIGURED", "S3 is not configured"))?;
+            .map(|storage| storage.r#type)
+        {
+            Some(StorageType::Minio) => {
+                let minio = self
+                    .state
+                    .config
+                    .storage
+                    .as_ref()
+                    .and_then(|storage| storage.minio.as_ref())
+                    .ok_or_else(|| {
+                        Error::internal("MINIO_NOT_CONFIGURED", "MinIO storage is not configured")
+                    })?;
+                (minio.bucket.clone(), minio.presign_ttl_seconds)
+            }
+            _ => {
+                let s3 =
+                    self.state.config.s3.as_ref().ok_or_else(|| {
+                        Error::internal("S3_NOT_CONFIGURED", "S3 is not configured")
+                    })?;
+                (s3.bucket.clone(), s3.presign_ttl_seconds)
+            }
+        };
 
         let upload_id = backend_id::kyc_upload_id()?;
         let object_key = format!("uploads/{}/{}", body.user_id, upload_id);
@@ -848,13 +868,13 @@ impl Uploads<Error> for BackendApi {
 
         let presigned = self
             .state
-            .s3
+            .minio
             .upload_presigned(
                 &bucket,
                 &object_key,
                 &body.mime,
                 encryption,
-                std::time::Duration::from_secs(300),
+                std::time::Duration::from_secs(presign_ttl_seconds),
             )
             .await?;
 
@@ -867,7 +887,8 @@ impl Uploads<Error> for BackendApi {
                 url: Some(presigned.url),
                 headers: Some(presigned.headers),
                 multipart: None,
-                expires_at: Utc::now() + Duration::seconds(300),
+                expires_at: Utc::now()
+                    + Duration::seconds(i64::try_from(presign_ttl_seconds).unwrap_or(i64::MAX)),
             },
         ))
     }
@@ -884,7 +905,7 @@ impl Uploads<Error> for BackendApi {
         // Best-effort: validate that object exists for S3 setups.
         let _ = self
             .state
-            .s3
+            .minio
             .head_object(&body.bucket, &body.object_key)
             .await;
 
