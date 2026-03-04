@@ -6,6 +6,10 @@ include:
   - ../../deploy/compose/keycloak.compose.yml
 
 services:
+  minio-create-bucket:
+    environment:
+      MINIO_BUCKET: "${MINIO_BUCKET:-user-storage-e2e}"
+
   user-storage-server:
     image: user-storage-app
     build:

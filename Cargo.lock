@@ -989,11 +989,14 @@ name = "backend-e2e"
 version = "0.1.5"
 dependencies = [
  "anyhow",
+ "argon2",
  "base64 0.22.1",
  "chrono",
+ "hmac",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tokio-postgres",
 ]

@@ -41,40 +41,40 @@ Enforcement:
 ## KC Signature Middleware
 
 Enforcement cases (must remain covered):
-- [ ] missing `x-kc-timestamp`.
-- [ ] missing `x-kc-signature`.
-- [ ] invalid/out-of-skew timestamp.
-- [ ] invalid signature.
-- [ ] request body larger than `max_body_bytes`.
-- [ ] valid signature with body preservation (downstream handler sees original body).
-- [ ] url encoded paths.
-- [ ] nested router paths.
-- [ ] method mismatch.
-- [ ] path mismatch.
-- [ ] body mismatch.
+- [x] missing `x-kc-timestamp`.
+- [x] missing `x-kc-signature`.
+- [x] invalid/out-of-skew timestamp.
+- [x] invalid signature.
+- [x] request body larger than `max_body_bytes`.
+- [x] valid signature with body preservation (downstream handler sees original body).
+- [x] url encoded paths.
+- [x] nested router paths.
+- [x] method mismatch.
+- [x] path mismatch.
+- [x] body mismatch.
 
 ## KC Surface (`/kc/*`) Functional Scenarios
 
 Devices:
-- [ ] Lookup existing device by `(device_id, jkt)` returns `200` and refreshes `last_seen_at`.
-- [ ] Lookup missing device returns `404`.
+- [x] Lookup existing device by `(device_id, jkt)` returns `200` and refreshes `last_seen_at`.
+- [x] Lookup missing device returns `404`.
 
 Enrollment / binding:
-- [ ] Bind device for user succeeds (first bind).
-- [ ] Re-bind same `(device_id, jkt)` to same user is idempotent (or returns deterministic outcome).
-- [ ] Bind conflict: same device already bound to different user -> `409` with deterministic error.
-- [ ] Uniqueness enforced on both `device_id` and `jkt` under concurrency (race test).
-- [ ] `device_record_id` is deterministic (`device_id` + SHA-256(sorted JWK)).
+- [x] Bind device for user succeeds (first bind).
+- [x] Re-bind same `(device_id, jkt)` to same user is idempotent (or returns deterministic outcome).
+- [x] Bind conflict: same device already bound to different user -> `409` with deterministic error.
+- [x] Uniqueness enforced on both `device_id` and `jkt` under concurrency (race test).
+- [x] `device_record_id` is deterministic (`device_id` + SHA-256(sorted JWK)).
 
 Users:
-- [ ] Create user -> `201`.
-- [ ] Get existing user -> `200`.
-- [ ] Get missing user -> `404`.
-- [ ] Update existing user -> `200`.
-- [ ] Update missing user -> `404`.
-- [ ] Delete existing user -> `204`.
-- [ ] Delete missing user -> `404`.
-- [ ] Search users returns expected results (and stable ordering if defined).
+- [x] Create user -> `201`.
+- [x] Get existing user -> `200`.
+- [x] Get missing user -> `404`.
+- [x] Update existing user -> `200`.
+- [x] Update missing user -> `404`.
+- [x] Delete existing user -> `204`.
+- [x] Delete missing user -> `404`.
+- [x] Search users returns expected results (and stable ordering if defined).
 
 ## BFF Surface (`/bff/*`) OpenAPI Coverage
 
@@ -100,13 +100,13 @@ Phone OTP:
 - [x] rate limits / max attempts enforced (if configured).
 
 Email magic link:
-- [ ] `POST /internal/kyc/email/magic/issue` (`internalIssueMagicEmail`) issues a link/token (captured by sink).
-- [ ] `POST /internal/kyc/email/magic/verify` (`internalVerifyMagicEmail`) verifies and advances step.
+- [x] `POST /internal/kyc/email/magic/issue` (`internalIssueMagicEmail`) issues a link/token (captured by sink).
+- [x] `POST /internal/kyc/email/magic/verify` (`internalVerifyMagicEmail`) verifies and advances step.
 
 Uploads:
-- [ ] `POST /internal/uploads/presign` (`internalPresignUpload`) returns valid presign URL/fields.
-- [ ] `POST /internal/uploads/complete` (`internalCompleteUpload`) completes upload metadata.
-- [ ] invalid upload completion -> deterministic error.
+- [x] `POST /internal/uploads/presign` (`internalPresignUpload`) returns valid presign URL/fields.
+- [x] `POST /internal/uploads/complete` (`internalCompleteUpload`) completes upload metadata.
+- [x] invalid upload completion -> deterministic error.
 
 ## Staff Surface (`/staff/*`) OpenAPI Coverage
 
@@ -135,14 +135,14 @@ SMS retries:
 
 KYC_FIRST_DEPOSIT -> CUSS integration:
 - [x] success: staff confirm -> approve -> worker calls CUSS `registerCustomer` then `approveAndDeposit` -> instance completes.
-- [ ] CUSS failure on `registerCustomer` retries and remains observable.
-- [ ] CUSS failure on `approveAndDeposit` retries and remains observable.
+- [x] CUSS failure on `registerCustomer` retries and remains observable.
+- [x] CUSS failure on `approveAndDeposit` retries and remains observable.
 - [ ] idempotency: repeated approve does not double-deposit (or is rejected deterministically).
 
 ## Error Mapping (Representative)
 
 Across at least one BFF and one Staff endpoint:
-- [ ] validation errors map to stable status + payload shape.
-- [ ] not found maps to stable status + payload shape.
+- [x] validation errors map to stable status + payload shape.
+- [x] not found maps to stable status + payload shape.
 - [ ] conflict maps to stable status + payload shape.
 - [ ] unexpected internal error maps to stable status + payload shape.

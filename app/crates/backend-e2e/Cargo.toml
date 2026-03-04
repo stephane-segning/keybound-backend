@@ -11,11 +11,14 @@ e2e-tests = []
 
 [dependencies]
 anyhow.workspace = true
+argon2.workspace = true
 base64.workspace = true
 chrono.workspace = true
+hmac.workspace = true
 reqwest = { workspace = true, features = ["json", "form"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tokio-postgres = { workspace = true }
 

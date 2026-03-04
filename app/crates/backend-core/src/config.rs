@@ -208,23 +208,30 @@ pub fn load_from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Config> {
 }
 
 fn expand_env_vars(content: &str) -> Result<String> {
-    let re =
-        Regex::new(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}").map_err(|e| Error::Server(e.to_string()))?;
-    let mut result = content.to_string();
+    let re = Regex::new(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)(:-([^}]*))?\}")
+        .map_err(|e| Error::Server(e.to_string()))?;
     let mut missing_vars = Vec::new();
 
-    for cap in re.captures_iter(content) {
-        let full_match = &cap[0];
-        let var_name = &cap[1];
-        match std::env::var(var_name) {
-            Ok(val) => {
-                result = result.replace(full_match, &val);
+    let result = re
+        .replace_all(content, |caps: &regex::Captures<'_>| {
+            let var_name = &caps[1];
+            let default_value = caps.get(3).map(|m| m.as_str());
+
+            match std::env::var(var_name) {
+                Ok(val) => val,
+                Err(_) => match default_value {
+                    Some(default) => default.to_owned(),
+                    None => {
+                        missing_vars.push(var_name.to_owned());
+                        caps[0].to_owned()
+                    }
+                },
             }
-            Err(_) => {
-                missing_vars.push(var_name.to_string());
-            }
-        }
-    }
+        })
+        .to_string();
+
+    missing_vars.sort_unstable();
+    missing_vars.dedup();
 
     if !missing_vars.is_empty() {
         return Err(Error::Server(format!(
@@ -261,9 +268,13 @@ impl Config {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::{LazyLock, Mutex};
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn test_expand_env_vars_success() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         unsafe {
             env::set_var("TEST_VAR_1", "value1");
             env::set_var("TEST_VAR_2", "value2");
@@ -276,7 +287,34 @@ mod tests {
     }
 
     #[test]
+    fn test_expand_env_vars_default_used_when_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            env::remove_var("TEST_VAR_WITH_DEFAULT");
+        }
+
+        let content = "endpoint: ${TEST_VAR_WITH_DEFAULT:-http://minio:9000}";
+        let expanded = expand_env_vars(content).unwrap();
+
+        assert_eq!(expanded, "endpoint: http://minio:9000");
+    }
+
+    #[test]
+    fn test_expand_env_vars_default_overridden_by_env() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        unsafe {
+            env::set_var("TEST_VAR_WITH_DEFAULT", "http://override:9000");
+        }
+
+        let content = "endpoint: ${TEST_VAR_WITH_DEFAULT:-http://minio:9000}";
+        let expanded = expand_env_vars(content).unwrap();
+
+        assert_eq!(expanded, "endpoint: http://override:9000");
+    }
+
+    #[test]
     fn test_expand_env_vars_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         unsafe {
             env::remove_var("MISSING_VAR");
         }
@@ -291,6 +329,7 @@ mod tests {
 
     #[test]
     fn test_expand_env_vars_multiple_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         unsafe {
             env::remove_var("MISSING_VAR_1");
             env::remove_var("MISSING_VAR_2");

@@ -829,7 +829,7 @@ impl Uploads<Error> for BackendApi {
             ));
         }
 
-        let (bucket, presign_ttl_seconds) = match self
+        let (bucket, presign_ttl_seconds, is_minio_storage) = match self
             .state
             .config
             .storage
@@ -846,24 +846,28 @@ impl Uploads<Error> for BackendApi {
                     .ok_or_else(|| {
                         Error::internal("MINIO_NOT_CONFIGURED", "MinIO storage is not configured")
                     })?;
-                (minio.bucket.clone(), minio.presign_ttl_seconds)
+                (minio.bucket.clone(), minio.presign_ttl_seconds, true)
             }
             _ => {
                 let s3 =
                     self.state.config.s3.as_ref().ok_or_else(|| {
                         Error::internal("S3_NOT_CONFIGURED", "S3 is not configured")
                     })?;
-                (s3.bucket.clone(), s3.presign_ttl_seconds)
+                (s3.bucket.clone(), s3.presign_ttl_seconds, false)
             }
         };
 
         let upload_id = backend_id::kyc_upload_id()?;
         let object_key = format!("uploads/{}/{}", body.user_id, upload_id);
 
-        let encryption = match body.encryption.as_ref().map(|e| e.mode) {
-            Some(models::SseMode::SseS3) => EncryptionMode::S3,
-            Some(models::SseMode::SseKms) => EncryptionMode::Kms,
-            _ => EncryptionMode::S3,
+        let encryption = if is_minio_storage {
+            EncryptionMode::None
+        } else {
+            match body.encryption.as_ref().map(|e| e.mode) {
+                Some(models::SseMode::SseS3) => EncryptionMode::S3,
+                Some(models::SseMode::SseKms) => EncryptionMode::Kms,
+                _ => EncryptionMode::S3,
+            }
         };
 
         let presigned = self
@@ -902,12 +906,12 @@ impl Uploads<Error> for BackendApi {
         body: &models::InternalCompleteUploadRequest,
     ) -> Result<InternalCompleteUploadResponse, Error> {
         let _user_id = BackendApi::require_user_id(claims)?;
-        // Best-effort: validate that object exists for S3 setups.
-        let _ = self
-            .state
+        // Validate that the uploaded object exists before registering evidence.
+        self.state
             .minio
             .head_object(&body.bucket, &body.object_key)
-            .await;
+            .await
+            .map_err(|_| Error::not_found("UPLOAD_NOT_FOUND", "Uploaded object not found"))?;
 
         Ok(
             InternalCompleteUploadResponse::Status200_EvidenceRegistered(models::EvidenceRef::new(
