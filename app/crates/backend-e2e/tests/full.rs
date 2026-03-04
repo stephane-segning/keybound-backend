@@ -10,9 +10,19 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 #[tokio::test]
-async fn full_auth_enforcement_on_bff_and_staff() -> Result<()> {
+async fn full_suite() -> Result<()> {
     let env = Env::from_env()?;
     let client = http_client()?;
+
+    scenario_auth_enforcement(&client, &env).await?;
+    scenario_bff_deposit_and_otp_flow(&client, &env).await?;
+    scenario_staff_summary_and_instances(&client, &env).await?;
+    scenario_cuss_stub_records_register_calls(&client, &env).await?;
+
+    Ok(())
+}
+
+async fn scenario_auth_enforcement(client: &reqwest::Client, env: &Env) -> Result<()> {
     let bff_base = format!("{}/bff", env.user_storage_url);
     let staff_base = format!("{}/staff", env.user_storage_url);
 
@@ -63,7 +73,7 @@ async fn full_auth_enforcement_on_bff_and_staff() -> Result<()> {
         .await?;
     assert_eq!(staff_missing.status().as_u16(), 401);
 
-    let (token, subject) = get_client_token_and_subject(&client, &env).await?;
+    let (token, subject) = get_client_token_and_subject(client, env).await?;
     ensure_bff_fixtures(&env.database_url, &subject).await?;
 
     let valid = client
@@ -83,19 +93,15 @@ async fn full_auth_enforcement_on_bff_and_staff() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn full_bff_deposit_and_otp_flow() -> Result<()> {
-    let env = Env::from_env()?;
-    let client = http_client()?;
-
-    let (token, subject) = get_client_token_and_subject(&client, &env).await?;
+async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) -> Result<()> {
+    let (token, subject) = get_client_token_and_subject(client, env).await?;
     ensure_bff_fixtures(&env.database_url, &subject).await?;
-    reset_sms_sink(&client, &env).await?;
+    reset_sms_sink(client, env).await?;
 
     let bff_base = format!("{}/bff", env.user_storage_url);
 
     let deposit_response = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/internal/deposits/phone", bff_base),
         Some(&token),
@@ -115,7 +121,7 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
         .ok_or_else(|| anyhow!("depositId must be a string"))?;
 
     let lookup = send_json(
-        &client,
+        client,
         Method::GET,
         &format!("{}/internal/deposits/{}", bff_base, deposit_id),
         Some(&token),
@@ -133,11 +139,11 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
     );
 
     let session = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({"userId": require_json_field(&lookup.body, "userId")? })),
+        Some(json!({ "userId": subject })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
@@ -146,13 +152,13 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
         .ok_or_else(|| anyhow!("session id must be a string"))?;
 
     let step = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/internal/kyc/steps", bff_base),
         Some(&token),
         Some(json!({
             "sessionId": session_id,
-            "userId": require_json_field(&lookup.body, "userId")?,
+            "userId": subject,
             "type": "PHONE",
             "policy": {}
         })),
@@ -165,7 +171,7 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
 
     let msisdn = "+237690000033";
     let issue = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/internal/kyc/phone/otp/issue", bff_base),
         Some(&token),
@@ -182,10 +188,10 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
         .as_str()
         .ok_or_else(|| anyhow!("otpRef must be a string"))?;
 
-    let otp = wait_for_otp(&client, &env, msisdn, Duration::from_secs(30)).await?;
+    let otp = wait_for_otp(client, env, msisdn, Duration::from_secs(30)).await?;
 
     let verify = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/internal/kyc/phone/otp/verify", bff_base),
         Some(&token),
@@ -201,18 +207,14 @@ async fn full_bff_deposit_and_otp_flow() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn full_staff_summary_and_instances() -> Result<()> {
-    let env = Env::from_env()?;
-    let client = http_client()?;
-
-    let (token, subject) = get_client_token_and_subject(&client, &env).await?;
+async fn scenario_staff_summary_and_instances(client: &reqwest::Client, env: &Env) -> Result<()> {
+    let (token, subject) = get_client_token_and_subject(client, env).await?;
     ensure_bff_fixtures(&env.database_url, &subject).await?;
 
     let staff_base = format!("{}/staff", env.user_storage_url);
 
     let summary = send_json(
-        &client,
+        client,
         Method::GET,
         &format!("{}/api/kyc/reports/summary", staff_base),
         Some(&token),
@@ -221,23 +223,21 @@ async fn full_staff_summary_and_instances() -> Result<()> {
     .await?;
     assert_eq!(summary.status, 200, "{}", summary.text);
 
-    let by_kind = summary
+    summary
         .body
         .as_ref()
         .and_then(|body| body.get("byKind"))
         .and_then(Value::as_object)
         .ok_or_else(|| anyhow!("summary.byKind should be an object"))?;
-    let by_status = summary
+    summary
         .body
         .as_ref()
         .and_then(|body| body.get("byStatus"))
         .and_then(Value::as_object)
         .ok_or_else(|| anyhow!("summary.byStatus should be an object"))?;
-    let _ = by_kind;
-    let _ = by_status;
 
     let instances = send_json(
-        &client,
+        client,
         Method::GET,
         &format!("{}/api/kyc/instances", staff_base),
         Some(&token),
@@ -255,7 +255,7 @@ async fn full_staff_summary_and_instances() -> Result<()> {
     );
 
     let missing = send_json(
-        &client,
+        client,
         Method::GET,
         &format!("{}/api/kyc/instances/missing-instance", staff_base),
         Some(&token),
@@ -267,13 +267,12 @@ async fn full_staff_summary_and_instances() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn full_cuss_stub_records_register_calls() -> Result<()> {
-    let env = Env::from_env()?;
-    let client = http_client()?;
-
+async fn scenario_cuss_stub_records_register_calls(
+    client: &reqwest::Client,
+    env: &Env,
+) -> Result<()> {
     let reset = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/__admin/reset", env.cuss_url),
         None,
@@ -283,7 +282,7 @@ async fn full_cuss_stub_records_register_calls() -> Result<()> {
     assert_eq!(reset.status, 200, "{}", reset.text);
 
     let register = send_json(
-        &client,
+        client,
         Method::POST,
         &format!("{}/api/registration/register", env.cuss_url),
         None,
@@ -298,7 +297,7 @@ async fn full_cuss_stub_records_register_calls() -> Result<()> {
     assert_eq!(register.status, 201, "{}", register.text);
 
     let recorded = send_json(
-        &client,
+        client,
         Method::GET,
         &format!("{}/__admin/requests", env.cuss_url),
         None,

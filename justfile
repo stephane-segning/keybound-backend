@@ -102,16 +102,18 @@ e2e-build:
 
 test-e2e-smoke:
 	/bin/sh -ec 'set -e; \
-	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d --build; \
-	  cleanup() { status=$$?; \
-	    if [ $$status -ne 0 ]; then \
+	  cleanup() { status=$?; \
+	    if [ $status -ne 0 ]; then \
 	      mkdir -p .docker/e2e/artifacts; \
 	      docker compose -p {{project_e2e}} -f {{compose_e2e}} logs --no-color > .docker/e2e/artifacts/e2e-smoke-failure.log || true; \
 	    fi; \
 	    docker compose -p {{project_e2e}} -f {{compose_e2e}} down || true; \
-	    exit $$status; \
+	    exit $status; \
 	  }; \
 	  trap cleanup EXIT; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker cuss-stub sms-sink; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d \
+	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink user-storage-server user-storage-worker; \
 	  USER_STORAGE_URL=http://127.0.0.1:3002 \
 	  KEYCLOAK_URL=http://127.0.0.1:9026 \
 	  CUSS_URL=http://127.0.0.1:8080 \
@@ -123,16 +125,18 @@ test-e2e-smoke:
 
 test-e2e-full:
 	/bin/sh -ec 'set -e; \
-	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d --build; \
-	  cleanup() { status=$$?; \
-	    if [ $$status -ne 0 ]; then \
+	  cleanup() { status=$?; \
+	    if [ $status -ne 0 ]; then \
 	      mkdir -p .docker/e2e/artifacts; \
 	      docker compose -p {{project_e2e}} -f {{compose_e2e}} logs --no-color > .docker/e2e/artifacts/e2e-full-failure.log || true; \
 	    fi; \
 	    docker compose -p {{project_e2e}} -f {{compose_e2e}} down || true; \
-	    exit $$status; \
+	    exit $status; \
 	  }; \
 	  trap cleanup EXIT; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker cuss-stub sms-sink; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d \
+	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink user-storage-server user-storage-worker; \
 	  USER_STORAGE_URL=http://127.0.0.1:3002 \
 	  KEYCLOAK_URL=http://127.0.0.1:9026 \
 	  CUSS_URL=http://127.0.0.1:8080 \
