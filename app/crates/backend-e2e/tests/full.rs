@@ -2217,10 +2217,9 @@ async fn send_kc_custom(
             .body(body_str);
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|error| anyhow!("kc request failed for {request_path}: {error}; debug={error:?}"))?;
+    let response = request.send().await.map_err(|error| {
+        anyhow!("kc request failed for {request_path}: {error}; debug={error:?}")
+    })?;
     let status = response.status().as_u16();
     let text = response
         .text()
@@ -2423,10 +2422,7 @@ async fn wait_for_completed_deposit_instance(
                 register.as_deref() == Some("SUCCEEDED") && approve.as_deref() == Some("SUCCEEDED");
             if (overall == "COMPLETED" && terminal_steps_succeeded)
                 || (terminal_steps_succeeded
-                    && matches!(
-                        mark_complete.as_deref(),
-                        Some("SUCCEEDED") | Some("FAILED")
-                    ))
+                    && matches!(mark_complete.as_deref(), Some("SUCCEEDED") | Some("FAILED")))
             {
                 return Ok(());
             }
