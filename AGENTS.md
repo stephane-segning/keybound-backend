@@ -6,13 +6,16 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - BFF: `/bff/*`
 - Staff: `/staff/*`
 
-## Revamp Status (2026-02-27)
+## Revamp Status (2026-03-04)
 - Legacy KYC SQL tables (`kyc_*`, `phone_deposit`) are replaced by a generic persisted state-machine store:
   - `sm_instance`, `sm_event`, `sm_step_attempt`
 - Two KYC processes are implemented as state machines:
   - `KYC_PHONE_OTP`
   - `KYC_FIRST_DEPOSIT` (staff confirms payment then approves; worker calls CUSS `registerCustomer` then `approveAndDeposit`)
 - Staff OpenAPI (`openapi/user-storage--staff.yaml`) is rewritten to expose state-machine observability and controls.
+- OAS3 integration tests are implemented in `backend-server` under `app/crates/backend-server/src/api/it_tests.rs` and gated by the `it-tests` crate feature.
+- Local OAS integration test command is available via `just test-it`.
+- CI now runs both workspace tests and the OAS integration test suite.
 
 `app/bins/backend` starts the server; `app/crates/backend-server` is a library crate.
 
@@ -74,6 +77,7 @@ Never use UUID for backend IDs.
 - JWT middleware tests (BFF + Staff bearer auth) live in `app/crates/backend-auth/tests/jwt_auth_exclude_paths.rs`.
 - KC signature middleware tests also live in `app/crates/backend-auth/tests/jwt_auth_exclude_paths.rs`.
 - **Unit Tests**: `backend-server` has comprehensive unit tests for `state`, `api::{bff, staff}`, and `worker` using `test_utils` mocks.
+- **OAS3 Integration Tests**: `backend-server` OAS integration scenarios live in `app/crates/backend-server/src/api/it_tests.rs` and run with `--features it-tests`.
 
 #### Auth and Error Scenarios
 Required scenarios to keep covered in tests:
@@ -97,6 +101,8 @@ Suggested verification commands:
 - `cargo test -p backend-core --features axum --test error_response`
 - `cargo test -p backend-auth --test jwt_auth_exclude_paths`
 - `cargo test -p backend-server` (runs all unit tests with mocks)
+- `just test-it` (runs OAS3 integration tests)
+- `cargo test -p backend-server --features it-tests api::it_tests::`
 
 ## Caching
 - In-process cache uses `lru`.
@@ -164,9 +170,12 @@ Before finalizing:
 1. `cargo check --workspace`
 2. No runtime use of `swagger` or generated `server::Service`
 3. No manual edits under `app/gen/*`
-5. Auth and error tests pass:
+4. Auth and error tests pass:
    - `cargo test -p backend-core --features axum --test error_response`
    - `cargo test -p backend-auth --test jwt_auth_exclude_paths`
+5. OAS3 integration tests pass:
+   - `just test-it`
+   - or `cargo test -p backend-server --features it-tests api::it_tests::`
 
 ## Docker & Build System
 - **Target**: `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`.
@@ -180,8 +189,11 @@ Before finalizing:
 - Main workflow: `.github/workflows/ci.yaml`
 - Reusable actions:
   - `.github/actions/setup-rust/action.yaml`
-  - `.github/actions/login-ghcr/action.yaml`
+  - `.github/actions/setup-docker/action.yaml`
   - `.github/actions/check-cargo-change/action.yaml`
+- `tests` job runs:
+  - `cargo test --workspace --locked`
+  - `cargo test -p backend-server --features it-tests api::it_tests:: --locked`
 - Docker build context is repository root; Dockerfile at `deploy/docker/user-storage/Dockerfile`.
 
 ## Work flavors
@@ -204,6 +216,7 @@ Let's talk about all the rules we're having to work efficiently:
 - All crates and binaries under `backend/crates/*` and `backend/bins/*` must depend on third-party crates using `{ workspace = true }`.
 - If a crate needs optional capabilities, add `features = [...]` on the `{ workspace = true }` dependency in that leaf `Cargo.toml`.
 - Do not add `version = "..."` for third-party crates anywhere except the root `Cargo.toml`.
+- Integration test feature: use `it-tests` for feature-gated OAS integration suites (do not overload default/unit test paths with OAS matrix scenarios).
 
 #### Code style
 
