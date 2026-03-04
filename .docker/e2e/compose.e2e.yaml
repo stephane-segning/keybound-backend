@@ -96,7 +96,7 @@ services:
       - '8080:8080'
     restart: 'on-failure'
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/__admin/requests >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/__admin/requests >/dev/null 2>&1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -112,7 +112,7 @@ services:
       - '8081:8081'
     restart: 'no'
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/__admin/messages >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/__admin/messages >/dev/null 2>&1"]
       interval: 5s
       timeout: 3s
       retries: 20
