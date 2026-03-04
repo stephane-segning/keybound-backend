@@ -28,7 +28,7 @@ init: # Initialize docker compose services
 	docker compose -p {{project}} -f {{compose_file}} build {{c}}
 
 help: # Show this help message
-	@printf 'Commands:\n  init          Initialize docker compose services\n  help          Show this help message\n  pull          Pull latest images from registries\n  build         Build all configured compose services\n  up            Start services with rebuild\n  up-single     Start a single service (pass service=...)\n  up-no-build   Start services without rebuilding\n  img           Show stored service images\n  start         Resume stopped services\n  down          Stop and remove containers\n  destroy       Snapshot removal of containers + volumes\n  stop          Stop running containers\n  restart       Restart services (stop + up)\n  logs          Follow all service logs\n  logs-keycloak Follow Keycloak logs\n  ps            List active containers\n  ps-all        List all containers (including exited)\n  stats         Show container stats\n  dev           Run backend (dev)\n  prepare       Build backend (release)\n  test-it       Run OAS integration tests\n  test-e2e-rust Run Rust-native e2e tests (wiremock/testcontainers)\n'
+	@printf 'Commands:\n  init            Initialize docker compose services\n  help            Show this help message\n  pull            Pull latest images from registries\n  build           Build all configured compose services\n  up              Start services with rebuild\n  up-single       Start a single service (pass service=...)\n  up-no-build     Start services without rebuilding\n  img             Show stored service images\n  start           Resume stopped services\n  down            Stop and remove containers\n  destroy         Snapshot removal of containers + volumes\n  stop            Stop running containers\n  restart         Restart services (stop + up)\n  logs            Follow all service logs\n  logs-keycloak   Follow Keycloak logs\n  ps              List active containers\n  ps-all          List all containers (including exited)\n  stats           Show container stats\n  dev             Run backend (dev)\n  prepare         Build backend (release)\n  test-it         Run OAS integration tests\n  test-e2e-rust   Run Rust-native crate-level e2e tests (wiremock/testcontainers)\n  test-e2e-smoke  Run Compose smoke e2e suite with Rust runner\n  test-e2e-full   Run Compose full e2e suite with Rust runner\n'
 
 pull: # Pull latest images from registries
 	docker compose -p {{project}} -f {{compose_file}} pull {{c}}
@@ -100,13 +100,53 @@ test-e2e-rust:
 e2e-build:
 	docker compose -p {{project_e2e}} -f {{compose_e2e}} build
 
+test-e2e-smoke:
+	/bin/sh -ec 'set -e; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d --build; \
+	  cleanup() { status=$$?; \
+	    if [ $$status -ne 0 ]; then \
+	      mkdir -p .docker/e2e/artifacts; \
+	      docker compose -p {{project_e2e}} -f {{compose_e2e}} logs --no-color > .docker/e2e/artifacts/e2e-smoke-failure.log || true; \
+	    fi; \
+	    docker compose -p {{project_e2e}} -f {{compose_e2e}} down || true; \
+	    exit $$status; \
+	  }; \
+	  trap cleanup EXIT; \
+	  USER_STORAGE_URL=http://127.0.0.1:3002 \
+	  KEYCLOAK_URL=http://127.0.0.1:9026 \
+	  CUSS_URL=http://127.0.0.1:8080 \
+	  SMS_SINK_URL=http://127.0.0.1:8081 \
+	  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/user-storage \
+	  KEYCLOAK_CLIENT_ID=test-client \
+	  KEYCLOAK_CLIENT_SECRET=some-secret \
+	  cargo test -p backend-e2e --features e2e-tests --test smoke -- --nocapture'
+
+test-e2e-full:
+	/bin/sh -ec 'set -e; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d --build; \
+	  cleanup() { status=$$?; \
+	    if [ $$status -ne 0 ]; then \
+	      mkdir -p .docker/e2e/artifacts; \
+	      docker compose -p {{project_e2e}} -f {{compose_e2e}} logs --no-color > .docker/e2e/artifacts/e2e-full-failure.log || true; \
+	    fi; \
+	    docker compose -p {{project_e2e}} -f {{compose_e2e}} down || true; \
+	    exit $$status; \
+	  }; \
+	  trap cleanup EXIT; \
+	  USER_STORAGE_URL=http://127.0.0.1:3002 \
+	  KEYCLOAK_URL=http://127.0.0.1:9026 \
+	  CUSS_URL=http://127.0.0.1:8080 \
+	  SMS_SINK_URL=http://127.0.0.1:8081 \
+	  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/user-storage \
+	  KEYCLOAK_CLIENT_ID=test-client \
+	  KEYCLOAK_CLIENT_SECRET=some-secret \
+	  cargo test -p backend-e2e --features e2e-tests --test full -- --nocapture'
+
 e2e-smoke:
-	docker compose -p {{project_e2e}} -f {{compose_e2e}} up --build --exit-code-from e2e-runner e2e-runner
+	just test-e2e-smoke
 
 e2e-full:
-	docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d --build
-	docker compose -p {{project_e2e}} -f {{compose_e2e}} run --rm e2e-runner yarn test:full
-	docker compose -p {{project_e2e}} -f {{compose_e2e}} down
+	just test-e2e-full
 
 all-checks:
 	@echo "Running Rust formatting, lint, and checks"

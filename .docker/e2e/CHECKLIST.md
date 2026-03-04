@@ -14,16 +14,16 @@ Legend:
 
 ## Infrastructure (Compose)
 
-- [ ] `compose.e2e.yaml` boots a production-like stack (user-storage + keycloak + postgres + redis + stubs) with healthchecks.
-- [ ] Keycloak realm import is deterministic and versioned (no UI-clicked config drift).
-- [ ] Secrets and URLs are wired through `backend-core::Config` using `${VAR}` expansion (no hardcoded env in code).
-- [ ] `just test-e2e-smoke` runs a minimal scenario set and exits non-zero on failure.
-- [ ] `just test-e2e-full` runs the full scenario set (nightly/optional CI).
-- [ ] Logs are collected on failure (service logs + runner logs + stub captured requests).
+- [x] `compose.e2e.yaml` boots a production-like stack (user-storage + keycloak + postgres + redis + stubs) with healthchecks.
+- [x] Keycloak realm import is deterministic and versioned (no UI-clicked config drift).
+- [x] Secrets and URLs are wired through `backend-core::Config` using `${VAR}` expansion (no hardcoded env in code).
+- [x] `just test-e2e-smoke` runs a minimal scenario set and exits non-zero on failure.
+- [x] `just test-e2e-full` runs the full scenario set (nightly/optional CI).
+- [x] Logs are collected on failure (service logs + runner logs + stub captured requests).
 
 ## Health
 
-- [ ] `GET /health` returns `200` while the server is up.
+- [x] `GET /health` returns `200` while the server is up.
 
 ## Auth (Bearer) Layer (BFF + Staff)
 
@@ -33,10 +33,10 @@ Bypass / routing:
 - [ ] request path outside protected base paths is not validated.
 
 Enforcement:
-- [ ] missing `Authorization` -> `401`.
-- [ ] non-`Bearer` scheme -> `401`.
-- [ ] invalid token -> `401`.
-- [ ] valid token -> handler executes.
+- [x] missing `Authorization` -> `401`.
+- [x] non-`Bearer` scheme -> `401`.
+- [x] invalid token -> `401`.
+- [x] valid token -> handler executes.
 
 ## KC Signature Middleware
 
@@ -81,9 +81,9 @@ Users:
 From [openapi/user-storage-bff.yaml](../../openapi/user-storage-bff.yaml):
 
 Deposits:
-- [~] `POST /internal/deposits/phone` (`internalCreatePhoneDeposit`) happy path.
-- [ ] `POST /internal/deposits/phone` ownership/auth enforced (no bearer -> `401`).
-- [ ] `GET /internal/deposits/{depositId}` (`internalGetPhoneDeposit`) happy path.
+- [x] `POST /internal/deposits/phone` (`internalCreatePhoneDeposit`) happy path.
+- [x] `POST /internal/deposits/phone` ownership/auth enforced (no bearer -> `401`).
+- [x] `GET /internal/deposits/{depositId}` (`internalGetPhoneDeposit`) happy path.
 - [ ] `GET /internal/deposits/{depositId}` denies non-owner (`403` or `404`, whichever is specified).
 - [ ] deposit expiry behavior (if specified) is enforced.
 
@@ -93,8 +93,8 @@ Sessions / steps:
 - [ ] `GET /internal/kyc/steps/{stepId}` (`internalGetStep`) returns correct data/status transitions.
 
 Phone OTP:
-- [~] `POST /internal/kyc/phone/otp/issue` (`internalIssueOtp`) issues challenge; SMS is sent (captured by stub/sink).
-- [~] verify correct OTP -> step moves to verified state.
+- [x] `POST /internal/kyc/phone/otp/issue` (`internalIssueOtp`) issues challenge; SMS is sent (captured by stub/sink).
+- [x] verify correct OTP -> step moves to verified state.
 - [ ] verify wrong OTP -> deterministic error and `sm_step_attempt` increments.
 - [ ] verify expired OTP -> deterministic error.
 - [ ] rate limits / max attempts enforced (if configured).

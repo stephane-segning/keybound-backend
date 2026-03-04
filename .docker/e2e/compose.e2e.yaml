@@ -44,6 +44,10 @@ services:
         condition: service_started
       minio-create-bucket:
         condition: service_completed_successfully
+      cuss-stub:
+        condition: service_healthy
+      sms-sink:
+        condition: service_healthy
 
   user-storage-worker:
     image: user-storage-app
@@ -79,6 +83,10 @@ services:
         condition: service_started
       minio-create-bucket:
         condition: service_completed_successfully
+      cuss-stub:
+        condition: service_healthy
+      sms-sink:
+        condition: service_healthy
 
   cuss-stub:
     build:
@@ -87,6 +95,11 @@ services:
     ports:
       - '8080:8080'
     restart: 'on-failure'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/__admin/requests >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     depends_on:
       keycloak:
         condition: service_healthy
@@ -98,30 +111,8 @@ services:
     ports:
       - '8081:8081'
     restart: 'no'
-
-  e2e-runner:
-    build:
-      context: ../../.docker/e2e/runner
-      dockerfile: Dockerfile
-    restart: 'on-failure'
-    command:
-      - yarn
-      - test:smoke
-    depends_on:
-      user-storage-server:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
-      cuss-stub:
-        condition: service_started
-      sms-sink:
-        condition: service_started
-    environment:
-      USER_STORAGE_URL: "http://user-storage-server:3000"
-      KEYCLOAK_URL: "http://keycloak:9026"
-      CUSS_URL: "http://cuss-stub:8080"
-      SMS_SINK_URL: "http://sms-sink:8081"
-      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/user-storage"
-      KC_SIGNATURE_SECRET: "some-very-long-secret"
-      KEYCLOAK_CLIENT_ID: "test-client"
-      KEYCLOAK_CLIENT_SECRET: "some-secret"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/__admin/messages >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

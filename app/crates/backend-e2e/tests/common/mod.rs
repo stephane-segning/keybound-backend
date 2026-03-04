@@ -1,0 +1,316 @@
+use anyhow::{Context, Result, anyhow};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use serde_json::{Value, json};
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
+use tokio_postgres::NoTls;
+
+#[derive(Clone, Debug)]
+pub struct Env {
+    pub user_storage_url: String,
+    pub keycloak_url: String,
+    pub cuss_url: String,
+    pub sms_sink_url: String,
+    pub database_url: String,
+    pub keycloak_client_id: String,
+    pub keycloak_client_secret: String,
+}
+
+impl Env {
+    pub fn from_env() -> Result<Self> {
+        Ok(Self {
+            user_storage_url: must_env("USER_STORAGE_URL")?,
+            keycloak_url: must_env("KEYCLOAK_URL")?,
+            cuss_url: must_env("CUSS_URL")?,
+            sms_sink_url: must_env("SMS_SINK_URL")?,
+            database_url: must_env("DATABASE_URL")?,
+            keycloak_client_id: must_env("KEYCLOAK_CLIENT_ID")?,
+            keycloak_client_secret: must_env("KEYCLOAK_CLIENT_SECRET")?,
+        })
+    }
+}
+
+fn must_env(key: &str) -> Result<String> {
+    std::env::var(key).with_context(|| format!("environment variable {key} is required"))
+}
+
+#[derive(Debug)]
+pub struct JsonResponse {
+    pub status: u16,
+    pub body: Option<Value>,
+    pub text: String,
+}
+
+pub fn http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("failed to build reqwest client")
+}
+
+pub async fn wait_for_status(
+    client: &reqwest::Client,
+    url: &str,
+    expected_status: u16,
+    attempts: usize,
+) -> Result<()> {
+    let mut last_error = String::new();
+    for _ in 0..attempts {
+        match client.get(url).send().await {
+            Ok(response) if response.status().as_u16() == expected_status => return Ok(()),
+            Ok(response) => {
+                last_error = format!("unexpected status {}", response.status());
+            }
+            Err(error) => {
+                last_error = error.to_string();
+            }
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
+
+    Err(anyhow!(
+        "service at {url} did not return {expected_status}: {last_error}"
+    ))
+}
+
+pub async fn send_json(
+    client: &reqwest::Client,
+    method: reqwest::Method,
+    url: &str,
+    bearer: Option<&str>,
+    body: Option<Value>,
+) -> Result<JsonResponse> {
+    let mut request = client
+        .request(method, url)
+        .header(CONTENT_TYPE, "application/json");
+
+    if let Some(token) = bearer {
+        request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+    }
+
+    if let Some(payload) = body {
+        request = request.json(&payload);
+    }
+
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("request failed for {url}"))?;
+
+    let status = response.status().as_u16();
+    let text = response
+        .text()
+        .await
+        .with_context(|| format!("failed to read response body for {url}"))?;
+
+    let parsed = if text.is_empty() {
+        None
+    } else {
+        serde_json::from_str::<Value>(&text).ok()
+    };
+
+    Ok(JsonResponse {
+        status,
+        body: parsed,
+        text,
+    })
+}
+
+pub async fn get_client_token_and_subject(
+    client: &reqwest::Client,
+    env: &Env,
+) -> Result<(String, String)> {
+    let token_url = format!(
+        "{}/realms/e2e-testing/protocol/openid-connect/token",
+        env.keycloak_url
+    );
+
+    let params = [
+        ("grant_type", "client_credentials"),
+        ("client_id", env.keycloak_client_id.as_str()),
+        ("client_secret", env.keycloak_client_secret.as_str()),
+    ];
+
+    let response = client
+        .post(&token_url)
+        .form(&params)
+        .send()
+        .await
+        .context("keycloak token request failed")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(anyhow!("keycloak token request failed ({status}): {body}"));
+    }
+
+    let token_body: Value = response
+        .json()
+        .await
+        .context("invalid keycloak token response JSON")?;
+    let access_token = token_body
+        .get("access_token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("keycloak token response missing access_token"))?
+        .to_owned();
+
+    let subject = jwt_subject(&access_token)?;
+    Ok((access_token, subject))
+}
+
+fn jwt_subject(token: &str) -> Result<String> {
+    let payload_segment = token
+        .split('.')
+        .nth(1)
+        .ok_or_else(|| anyhow!("invalid jwt token format"))?;
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload_segment)
+        .context("failed to decode jwt payload")?;
+    let payload_json: Value = serde_json::from_slice(&payload).context("invalid jwt payload")?;
+    payload_json
+        .get("sub")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("jwt payload missing sub"))
+}
+
+pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls)
+        .await
+        .context("failed to connect to postgres")?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("postgres connection task failed: {error}");
+        }
+    });
+
+    client
+        .execute("DELETE FROM sm_instance WHERE user_id = $1", &[&user_id])
+        .await
+        .context("failed to cleanup sm_instance fixtures")?;
+
+    let username = format!("subject-{user_id}");
+
+    client
+        .execute(
+            r#"
+            INSERT INTO app_user (
+                user_id,
+                realm,
+                username,
+                disabled,
+                created_at,
+                updated_at
+            ) VALUES ($1, 'e2e-testing', $2, false, NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET
+                realm = EXCLUDED.realm,
+                username = EXCLUDED.username,
+                disabled = false,
+                updated_at = NOW()
+            "#,
+            &[&user_id, &username],
+        )
+        .await
+        .context("failed to upsert bff user fixture")?;
+
+    client
+        .execute(
+            r#"
+            INSERT INTO app_user (
+                user_id,
+                realm,
+                username,
+                first_name,
+                last_name,
+                phone_number,
+                disabled,
+                created_at,
+                updated_at
+            ) VALUES (
+                'usr_e2e_staff_001',
+                'staff',
+                'e2e-staff',
+                'E2E',
+                'Staff',
+                '+237690000001',
+                false,
+                NOW(),
+                NOW()
+            )
+            ON CONFLICT (user_id) DO UPDATE
+            SET
+                realm = EXCLUDED.realm,
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                phone_number = EXCLUDED.phone_number,
+                disabled = false,
+                updated_at = NOW()
+            "#,
+            &[],
+        )
+        .await
+        .context("failed to upsert staff user fixture")?;
+
+    Ok(())
+}
+
+pub async fn reset_sms_sink(client: &reqwest::Client, env: &Env) -> Result<()> {
+    let url = format!("{}/__admin/reset", env.sms_sink_url);
+    let response = send_json(client, reqwest::Method::POST, &url, None, Some(json!({}))).await?;
+
+    if response.status != 200 {
+        return Err(anyhow!(
+            "sms sink reset failed ({}): {}",
+            response.status,
+            response.text
+        ));
+    }
+
+    Ok(())
+}
+
+pub async fn wait_for_otp(
+    client: &reqwest::Client,
+    env: &Env,
+    phone: &str,
+    timeout: Duration,
+) -> Result<String> {
+    let deadline = Instant::now() + timeout;
+    let url = format!("{}/__admin/messages", env.sms_sink_url);
+
+    while Instant::now() < deadline {
+        let response = send_json(client, reqwest::Method::GET, &url, None, None).await?;
+        if response.status == 200 {
+            let messages = response.body.unwrap_or_else(|| json!([]));
+            if let Some(items) = messages.as_array() {
+                for item in items {
+                    let item_phone = item
+                        .get("phone")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    if item_phone == phone {
+                        let otp = item
+                            .get("otp")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| anyhow!("otp field missing in sms sink message"))?;
+                        return Ok(otp.to_owned());
+                    }
+                }
+            }
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(anyhow!("otp for {phone} not received within timeout"))
+}
+
+pub fn require_json_field<'a>(body: &'a Option<Value>, field: &str) -> Result<&'a Value> {
+    body.as_ref()
+        .and_then(|json| json.get(field))
+        .ok_or_else(|| anyhow!("response body missing field `{field}`"))
+}

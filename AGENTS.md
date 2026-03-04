@@ -34,6 +34,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - `backend-repository`: Diesel-async repository layer.
 - `backend-model`: Diesel models (`Queryable`, `Selectable`, `Insertable`, `Identifiable`) + `o2o` DTO mapping. Contains `schema.rs`.
 - `backend-id`: prefixed CUID ID generation
+- `backend-e2e`: Compose-oriented Rust E2E runner tests (`reqwest` + Keycloak + stubs) under `app/crates/backend-e2e/tests`.
 - `backend-migrate`: migration runner and database factory (Postgres only)
 - `gen_oas_*`: generated OA3 models/interfaces (under `app/gen/`, never edit manually)
 
@@ -106,6 +107,8 @@ Suggested verification commands:
 - `cargo test -p backend-server` (runs all unit tests with mocks)
 - `just test-it` (runs OAS3 integration tests)
 - `cargo test -p backend-server --features it-tests api::it_tests::`
+- `just test-e2e-smoke` (runs Compose smoke e2e via Rust runner)
+- `just test-e2e-full` (runs Compose full e2e via Rust runner)
 - `cargo test -p backend-auth --features e2e-tests --test oidc_wiremock_e2e`
 - `cargo test -p backend-repository --features e2e-tests --test state_machine_repo_testcontainers`
 

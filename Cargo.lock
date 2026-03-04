@@ -985,6 +985,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-e2e"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+]
+
+[[package]]
 name = "backend-id"
 version = "0.1.5"
 dependencies = [
@@ -4672,6 +4686,7 @@ dependencies = [
  "pin-project-lite",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tower",
