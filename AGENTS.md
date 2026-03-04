@@ -23,21 +23,24 @@ Tokenization/user-storage backend with three HTTP surfaces:
 
 ### Compose E2E Migration Snapshot (from `.docker/e2e/CHECKLIST.md`, 2026-03-04)
 - Overall checklist status:
-  - Implemented: `16`
+  - Implemented: `28`
   - Partial: `2`
-  - Missing: `57`
+  - Missing: `45`
 - Implemented areas:
   - Compose infrastructure and runner flow (`test-e2e-smoke`, `test-e2e-full`, log capture on failure).
   - Health endpoint and core Bearer auth enforcement (`401` cases + valid token pass-through).
-  - BFF phone deposit happy paths and phone OTP issue + successful verify path.
+  - BFF deposit owner/non-owner checks, session resume idempotency, step status reads, and OTP happy path.
+  - BFF OTP expiry and OTP issuance rate-limit checks.
+  - Staff instances listing/detail/retry coverage with filters/pagination.
+  - Staff summary aggregates for known fixtures.
+  - KYC first-deposit staff confirm + approve flow through worker to CUSS success path.
 - Partial areas:
-  - Staff instances listing (`staffKycInstancesGet`)
-  - Staff summary report aggregates (`staffKycReportsSummaryGet`)
+  - BFF step-type matrix (PHONE/EMAIL covered; ADDRESS/IDENTITY coverage pending).
+  - BFF wrong OTP path (deterministic error asserted; attempt-counter behavior still pending).
 - Major missing groups:
   - KC signature middleware matrix in Compose E2E.
   - KC surface CRUD/device race/idempotency scenarios.
-  - BFF negative-path and remaining endpoint coverage (ownership denial, expiry, sessions/steps, email magic, uploads, OTP failure paths).
-  - Staff detail/retry/deposit approval flow coverage.
+  - BFF remaining endpoint coverage (deposit expiry, sessions idempotency, full step-type matrix, email magic, uploads, OTP expiry/rate-limit).
   - Worker locking/retry/idempotency + CUSS failure path coverage.
   - Cross-surface representative error mapping checks.
 - Keep this snapshot aligned with `.docker/e2e/CHECKLIST.md` whenever scenarios are added or marked complete.

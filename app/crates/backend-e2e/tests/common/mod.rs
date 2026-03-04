@@ -200,14 +200,20 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 user_id,
                 realm,
                 username,
+                first_name,
+                last_name,
+                phone_number,
                 disabled,
                 created_at,
                 updated_at
-            ) VALUES ($1, 'e2e-testing', $2, false, NOW(), NOW())
+            ) VALUES ($1, 'e2e-testing', $2, 'E2E', 'Subject', '+237690123456', false, NOW(), NOW())
             ON CONFLICT (user_id) DO UPDATE
             SET
                 realm = EXCLUDED.realm,
                 username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                phone_number = EXCLUDED.phone_number,
                 disabled = false,
                 updated_at = NOW()
             "#,
@@ -256,6 +262,83 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
         .context("failed to upsert staff user fixture")?;
 
     Ok(())
+}
+
+pub async fn create_foreign_deposit_fixture(
+    database_url: &str,
+    foreign_user_id: &str,
+) -> Result<String> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls)
+        .await
+        .context("failed to connect to postgres")?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("postgres connection task failed: {error}");
+        }
+    });
+
+    let username = format!("subject-{foreign_user_id}");
+    client
+        .execute(
+            r#"
+            INSERT INTO app_user (
+                user_id,
+                realm,
+                username,
+                disabled,
+                created_at,
+                updated_at
+            ) VALUES ($1, 'e2e-testing', $2, false, NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET
+                realm = EXCLUDED.realm,
+                username = EXCLUDED.username,
+                disabled = false,
+                updated_at = NOW()
+            "#,
+            &[&foreign_user_id, &username],
+        )
+        .await
+        .context("failed to upsert foreign user fixture")?;
+
+    let deposit_id = format!("smi_e2e_foreign_{}", chrono::Utc::now().timestamp_millis());
+    let idempotency_key = format!(
+        "KYC_FIRST_DEPOSIT:{foreign_user_id}:{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+    client
+        .execute(
+            r#"
+            INSERT INTO sm_instance (
+                id,
+                kind,
+                user_id,
+                idempotency_key,
+                status,
+                context,
+                created_at,
+                updated_at,
+                completed_at
+            ) VALUES (
+                $1,
+                'KYC_FIRST_DEPOSIT',
+                $2,
+                $3,
+                'COMPLETED',
+                '{}'::jsonb,
+                NOW(),
+                NOW(),
+                NOW()
+            )
+            ON CONFLICT (id) DO NOTHING
+            "#,
+            &[&deposit_id, &foreign_user_id, &idempotency_key],
+        )
+        .await
+        .context("failed to insert foreign deposit fixture")?;
+
+    Ok(deposit_id)
 }
 
 pub async fn reset_sms_sink(client: &reqwest::Client, env: &Env) -> Result<()> {

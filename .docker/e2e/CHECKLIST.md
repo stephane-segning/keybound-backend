@@ -84,20 +84,20 @@ Deposits:
 - [x] `POST /internal/deposits/phone` (`internalCreatePhoneDeposit`) happy path.
 - [x] `POST /internal/deposits/phone` ownership/auth enforced (no bearer -> `401`).
 - [x] `GET /internal/deposits/{depositId}` (`internalGetPhoneDeposit`) happy path.
-- [ ] `GET /internal/deposits/{depositId}` denies non-owner (`403` or `404`, whichever is specified).
+- [x] `GET /internal/deposits/{depositId}` denies non-owner (`403` or `404`, whichever is specified).
 - [ ] deposit expiry behavior (if specified) is enforced.
 
 Sessions / steps:
-- [ ] `POST /internal/kyc/sessions` (`internalStartSession`) create/resume is idempotent (or deterministic).
-- [ ] `POST /internal/kyc/steps` (`internalCreateStep`) creates each supported step type (phone/email/address/identity).
-- [ ] `GET /internal/kyc/steps/{stepId}` (`internalGetStep`) returns correct data/status transitions.
+- [x] `POST /internal/kyc/sessions` (`internalStartSession`) create/resume is idempotent (or deterministic).
+- [~] `POST /internal/kyc/steps` (`internalCreateStep`) creates each supported step type (phone/email/address/identity).
+- [x] `GET /internal/kyc/steps/{stepId}` (`internalGetStep`) returns correct data/status transitions.
 
 Phone OTP:
 - [x] `POST /internal/kyc/phone/otp/issue` (`internalIssueOtp`) issues challenge; SMS is sent (captured by stub/sink).
 - [x] verify correct OTP -> step moves to verified state.
-- [ ] verify wrong OTP -> deterministic error and `sm_step_attempt` increments.
-- [ ] verify expired OTP -> deterministic error.
-- [ ] rate limits / max attempts enforced (if configured).
+- [~] verify wrong OTP -> deterministic error and `sm_step_attempt` increments.
+- [x] verify expired OTP -> deterministic error.
+- [x] rate limits / max attempts enforced (if configured).
 
 Email magic link:
 - [ ] `POST /internal/kyc/email/magic/issue` (`internalIssueMagicEmail`) issues a link/token (captured by sink).
@@ -113,16 +113,16 @@ Uploads:
 From [openapi/user-storage--staff.yaml](../../openapi/user-storage--staff.yaml):
 
 State-machine observability:
-- [~] `GET /api/kyc/instances` (`staffKycInstancesGet`) returns instances with filters/pagination (as defined).
-- [ ] `GET /api/kyc/instances/{instanceId}` (`staffKycInstancesInstanceIdGet`) returns instance + events + attempts.
-- [ ] `POST /api/kyc/instances/{instanceId}/retry` (`staffKycInstancesInstanceIdRetryPost`) schedules/retries and is observable.
+- [x] `GET /api/kyc/instances` (`staffKycInstancesGet`) returns instances with filters/pagination (as defined).
+- [x] `GET /api/kyc/instances/{instanceId}` (`staffKycInstancesInstanceIdGet`) returns instance + events + attempts.
+- [x] `POST /api/kyc/instances/{instanceId}/retry` (`staffKycInstancesInstanceIdRetryPost`) schedules/retries and is observable.
 
 Deposit flow (KYC_FIRST_DEPOSIT):
-- [ ] `POST /api/kyc/deposits/{instanceId}/confirm-payment` (`staffKycDepositsInstanceIdConfirmPaymentPost`) moves instance state.
-- [ ] `POST /api/kyc/deposits/{instanceId}/approve` (`staffKycDepositsInstanceIdApprovePost`) triggers worker path and is observable.
+- [x] `POST /api/kyc/deposits/{instanceId}/confirm-payment` (`staffKycDepositsInstanceIdConfirmPaymentPost`) moves instance state.
+- [x] `POST /api/kyc/deposits/{instanceId}/approve` (`staffKycDepositsInstanceIdApprovePost`) triggers worker path and is observable.
 
 Reports:
-- [~] `GET /api/kyc/reports/summary` (`staffKycReportsSummaryGet`) returns correct aggregates for known fixtures.
+- [x] `GET /api/kyc/reports/summary` (`staffKycReportsSummaryGet`) returns correct aggregates for known fixtures.
 
 ## Worker / Queue / Retry Scenarios
 
@@ -134,7 +134,7 @@ SMS retries:
 - [ ] permanent SMS error moves to terminal state (no infinite retries).
 
 KYC_FIRST_DEPOSIT -> CUSS integration:
-- [ ] success: staff confirm -> approve -> worker calls CUSS `registerCustomer` then `approveAndDeposit` -> instance completes.
+- [x] success: staff confirm -> approve -> worker calls CUSS `registerCustomer` then `approveAndDeposit` -> instance completes.
 - [ ] CUSS failure on `registerCustomer` retries and remains observable.
 - [ ] CUSS failure on `approveAndDeposit` retries and remains observable.
 - [ ] idempotency: repeated approve does not double-deposit (or is rejected deterministically).
