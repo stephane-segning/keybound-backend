@@ -10,3 +10,5 @@ gen*
 *tmp*
 
 *.js
+
+node_modules

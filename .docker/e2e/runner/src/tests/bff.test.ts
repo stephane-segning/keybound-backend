@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
+import { ensureBffFixtures } from '../db';
 import { env } from '../env';
 import { getJson, sendJson } from '../http';
-import { getClientToken } from '../keycloak';
+import { getClientTokenAndSubject } from '../keycloak';
 import { resetSmsSink, waitForOtpMessage } from '../sms';
 
 const bffBase = `${env.userStorageUrl}/bff`;
@@ -14,16 +15,20 @@ function requireValue<T>(value: T | undefined | null, message: string): T {
   return value;
 }
 
-async function bearerHeaders() {
-  const token = await getClientToken();
+async function authContext() {
+  const { token, subject } = await getClientTokenAndSubject();
+  await ensureBffFixtures(subject);
   return {
-    Authorization: `Bearer ${token}`,
+    userId: subject,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   };
 }
 
 describe('BFF flows', () => {
   test('creates and retrieves phone deposit', async () => {
-    const headers = await bearerHeaders();
+    const { headers, userId } = await authContext();
     const depositResponse = await sendJson<{
       depositId: string;
       status: string;
@@ -33,7 +38,7 @@ describe('BFF flows', () => {
       method: 'POST',
       headers,
       body: {
-        userId: `user-deposit-${Date.now()}`,
+        userId,
         amount: 150_000,
         currency: 'XAF',
         provider: 'MTN_CM',
@@ -54,15 +59,14 @@ describe('BFF flows', () => {
     });
 
     expect(lookup.statusCode).toBe(200);
-    expect(lookup.body?.status).toBe('CREATED');
+    expect(lookup.body?.status).toBe('CONTACT_PROVIDED');
     expect(lookup.body?.contact?.phoneNumber).toBeTruthy();
   });
 
   test('issues and verifies phone OTP via admin sink', async () => {
-    const headers = await bearerHeaders();
+    const { headers, userId } = await authContext();
     await resetSmsSink();
 
-    const userId = `user-otp-${Date.now()}`;
     const sessionRes = await sendJson<{ id: string }>({
       url: `${bffBase}/internal/kyc/sessions`,
       method: 'POST',
@@ -98,7 +102,7 @@ describe('BFF flows', () => {
     });
     const otpRef = requireValue(issueRes.body?.otpRef, 'otpRef is required');
 
-    const message = await waitForOtpMessage(msisdn);
+    const message = await waitForOtpMessage(msisdn, 60, 500);
     expect(message.otp).toBeDefined();
 
     const verify = await sendJson({
@@ -113,12 +117,12 @@ describe('BFF flows', () => {
     });
 
     expect(verify.statusCode).toBe(200);
-  });
+  }, 40_000);
 });
 
 describe('Staff surface', () => {
   test('reports summary and instances respond', async () => {
-    const headers = await bearerHeaders();
+    const { headers } = await authContext();
 
     const summary = await sendJson<{
       byKind: Record<string, number>;

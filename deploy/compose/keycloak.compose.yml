@@ -1,4 +1,25 @@
 services:
+  keycloak-healthcheck-builder:
+    image: rust:1-alpine
+    depends_on:
+      download-core-tools:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eux
+        rm -rf /work
+        mkdir -p /work
+        cp -R /src/. /work/
+        cd /work
+        cargo build --release
+        cp target/release/keycloak-healthcheck /data/bin/keycloak-healthcheck
+        chmod +x /data/bin/keycloak-healthcheck
+    volumes:
+      - ../../.docker/keycloak-healthcheck:/src:ro
+      - downloaded_data:/data
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.5.2
     ports:
@@ -21,6 +42,22 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: password
     entrypoint: /bin/sh
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/downloaded/bin/keycloak-healthcheck",
+          "--url",
+          "http://localhost:9026/realms/e2e-testing",
+          "--contains",
+          "e2e-testing",
+          "--timeout-seconds",
+          "3"
+        ]
+      start_period: 15s
+      interval: 5s
+      timeout: 4s
+      retries: 20
     command:
       - -c
       - |
@@ -32,4 +69,6 @@ services:
       - downloaded_data:/downloaded
     depends_on:
       download-core-tools:
+        condition: service_completed_successfully
+      keycloak-healthcheck-builder:
         condition: service_completed_successfully

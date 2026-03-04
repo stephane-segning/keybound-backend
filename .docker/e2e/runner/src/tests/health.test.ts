@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { env } from '../env';
-import { getJson, waitForStatus } from '../http';
+import { sendJson, waitForStatus } from '../http';
 
 describe('smoke e2e checks', () => {
   test('user storage health endpoint responds', async () => {
@@ -17,7 +17,12 @@ describe('smoke e2e checks', () => {
 
   test('sms sink admin reset works', async () => {
     await waitForStatus(`${env.smsSinkUrl}/__admin/messages`);
-    const response = await getJson<{ reset: boolean }>(`${env.smsSinkUrl}/__admin/reset`);
-    expect(response.reset).toBe(true);
+    const response = await sendJson<{ reset: boolean }>({
+      url: `${env.smsSinkUrl}/__admin/reset`,
+      method: 'POST',
+      body: {},
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body?.reset).toBe(true);
   });
 });

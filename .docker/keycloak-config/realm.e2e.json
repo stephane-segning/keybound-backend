@@ -5,7 +5,7 @@
   "displayNameHtml": "<b>Keybound</b> E2E",
   "registrationAllowed": false,
   "rememberMe": false,
-  "sslRequired":"none",
+  "sslRequired": "none",
   "loginWithEmailAllowed": true,
   "resetPasswordAllowed": false,
   "requiredActions": [

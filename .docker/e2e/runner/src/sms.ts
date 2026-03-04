@@ -9,7 +9,7 @@ export interface OtpMessage {
 }
 
 export async function resetSmsSink() {
-  await sendJson({ url: `${env.smsSinkUrl}/__admin/reset`, method: 'POST' });
+  await sendJson({ url: `${env.smsSinkUrl}/__admin/reset`, method: 'POST', body: {} });
 }
 
 export async function waitForOtpMessage(

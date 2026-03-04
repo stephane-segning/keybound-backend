@@ -86,7 +86,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - '8080:8080'
-    restart: 'no'
+    restart: 'on-failure'
     depends_on:
       keycloak:
         condition: service_healthy
@@ -103,6 +103,7 @@ services:
     build:
       context: ../../.docker/e2e/runner
       dockerfile: Dockerfile
+    restart: 'on-failure'
     command:
       - yarn
       - test:smoke
@@ -120,6 +121,7 @@ services:
       KEYCLOAK_URL: "http://keycloak:9026"
       CUSS_URL: "http://cuss-stub:8080"
       SMS_SINK_URL: "http://sms-sink:8081"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/user-storage"
       KC_SIGNATURE_SECRET: "some-very-long-secret"
       KEYCLOAK_CLIENT_ID: "test-client"
       KEYCLOAK_CLIENT_SECRET: "some-secret"

@@ -11,6 +11,7 @@ export const env = {
   keycloakUrl: requireEnv('KEYCLOAK_URL'),
   cussUrl: requireEnv('CUSS_URL'),
   smsSinkUrl: requireEnv('SMS_SINK_URL'),
+  databaseUrl: requireEnv('DATABASE_URL'),
   kcSignatureSecret: requireEnv('KC_SIGNATURE_SECRET'),
   keycloakClientId: requireEnv('KEYCLOAK_CLIENT_ID'),
   keycloakClientSecret: requireEnv('KEYCLOAK_CLIENT_SECRET'),
