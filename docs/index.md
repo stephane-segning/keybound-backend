@@ -25,6 +25,7 @@ Want to dive in? Check out our other docs:
 - [State Machines & Flows](./architecture/state-machines.md) 🔄
 - [Auth & Security](./architecture/auth.md) 🔐
 - [Development Guide](./development/setup.md) 💻
+- [Getting Started](./development/getting-started.md) 🚀
 
 ## Conclusion
 We're super proud of this backend and hope you enjoy working with it as much as we do! If you have any questions, don't hesitate to ask. Happy coding! ✨
