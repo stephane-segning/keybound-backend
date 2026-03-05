@@ -942,7 +942,7 @@ fn phone_deposit_from_instance(
         .cloned()
         .unwrap_or(Value::Null);
 
-    let status = deposit
+    let raw_status = deposit
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("CONTACT_PROVIDED");
@@ -975,10 +975,17 @@ fn phone_deposit_from_instance(
         .and_then(Value::as_str)
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc));
+    let effective_status = if matches!(raw_status, "CREATED" | "CONTACT_PROVIDED")
+        && expires_at.map(|value| value < Utc::now()).unwrap_or(false)
+    {
+        "EXPIRED"
+    } else {
+        raw_status
+    };
 
     Ok(models::PhoneDepositResponse {
         deposit_id: instance.id,
-        status: parse_deposit_status(status)?,
+        status: parse_deposit_status(effective_status)?,
         amount,
         currency,
         contact: models::StaffContact {

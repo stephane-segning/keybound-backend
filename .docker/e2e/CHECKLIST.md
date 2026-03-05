@@ -85,7 +85,7 @@ Deposits:
 - [x] `POST /internal/deposits/phone` ownership/auth enforced (no bearer -> `401`).
 - [x] `GET /internal/deposits/{depositId}` (`internalGetPhoneDeposit`) happy path.
 - [x] `GET /internal/deposits/{depositId}` denies non-owner (`403` or `404`, whichever is specified).
-- [ ] deposit expiry behavior (if specified) is enforced.
+- [x] deposit expiry behavior (if specified) is enforced.
 
 Sessions / steps:
 - [x] `POST /internal/kyc/sessions` (`internalStartSession`) create/resume is idempotent (or deterministic).
@@ -137,12 +137,12 @@ KYC_FIRST_DEPOSIT -> CUSS integration:
 - [x] success: staff confirm -> approve -> worker calls CUSS `registerCustomer` then `approveAndDeposit` -> instance completes.
 - [x] CUSS failure on `registerCustomer` retries and remains observable.
 - [x] CUSS failure on `approveAndDeposit` retries and remains observable.
-- [ ] idempotency: repeated approve does not double-deposit (or is rejected deterministically).
+- [x] idempotency: repeated approve does not double-deposit (or is rejected deterministically).
 
 ## Error Mapping (Representative)
 
 Across at least one BFF and one Staff endpoint:
 - [x] validation errors map to stable status + payload shape.
 - [x] not found maps to stable status + payload shape.
-- [ ] conflict maps to stable status + payload shape.
+- [x] conflict maps to stable status + payload shape.
 - [ ] unexpected internal error maps to stable status + payload shape.

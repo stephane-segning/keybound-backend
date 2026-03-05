@@ -179,6 +179,20 @@ impl Engine {
         staff_user_id: Option<String>,
         payload: Value,
     ) -> Result<(), Error> {
+        if let Some(latest_register_attempt) = self
+            .state
+            .sm
+            .get_latest_step_attempt(instance_id, STEP_DEPOSIT_REGISTER_CUSTOMER)
+            .await?
+        {
+            if latest_register_attempt.status != ATTEMPT_STATUS_FAILED {
+                return Err(Error::conflict(
+                    "DEPOSIT_ALREADY_APPROVED",
+                    "Deposit has already been approved for processing",
+                ));
+            }
+        }
+
         self.emit_event(
             instance_id,
             "DEPOSIT_APPROVED",
@@ -682,7 +696,7 @@ impl Engine {
 
     async fn finish_instance_success(&self, instance_id: &str) -> Result<(), Error> {
         let now = Utc::now();
-        let _ = self
+        let mark_complete_attempt = self
             .state
             .sm
             .create_step_attempt(SmStepAttemptCreateInput {
@@ -700,7 +714,18 @@ impl Engine {
                 finished_at: Some(now),
                 next_retry_at: None,
             })
-            .await?;
+            .await;
+        if let Err(error) = mark_complete_attempt {
+            match &error {
+                Error::Diesel(diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::UniqueViolation,
+                    _,
+                )) => {
+                    // Duplicate MARK_COMPLETE attempts are benign: proceed to finalize instance.
+                }
+                _ => return Err(error),
+            }
+        }
 
         self.state
             .sm

@@ -23,6 +23,7 @@ async fn full_suite() -> Result<()> {
 
     scenario_auth_enforcement(&client, &env).await?;
     scenario_bff_deposit_and_otp_flow(&client, &env).await?;
+    scenario_bff_deposit_expiry_behavior(&client, &env).await?;
     scenario_bff_session_resume_and_otp_limits(&client, &env).await?;
     scenario_bff_email_magic_and_uploads(&client, &env).await?;
     scenario_bff_deposit_denies_non_owner(&client, &env).await?;
@@ -30,6 +31,7 @@ async fn full_suite() -> Result<()> {
     scenario_staff_instance_detail_and_retry(&client, &env).await?;
     scenario_staff_summary_and_instances(&client, &env).await?;
     scenario_staff_deposit_flow_triggers_worker_and_cuss(&client, &env).await?;
+    scenario_staff_deposit_approve_idempotency(&client, &env).await?;
     scenario_worker_cuss_failures_and_manual_retries(&client, &env).await?;
     scenario_error_mapping_representative(&client, &env).await?;
 
@@ -335,6 +337,59 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
             .and_then(|body| body.get("status"))
             .and_then(Value::as_str),
         Some("VERIFIED")
+    );
+
+    Ok(())
+}
+
+async fn scenario_bff_deposit_expiry_behavior(
+    client: &reqwest::Client,
+    env: &Env,
+) -> Result<()> {
+    let (token, subject) = get_client_token_and_subject(client, env).await?;
+    ensure_bff_fixtures(&env.database_url, &subject).await?;
+
+    let bff_base = format!("{}/bff", env.user_storage_url);
+
+    let created = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/deposits/phone", bff_base),
+        Some(&token),
+        Some(json!({
+            "userId": subject,
+            "amount": 4200,
+            "currency": "XAF",
+            "provider": "MTN_CM",
+            "reason": "expiry-check"
+        })),
+    )
+    .await?;
+    assert_eq!(created.status, 201, "{}", created.text);
+    let deposit_id = require_json_field(&created.body, "depositId")?
+        .as_str()
+        .ok_or_else(|| anyhow!("depositId must be a string"))?
+        .to_owned();
+
+    force_deposit_expiry(&env.database_url, &deposit_id, chrono::Utc::now() - chrono::Duration::hours(3))
+        .await?;
+
+    let fetched = send_json(
+        client,
+        Method::GET,
+        &format!("{}/internal/deposits/{}", bff_base, deposit_id),
+        Some(&token),
+        None,
+    )
+    .await?;
+    assert_eq!(fetched.status, 200, "{}", fetched.text);
+    assert_eq!(
+        fetched
+            .body
+            .as_ref()
+            .and_then(|body| body.get("status"))
+            .and_then(Value::as_str),
+        Some("EXPIRED")
     );
 
     Ok(())
@@ -1241,6 +1296,41 @@ fn hash_argon2_secret(secret: &str) -> Result<String> {
     Ok(hash.to_string())
 }
 
+async fn force_deposit_expiry(
+    database_url: &str,
+    instance_id: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls)
+        .await
+        .map_err(|error| anyhow!("failed to connect to postgres: {error}"))?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("postgres connection task failed: {error}");
+        }
+    });
+
+    client
+        .execute(
+            r#"
+            UPDATE sm_instance
+            SET context = jsonb_set(
+                context,
+                '{deposit,expires_at}',
+                to_jsonb($2::text),
+                true
+            )
+            WHERE id = $1
+            "#,
+            &[&instance_id, &expires_at.to_rfc3339()],
+        )
+        .await
+        .map_err(|error| anyhow!("failed to force deposit expiry: {error}"))?;
+
+    Ok(())
+}
+
 async fn insert_magic_email_attempt(
     database_url: &str,
     session_id: &str,
@@ -1895,6 +1985,83 @@ async fn scenario_kc_signature_and_surface(client: &reqwest::Client, env: &Env) 
     Ok(())
 }
 
+async fn scenario_staff_deposit_approve_idempotency(
+    client: &reqwest::Client,
+    env: &Env,
+) -> Result<()> {
+    let (token, subject) = get_client_token_and_subject(client, env).await?;
+    ensure_bff_fixtures(&env.database_url, &subject).await?;
+
+    let bff_base = format!("{}/bff", env.user_storage_url);
+    let staff_base = format!("{}/staff", env.user_storage_url);
+
+    let reset = send_json(
+        client,
+        Method::POST,
+        &format!("{}/__admin/reset", env.cuss_url),
+        None,
+        Some(json!({})),
+    )
+    .await?;
+    assert_eq!(reset.status, 200, "{}", reset.text);
+
+    let instance_id = create_confirm_and_approve_deposit_instance(
+        client,
+        &env.database_url,
+        &bff_base,
+        &staff_base,
+        &token,
+        &subject,
+    )
+    .await?;
+    wait_for_completed_deposit_instance(
+        client,
+        &staff_base,
+        &token,
+        &instance_id,
+        Duration::from_secs(45),
+    )
+    .await?;
+
+    let approve_calls_before =
+        count_cuss_endpoint_requests(client, &env.cuss_url, "approve").await?;
+    assert!(
+        approve_calls_before >= 1,
+        "expected at least one approve-and-deposit call before idempotency probe"
+    );
+
+    let approve_again = send_json(
+        client,
+        Method::POST,
+        &format!("{}/api/kyc/deposits/{}/approve", staff_base, instance_id),
+        Some(&token),
+        Some(json!({
+            "firstName": "Retry",
+            "lastName": "Flow",
+            "depositAmount": 3600
+        })),
+    )
+    .await?;
+    assert_eq!(approve_again.status, 409, "{}", approve_again.text);
+    assert_eq!(
+        approve_again
+            .body
+            .as_ref()
+            .and_then(|body| body.get("error_key"))
+            .and_then(Value::as_str),
+        Some("DEPOSIT_ALREADY_APPROVED")
+    );
+
+    sleep(Duration::from_secs(2)).await;
+    let approve_calls_after = count_cuss_endpoint_requests(client, &env.cuss_url, "approve").await?;
+    assert_eq!(
+        approve_calls_after, approve_calls_before,
+        "repeated approve must not produce an additional approve-and-deposit call"
+    );
+
+    Ok(())
+}
+
 async fn scenario_worker_cuss_failures_and_manual_retries(
     client: &reqwest::Client,
     env: &Env,
@@ -1932,6 +2099,7 @@ async fn scenario_worker_cuss_failures_and_manual_retries(
 
     let register_failed_instance = create_confirm_and_approve_deposit_instance(
         client,
+        &env.database_url,
         &bff_base,
         &staff_base,
         &token,
@@ -1991,6 +2159,7 @@ async fn scenario_worker_cuss_failures_and_manual_retries(
 
     let approve_failed_instance = create_confirm_and_approve_deposit_instance(
         client,
+        &env.database_url,
         &bff_base,
         &staff_base,
         &token,
@@ -2296,11 +2465,14 @@ fn expected_device_record_id(device_id: &str, public_jwk: &Value) -> Result<Stri
 
 async fn create_confirm_and_approve_deposit_instance(
     client: &reqwest::Client,
+    database_url: &str,
     bff_base: &str,
     staff_base: &str,
     token: &str,
     subject: &str,
 ) -> Result<String> {
+    clear_first_deposit_instances(database_url, subject).await?;
+
     let deposit_response = send_json(
         client,
         Method::POST,
@@ -2352,6 +2524,24 @@ async fn create_confirm_and_approve_deposit_instance(
     assert_eq!(approve.status, 200, "{}", approve.text);
 
     Ok(instance_id)
+}
+
+async fn clear_first_deposit_instances(database_url: &str, user_id: &str) -> Result<()> {
+    let (db_client, connection) = tokio_postgres::connect(database_url, NoTls).await?;
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("postgres connection error while clearing instances: {error}");
+        }
+    });
+
+    db_client
+        .execute(
+            "DELETE FROM sm_instance WHERE user_id = $1 AND kind = 'KYC_FIRST_DEPOSIT'",
+            &[&user_id],
+        )
+        .await?;
+
+    Ok(())
 }
 
 async fn wait_for_step_status(
@@ -2417,12 +2607,9 @@ async fn wait_for_completed_deposit_instance(
                 .unwrap_or_default();
             let register = latest_attempt_status(&detail.body, "REGISTER_CUSTOMER");
             let approve = latest_attempt_status(&detail.body, "APPROVE_AND_DEPOSIT");
-            let mark_complete = latest_attempt_status(&detail.body, "MARK_COMPLETE");
-            let terminal_steps_succeeded =
-                register.as_deref() == Some("SUCCEEDED") && approve.as_deref() == Some("SUCCEEDED");
-            if (overall == "COMPLETED" && terminal_steps_succeeded)
-                || (terminal_steps_succeeded
-                    && matches!(mark_complete.as_deref(), Some("SUCCEEDED") | Some("FAILED")))
+            if overall == "COMPLETED"
+                && register.as_deref() == Some("SUCCEEDED")
+                && approve.as_deref() == Some("SUCCEEDED")
             {
                 return Ok(());
             }
@@ -2439,4 +2626,39 @@ async fn wait_for_completed_deposit_instance(
         instance_id,
         last_detail_text
     ))
+}
+
+async fn count_cuss_endpoint_requests(
+    client: &reqwest::Client,
+    cuss_url: &str,
+    endpoint_name: &str,
+) -> Result<usize> {
+    let recorded = send_json(
+        client,
+        Method::GET,
+        &format!("{}/__admin/requests", cuss_url),
+        None,
+        None,
+    )
+    .await?;
+    assert_eq!(recorded.status, 200, "{}", recorded.text);
+
+    let count = recorded
+        .body
+        .as_ref()
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.get("endpoint")
+                        .and_then(Value::as_str)
+                        .map(|endpoint| endpoint == endpoint_name)
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
+    Ok(count)
 }

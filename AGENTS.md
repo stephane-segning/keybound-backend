@@ -23,29 +23,32 @@ Tokenization/user-storage backend with three HTTP surfaces:
 
 ### Compose E2E Migration Snapshot (from `.docker/e2e/CHECKLIST.md`, 2026-03-04)
 - Overall checklist status:
-  - Implemented: `63`
+  - Implemented: `66`
   - Partial: `2`
-  - Missing: `10`
+  - Missing: `7`
 - Implemented areas:
   - Compose infrastructure and runner flow (`test-e2e-smoke`, `test-e2e-full`, log capture on failure).
   - Health endpoint and core Bearer auth enforcement (`401` cases + valid token pass-through).
   - BFF deposit owner/non-owner checks, session resume idempotency, step status reads, and OTP happy path.
   - BFF OTP expiry and OTP issuance rate-limit checks.
+  - BFF deposit expiry behavior checks.
   - BFF email magic issue/verify and uploads presign/complete/invalid-complete coverage.
   - Staff instances listing/detail/retry coverage with filters/pagination.
   - Staff summary aggregates for known fixtures.
   - KYC first-deposit staff confirm + approve flow through worker to CUSS success path.
+  - Repeated staff approve is deterministic (`409 DEPOSIT_ALREADY_APPROVED`) and does not double-call CUSS approve-and-deposit.
   - KYC first-deposit CUSS failure paths (`registerCustomer`, `approveAndDeposit`) with manual retry and observability checks.
   - KC signature middleware matrix and KC surface CRUD/device race/idempotency coverage.
-  - Representative cross-surface validation/not-found error mapping checks.
+  - Representative cross-surface validation/not-found/conflict error mapping checks.
 - Partial areas:
   - BFF step-type matrix (PHONE/EMAIL covered; ADDRESS/IDENTITY coverage pending).
   - BFF wrong OTP path (deterministic error asserted; attempt-counter behavior still pending).
 - Major missing groups:
   - Bearer bypass/routing matrix (`enabled=false`, blank base path, outside protected base path).
-  - BFF deposit expiry behavior and full step-type matrix completion (ADDRESS/IDENTITY).
-  - Worker single-consumer lock validation and repeated-approve idempotency.
-  - Cross-surface conflict/internal error mapping checks.
+  - Full step-type matrix completion (ADDRESS/IDENTITY).
+  - Worker single-consumer lock validation.
+  - SMS transient/permanent retry terminal-state coverage.
+  - Cross-surface unexpected-internal error mapping checks.
 - Keep this snapshot aligned with `.docker/e2e/CHECKLIST.md` whenever scenarios are added or marked complete.
 
 `app/bins/backend` starts the server; `app/crates/backend-server` is a library crate.

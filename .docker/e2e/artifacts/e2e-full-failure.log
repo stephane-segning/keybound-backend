@@ -1,0 +1,109 @@
+sms-sink-1  | yarn run v1.22.22
+sms-sink-1  | $ node dist/server.js
+sms-sink-1  | {"level":30,"time":1772668776966,"pid":27,"hostname":"1209b88339ad","msg":"Server listening at http://127.0.0.1:8081"}
+sms-sink-1  | {"level":30,"time":1772668776967,"pid":27,"hostname":"1209b88339ad","msg":"Server listening at http://172.18.0.6:8081"}
+sms-sink-1  | {"level":30,"time":1772668781659,"pid":27,"hostname":"1209b88339ad","reqId":"req-1","req":{"method":"GET","url":"/__admin/messages","host":"127.0.0.1:8081","remoteAddress":"127.0.0.1","remotePort":51702},"msg":"incoming request"}
+sms-sink-1  | {"level":30,"time":1772668781661,"pid":27,"hostname":"1209b88339ad","reqId":"req-1","res":{"statusCode":200},"responseTime":2.256125032901764,"msg":"request completed"}
+sms-sink-1  | {"level":30,"time":1772668786699,"pid":27,"hostname":"1209b88339ad","reqId":"req-2","req":{"method":"GET","url":"/__admin/messages","host":"127.0.0.1:8081","remoteAddress":"127.0.0.1","remotePort":51718},"msg":"incoming request"}
+sms-sink-1  | {"level":30,"time":1772668786700,"pid":27,"hostname":"1209b88339ad","reqId":"req-2","res":{"statusCode":200},"responseTime":0.39670801162719727,"msg":"request completed"}
+sms-sink-1  | {"level":30,"time":1772668791737,"pid":27,"hostname":"1209b88339ad","reqId":"req-3","req":{"method":"GET","url":"/__admin/messages","host":"127.0.0.1:8081","remoteAddress":"127.0.0.1","remotePort":51894},"msg":"incoming request"}
+sms-sink-1  | {"level":30,"time":1772668791737,"pid":27,"hostname":"1209b88339ad","reqId":"req-3","res":{"statusCode":200},"responseTime":0.25529199838638306,"msg":"request completed"}
+sms-sink-1  | {"level":30,"time":1772668796764,"pid":27,"hostname":"1209b88339ad","reqId":"req-4","req":{"method":"GET","url":"/__admin/messages","host":"127.0.0.1:8081","remoteAddress":"127.0.0.1","remotePort":51896},"msg":"incoming request"}
+sms-sink-1  | {"level":30,"time":1772668796764,"pid":27,"hostname":"1209b88339ad","reqId":"req-4","res":{"statusCode":200},"responseTime":0.25166600942611694,"msg":"request completed"}
+minio-1     | MinIO Object Storage Server
+minio-1     | Copyright: 2015-2026 MinIO, Inc.
+minio-1     | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+minio-1     | Version: RELEASE.2025-07-23T15-54-02Z (go1.24.5 linux/arm64)
+minio-1     | 
+minio-1     | API: http://172.18.0.4:9000  http://127.0.0.1:9000 
+minio-1     | WebUI: http://172.18.0.4:9001 http://127.0.0.1:9001  
+minio-1     | 
+minio-1     | Docs: https://docs.min.io
+minio-1     | WARN: Detected default credentials 'minioadmin:minioadmin', we recommend that you change these values with 'MINIO_ROOT_USER' and 'MINIO_ROOT_PASSWORD' environment variables
+minio-1     | INFO: 
+minio-1     |  You are running an older version of MinIO released 1 month before the latest release 
+minio-1     |  Update: Run `mc admin update ALIAS` 
+minio-1     | 
+minio-1     | 
+download-core-tools-1  | + rm -rf /data/bin /data/kc-plugins /data/keycloak-interface.openapi.yaml
+download-core-tools-1  | + mkdir -p /data/bin
+download-core-tools-1  | + mkdir -p /data/kc-plugins
+download-core-tools-1  | Download OpenAPI generator (we're using it to generate code from OpenAPI specs...
+download-core-tools-1  | + echo 'Download OpenAPI generator (we'"'"'re using it to generate code from OpenAPI specs...'
+download-core-tools-1  | + curl -sLo /data/bin/openapi-generator-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.19.0/openapi-generator-cli-7.19.0.jar
+download-core-tools-1  | + echo 'Download OpenAPI for Keycloak...'
+download-core-tools-1  | + curl -sLo /data/keycloak-interface.openapi.yaml https://github.com/stephane-segning/keycloak-keybound/releases/download/v0.2.1/backend.open-api.yml
+download-core-tools-1  | Download OpenAPI for Keycloak...
+postgres-1             | 
+minio-create-bucket-1  | mc: <ERROR> Unable to initialize new alias from the provided credentials. Get "http://minio:9000/probe-bsign-ywaufsch4cjmtg4xhedcyoexdu6ecz/?location=": dial tcp 172.18.0.4:9000: connect: connection refused.
+minio-create-bucket-1  | waiting for minio...
+minio-create-bucket-1  | Added `local` successfully.
+minio-create-bucket-1  | Bucket created successfully `local/user-storage-e2e`.
+postgres-1             | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1             | 
+postgres-1             | 2026-03-04 23:59:36.670 UTC [1] LOG:  starting PostgreSQL 18.2 (Debian 18.2-1.pgdg12+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+postgres-1             | 2026-03-04 23:59:36.670 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1             | 2026-03-04 23:59:36.670 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1             | 2026-03-04 23:59:36.671 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1             | 2026-03-04 23:59:36.677 UTC [32] LOG:  database system was shut down at 2026-03-04 23:59:29 UTC
+postgres-1             | 2026-03-04 23:59:36.687 UTC [1] LOG:  database system is ready to accept connections
+redis-1                | Starting Redis Server
+redis-1                | 1:C 04 Mar 2026 23:59:36.601 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1                | 1:C 04 Mar 2026 23:59:36.601 * Redis version=8.6.0, bits=64, commit=00000000, modified=1, pid=1, just started
+redis-1                | 1:C 04 Mar 2026 23:59:36.601 * Configuration loaded
+redis-1                | 1:M 04 Mar 2026 23:59:36.603 * monotonic clock: ARM CNTVCT @ 24 ticks/us
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * Running mode=standalone, port=6379.
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> RedisBloom version 8.6.0 (Git=unknown)
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> Registering configuration options: [
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ bf-error-rate       :      0.01 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ bf-initial-size     :       100 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ bf-expansion-factor :         2 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ cf-bucket-size      :         2 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ cf-initial-size     :      1024 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ cf-max-iterations   :        20 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ cf-expansion-factor :         1 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> 	{ cf-max-expansions   :        32 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * <bf> ]
+redis-1                | 1:M 04 Mar 2026 23:59:36.606 * Module 'bf' loaded from /usr/local/lib/redis/modules//redisbloom.so
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Redis version found by RedisSearch : 8.6.0 - oss
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> RediSearch version 8.6.0 (Git=7782b97)
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Low level api version 1 initialized successfully
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> gc: ON, prefix min length: 2, min word length to stem: 4, prefix max expansions: 200, query timeout (ms): 500, timeout policy: return, oom policy: return, cursor read size: 1000, cursor max idle (ms): 300000, max doctable size: 1000000, max number of search results:  1000000, default scorer: BM25STD, 
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Initialized thread pools!
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Disabled workers threadpool of size 0
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Subscribe to config changes
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Subscribe to cluster slot migration events
+redis-1                | 1:M 04 Mar 2026 23:59:36.612 * <search> Enabled role change notification
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <search> Cluster configuration: AUTO partitions, type: 0, coordinator timeout: 0ms
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * Module 'search' loaded from /usr/local/lib/redis/modules//redisearch.so
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> RedisTimeSeries version 80600, git_sha=05fd355db748676861dc4c17d19c8c1ca74c0154
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> Redis version found by RedisTimeSeries : 8.6.0 - oss
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> Registering configuration options: [
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-compaction-policy   :              }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-num-threads         :            3 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-retention-policy    :            0 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-duplicate-policy    :        block }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-chunk-size-bytes    :         4096 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-encoding            :   compressed }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-ignore-max-time-diff:            0 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> 	{ ts-ignore-max-val-diff :     0.000000 }
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> ]
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> Detected redis oss
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> Subscribe to ASM events
+redis-1                | 1:M 04 Mar 2026 23:59:36.613 * <timeseries> Enabled diskless replication
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * Module 'timeseries' loaded from /usr/local/lib/redis/modules//redistimeseries.so
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Created new data type 'ReJSON-RL'
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> version: 80600 git sha: unknown branch: unknown
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V1 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V2 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V3 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V4 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V5 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.614 * <ReJSON> Exported RedisJSON_V6 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * <ReJSON> Enabled diskless replication
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * <ReJSON> Initialized shared string cache, thread safe: true.
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * Module 'ReJSON' loaded from /usr/local/lib/redis/modules//rejson.so
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * <search> Acquired RedisJSON_V6 API
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * Server initialized
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 * Ready to accept connections tcp
+redis-1                | 1:M 04 Mar 2026 23:59:36.615 # WARNING: Redis does not require authentication and is not protected by network restrictions. Redis will accept connections from any IP address on any network interface.
