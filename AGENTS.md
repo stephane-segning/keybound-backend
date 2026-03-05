@@ -295,33 +295,29 @@ All backends:
 
 ## Implemented Features
 
-### KYC Case/Submission Model
-- **Architecture**: Uses a relational model with `kyc_case` (lifecycle) and `kyc_submission` (versioned data).
-- **Data Storage**: Identity data (Name, DOB, etc.) is captured in each `kyc_submission` to maintain a historical snapshot.
-- **Status Tracking**: `kyc_case` tracks the active submission and overall lifecycle. Tiers are no longer persisted but are calculated dynamically based on approved documents (Tier 1: Identity, Tier 2: Identity + Address).
+### KYC State Machines (Current)
+- **Persistence**: `sm_instance`, `sm_event`, `sm_step_attempt` (legacy `kyc_*` and `phone_deposit` tables are removed by the state-machine revamp migration).
+- **Processes**:
+  - `KYC_PHONE_OTP`
+  - `KYC_FIRST_DEPOSIT`
 
-### Optimized Staff Submissions Query
-- **Endpoint**: `/api/kyc/staff/submissions`
-- **Performance**: Uses SQL-level filtering, sorting, and pagination (limit/offset) to handle large volumes of submissions efficiently.
+### BFF KYC Sessions & Steps (Current)
+- **Endpoints (under the `/bff` surface)**:
+  - `POST /internal/kyc/sessions`
+  - `POST /internal/kyc/steps`
+- **Step IDs**: deterministic `"{sessionId}__{type}"` stored in the session `context.step_ids`.
+- **Supported `type` values**: `PHONE`, `EMAIL`, `ADDRESS` (as defined in `openapi/user-storage-bff.yaml`).
+- **Type enforcement happens at operation level**:
+  - OTP issue/verify expects `PHONE` step IDs.
+  - Magic email issue expects `EMAIL` step IDs.
+- **Error behavior**: there is no dedicated `STEP_TYPE_NOT_SUPPORTED` domain error today; unknown values fail request decoding/validation before reaching handlers.
 
-### KYC Profile Patch (Optimistic Locking)
-- **Endpoint**: `PATCH /api/registration/kyc/profile`
-- **Description**: Allows partial updates to the KYC profile using JSON Patch (RFC 6902).
-- **Concurrency Control**: Uses `If-Match` header with ETag (version number) to prevent lost updates.
-- **Implementation**:
-    - **Handler**: `app/crates/backend-server/src/api/bff.rs` handles the request, checks the version, applies the patch, and calls the repository.
-    - **Repository**: `app/crates/backend-repository/src/pg/kyc.rs` executes the update using Diesel DSL.
-
-### Phone Deposit Requests (BFF)
-- **Endpoints**:
+### Phone Deposit Requests (Current)
+- **Endpoints (under the `/bff` surface)**:
   - `POST /internal/deposits/phone`
   - `GET /internal/deposits/{depositId}`
-- **Persistence**: Deposits are stored in `phone_deposit` with status, assigned contact, and expiry metadata.
+- **Persistence**: stored as a `KYC_FIRST_DEPOSIT` state-machine instance (JSON context + step attempts), not the legacy `phone_deposit` table.
 - **Ownership**: API enforces JWT user ownership at create/get time.
-- **Implementation**:
-  - **Handler**: `app/crates/backend-server/src/api/bff.rs` (`Deposits` trait impl).
-  - **Repository**: `app/crates/backend-repository/src/pg/kyc.rs` with Diesel DSL methods.
-  - **Migration**: `app/crates/backend-migrate/migrations/20260227110000_phone_deposit`.
 
 ### Background Worker for SMS Retries
 - **Description**: A background worker, powered by the `apalis` crate, handles the retrying of SMS messages.

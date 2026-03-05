@@ -6,6 +6,17 @@ Complex flows like KYC and Phone OTP verification are prone to errors and race c
 ## Actual
 Our state machines are powered by a generic engine that tracks instances, events, and step attempts in our PostgreSQL database. 🛠️
 
+### BFF KYC Sessions & Steps
+The BFF surface exposes a small "session + steps" API used by the client to organize KYC-related UX.
+
+- **Session**: created via `POST /bff/internal/kyc/sessions` and backed by a `sm_instance` (currently `KYC_PHONE_OTP` for user KYC sessions).
+- **Step**: created via `POST /bff/internal/kyc/steps`; step IDs are deterministic `"{sessionId}__{type}"` and are stored in the session `context.step_ids`.
+- **Supported step types**: `PHONE`, `EMAIL`, `ADDRESS` (per `openapi/user-storage-bff.yaml`).
+- **Type-specific enforcement**:
+  - OTP issue/verify endpoints expect a `PHONE` step ID.
+  - Magic email issue endpoints expect an `EMAIL` step ID.
+  - Upload presign/complete endpoints enforce ownership by JWT `userId` (not by step type).
+
 ### KYC Phone OTP Flow
 This state machine handles phone number verification through SMS OTPs.
 

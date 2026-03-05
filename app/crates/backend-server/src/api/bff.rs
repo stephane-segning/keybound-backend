@@ -764,7 +764,7 @@ impl Deposits<Error> for BackendApi {
         let engine = Engine::new(self.state.clone());
         let key = format!("{}:{}", KIND_KYC_FIRST_DEPOSIT, body.user_id);
 
-        // Choose staff contact (same logic as legacy implementation).
+        // Choose staff contact.
         let (staff_id, staff_full_name, staff_phone_number) = self
             .state
             .sm

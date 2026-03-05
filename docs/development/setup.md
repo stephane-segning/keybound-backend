@@ -16,15 +16,20 @@ Setting up for local development is straightforward! We use `just` as our comman
 2. **Setup your config**: Copy `config/dev.yaml` and tweak your environment variables (especially `DATABASE_URL` and `KEYCLOAK_ISSUER`). 🛠️
 3. **Spin up dependencies**:
    ```bash
-   docker compose up -d
+   just up c="postgres redis minio keycloak-26"
    ```
-4. **Run migrations**:
+4. **Generate OpenAPI code (if needed)**:
    ```bash
-   just build
+   just generate
    ```
-5. **Start the server**:
+5. **Run migrations (optional)**:
+   - Migrations are also run on server startup, but this command is useful for CI/debugging.
    ```bash
-   just run
+   just dev migrate --config-path config/dev.yaml
+   ```
+6. **Start the server/worker**:
+   ```bash
+   just dev serve --config-path config/dev.yaml --mode shared
    ```
 
 ## Constraints

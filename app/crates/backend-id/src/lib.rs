@@ -13,38 +13,6 @@ pub fn device_id() -> Result<String> {
     prefixed("dvc")
 }
 
-pub fn approval_id() -> Result<String> {
-    prefixed("apr")
-}
-
-pub fn sms_hash() -> Result<String> {
-    prefixed("sms")
-}
-
-pub fn sms_id() -> Result<String> {
-    prefixed("sms")
-}
-
-pub fn kyc_document_id() -> Result<String> {
-    prefixed("kyd")
-}
-
-pub fn kyc_case_id() -> Result<String> {
-    prefixed("kyc")
-}
-
-pub fn kyc_submission_id() -> Result<String> {
-    prefixed("sub")
-}
-
-pub fn kyc_session_id() -> Result<String> {
-    prefixed("kys")
-}
-
-pub fn kyc_step_id() -> Result<String> {
-    prefixed("kysp")
-}
-
 pub fn kyc_otp_ref() -> Result<String> {
     prefixed("otp")
 }
@@ -59,10 +27,6 @@ pub fn kyc_upload_id() -> Result<String> {
 
 pub fn kyc_evidence_id() -> Result<String> {
     prefixed("evi")
-}
-
-pub fn phone_deposit_id() -> Result<String> {
-    prefixed("dep")
 }
 
 pub fn sm_instance_id() -> Result<String> {
