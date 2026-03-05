@@ -29,7 +29,7 @@ Legend:
 
 Bypass / routing:
 - [ ] `enabled=false` bypasses auth layer.
-- [ ] blank base path does not accidentally protect unrelated routes.
+- [x] blank base path does not accidentally protect unrelated routes.
 - [x] request path outside protected base paths is not validated.
 
 Enforcement:

@@ -164,10 +164,21 @@ fn build_router(
     }));
 
     // Apply JWKS auth layer
-    let mut jwks_base_paths = config.oauth2.base_paths.clone();
+    let mut jwks_base_paths: Vec<String> = config
+        .oauth2
+        .base_paths
+        .iter()
+        .map(|p| p.trim().to_owned())
+        .filter(|p| !p.is_empty() && p != "/")
+        .collect();
     if jwks_base_paths.is_empty() {
-        jwks_base_paths.push(config.bff.base_path.clone());
-        jwks_base_paths.push(config.staff.base_path.clone());
+        let defaults = [&config.bff.base_path, &config.staff.base_path];
+        jwks_base_paths.extend(
+            defaults
+                .iter()
+                .map(|p| p.trim().to_owned())
+                .filter(|p| !p.is_empty() && p != "/"),
+        );
     }
 
     router = router.layer(jwks_auth_layer(oidc_state, jwks_base_paths));

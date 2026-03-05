@@ -22,6 +22,9 @@ sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tokio-postgres = { workspace = true }
 
+[dev-dependencies]
+serial_test = { workspace = true, features = ["file_locks"] }
+
 [[test]]
 name = "smoke"
 path = "tests/smoke.rs"

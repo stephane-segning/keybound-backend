@@ -51,6 +51,47 @@ services:
       sms-sink:
         condition: service_healthy
 
+  user-storage-server-blank-base:
+    image: user-storage-app
+    build:
+      context: ../..
+      dockerfile: deploy/docker/user-storage/Dockerfile
+    command:
+      - serve
+      - --config-path
+      - config/e2e.blank-bff-path.yaml
+      - --mode
+      - server
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/user-storage"
+      REDIS_URL: "redis://redis:6379"
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_REGION: "us-east-1"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-minioadmin}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-user-storage-e2e}"
+      SMS_SINK_URL: "http://sms-sink:8081"
+      CUSS_URL: "http://cuss-stub:8080"
+      MINIO_FORCE_PATH_STYLE: "true"
+      RUST_LOG: info
+    volumes:
+      - ../../config:/app/config
+    ports:
+      - '3003:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-create-bucket:
+        condition: service_completed_successfully
+      cuss-stub:
+        condition: service_healthy
+      sms-sink:
+        condition: service_healthy
+
   user-storage-worker:
     image: user-storage-app
     build:

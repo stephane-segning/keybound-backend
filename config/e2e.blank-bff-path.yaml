@@ -1,0 +1,72 @@
+server:
+  address: "0.0.0.0"
+  port: 3000
+  tls:
+    enabled: false
+    port: 3443
+    cert_path: "./config/tls/api.crt"
+    key_path: "./config/tls/api.key"
+
+logging:
+  level: "debug"
+  log_requests_enabled: true
+
+database:
+  url: ${DATABASE_URL}
+  pool_size: 15
+
+runtime:
+  mode: shared
+
+redis:
+  url: ${REDIS_URL}
+
+storage:
+  type: minio
+  minio:
+    endpoint: ${MINIO_ENDPOINT:-http://minio:9000}
+    region: ${MINIO_REGION:-us-east-1}
+    access_key: ${MINIO_ACCESS_KEY:-minioadmin}
+    secret_key: ${MINIO_SECRET_KEY:-minioadmin}
+    bucket: ${MINIO_BUCKET:-user-storage-e2e}
+    force_path_style: true
+    presign_ttl_seconds: 900
+
+s3:
+  region: "us-east-1"
+  bucket: "user-storage-e2e"
+  force_path_style: true
+  endpoint: null
+  presign_ttl_seconds: 900
+
+sns:
+  region: "us-east-1"
+  max_attempts: 5
+  initial_backoff_seconds: 2
+
+sms:
+  provider: api
+  api:
+    base_url: ${SMS_SINK_URL}
+
+oauth2:
+  issuer: "http://keycloak:9026/realms/e2e-testing"
+  base-paths: []
+
+kc:
+  enabled: true
+  base-path: /kc
+  signature_secret: "some-very-long-secret"
+  max_clock_skew_seconds: 60
+  max_body_bytes: 262144
+
+bff:
+  enabled: true
+  base-path: ""
+
+staff:
+  enabled: true
+  base-path: /staff
+
+cuss:
+  api_url: ${CUSS_URL}

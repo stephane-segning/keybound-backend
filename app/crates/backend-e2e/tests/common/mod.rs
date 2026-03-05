@@ -9,6 +9,7 @@ use tokio_postgres::NoTls;
 #[derive(Clone, Debug)]
 pub struct Env {
     pub user_storage_url: String,
+    pub user_storage_blank_base_url: Option<String>,
     pub keycloak_url: String,
     pub cuss_url: String,
     pub sms_sink_url: String,
@@ -21,6 +22,7 @@ impl Env {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             user_storage_url: must_env("USER_STORAGE_URL")?,
+            user_storage_blank_base_url: maybe_env("USER_STORAGE_BLANK_BASE_URL"),
             keycloak_url: must_env("KEYCLOAK_URL")?,
             cuss_url: must_env("CUSS_URL")?,
             sms_sink_url: must_env("SMS_SINK_URL")?,
@@ -33,6 +35,13 @@ impl Env {
 
 fn must_env(key: &str) -> Result<String> {
     std::env::var(key).with_context(|| format!("environment variable {key} is required"))
+}
+
+fn maybe_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 #[derive(Debug)]

@@ -23,6 +23,7 @@ TypeScript runner coverage has been migrated to Rust integration tests under:
 
 The Rust runner uses environment variables passed by `just`:
 - `USER_STORAGE_URL`
+- `USER_STORAGE_BLANK_BASE_URL` (for blank-base-path auth bypass coverage in full suite)
 - `KEYCLOAK_URL`
 - `CUSS_URL`
 - `SMS_SINK_URL`

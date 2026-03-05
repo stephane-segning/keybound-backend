@@ -19,16 +19,17 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - Compose E2E runner is Rust-based (`app/crates/backend-e2e`), replacing the previous TypeScript runner:
   - `just test-e2e-smoke` executes smoke scenarios.
   - `just test-e2e-full` executes full scenarios.
+  - `full.rs` is now split into focused scenarios guarded by `serial_test::file_serial` for deterministic sequential execution with clearer failure isolation.
   - Scenario tracking source of truth is `.docker/e2e/CHECKLIST.md`.
 
 ### Compose E2E Migration Snapshot (from `.docker/e2e/CHECKLIST.md`, 2026-03-05)
 - Overall checklist status:
-  - Implemented: `70`
+  - Implemented: `71`
   - Partial: `0`
-  - Missing: `5`
+  - Missing: `4`
 - Implemented areas:
   - Compose infrastructure and runner flow (`test-e2e-smoke`, `test-e2e-full`, log capture on failure).
-  - Health endpoint, Bearer auth enforcement (`401` cases + valid token pass-through), and outside-base-path bypass behavior.
+  - Health endpoint, Bearer auth enforcement (`401` cases + valid token pass-through), outside-base-path bypass behavior, and blank-base-path routing bypass behavior.
   - BFF deposit owner/non-owner checks, session resume idempotency, step status reads, and OTP happy path.
   - BFF OTP expiry and OTP issuance rate-limit checks.
   - BFF wrong OTP deterministic error + attempt observability checks.
@@ -44,7 +45,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - Partial areas:
   - none.
 - Major missing groups:
-  - Bearer bypass/routing matrix (`enabled=false`, blank base path).
+  - Bearer bypass/routing matrix (`enabled=false`).
   - Worker single-consumer lock validation.
   - SMS transient/permanent retry terminal-state coverage.
 - Keep this snapshot aligned with `.docker/e2e/CHECKLIST.md` whenever scenarios are added or marked complete.

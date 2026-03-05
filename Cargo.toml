@@ -103,6 +103,7 @@ headers = "0.4"
 tower-http = { version = "0.6.8", features = ["trace"] }
 
 mockall = "0.14"
+serial_test = "3.4.0"
 wiremock = "0.6.5"
 testcontainers = { version = "0.27.1", default-features = false, features = ["ring"] }
 testcontainers-modules = { version = "0.15.0", default-features = false }

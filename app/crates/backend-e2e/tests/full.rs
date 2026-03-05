@@ -10,32 +10,136 @@ use common::{
 };
 use hmac::{Hmac, Mac};
 use reqwest::Method;
+use serial_test::file_serial;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_postgres::NoTls;
 
-#[tokio::test]
-async fn full_suite() -> Result<()> {
+fn test_context() -> Result<(Env, reqwest::Client)> {
     let env = Env::from_env()?;
     let client = http_client()?;
+    Ok((env, client))
+}
 
+#[tokio::test]
+#[file_serial]
+async fn full_01_auth_enforcement() -> Result<()> {
+    let (env, client) = test_context()?;
     scenario_auth_enforcement(&client, &env).await?;
-    scenario_auth_bypass_outside_protected_paths(&client, &env).await?;
-    scenario_bff_deposit_and_otp_flow(&client, &env).await?;
-    scenario_bff_deposit_expiry_behavior(&client, &env).await?;
-    scenario_bff_session_resume_and_otp_limits(&client, &env).await?;
-    scenario_bff_email_magic_and_uploads(&client, &env).await?;
-    scenario_bff_deposit_denies_non_owner(&client, &env).await?;
-    scenario_kc_signature_and_surface(&client, &env).await?;
-    scenario_staff_instance_detail_and_retry(&client, &env).await?;
-    scenario_staff_summary_and_instances(&client, &env).await?;
-    scenario_staff_deposit_flow_triggers_worker_and_cuss(&client, &env).await?;
-    scenario_staff_deposit_approve_idempotency(&client, &env).await?;
-    scenario_worker_cuss_failures_and_manual_retries(&client, &env).await?;
-    scenario_error_mapping_representative(&client, &env).await?;
+    Ok(())
+}
 
+#[tokio::test]
+#[file_serial]
+async fn full_02_auth_bypass_outside_protected_paths() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_auth_bypass_outside_protected_paths(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_03_bff_deposit_and_otp_flow() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_bff_deposit_and_otp_flow(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_04_bff_deposit_expiry_behavior() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_bff_deposit_expiry_behavior(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_05_bff_session_resume_and_otp_limits() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_bff_session_resume_and_otp_limits(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_06_bff_email_magic_and_uploads() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_bff_email_magic_and_uploads(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_07_bff_deposit_denies_non_owner() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_bff_deposit_denies_non_owner(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_08_kc_signature_and_surface() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_kc_signature_and_surface(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_09_staff_instance_detail_and_retry() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_staff_instance_detail_and_retry(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_10_staff_summary_and_instances() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_staff_summary_and_instances(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_11_staff_deposit_flow_triggers_worker_and_cuss() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_staff_deposit_flow_triggers_worker_and_cuss(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_12_staff_deposit_approve_idempotency() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_staff_deposit_approve_idempotency(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_13_worker_cuss_failures_and_manual_retries() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_worker_cuss_failures_and_manual_retries(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_14_error_mapping_representative() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_error_mapping_representative(&client, &env).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn full_15_auth_blank_base_path_does_not_protect_unrelated_routes() -> Result<()> {
+    let (env, client) = test_context()?;
+    scenario_auth_blank_base_path_bypass(&client, &env).await?;
     Ok(())
 }
 
@@ -62,6 +166,31 @@ async fn scenario_auth_bypass_outside_protected_paths(
         .send()
         .await?;
     assert_eq!(missing_with_invalid_bearer.status().as_u16(), 404);
+
+    Ok(())
+}
+
+async fn scenario_auth_blank_base_path_bypass(client: &reqwest::Client, env: &Env) -> Result<()> {
+    let base_url = env
+        .user_storage_blank_base_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("USER_STORAGE_BLANK_BASE_URL is required for blank base path test"))?;
+
+    let health_no_auth = client.get(format!("{base_url}/health")).send().await?;
+    assert_eq!(health_no_auth.status().as_u16(), 200);
+
+    let health_with_invalid_bearer = client
+        .get(format!("{base_url}/health"))
+        .header("Authorization", "Bearer definitely-invalid-token")
+        .send()
+        .await?;
+    assert_eq!(health_with_invalid_bearer.status().as_u16(), 200);
+
+    let staff_no_auth = client
+        .get(format!("{base_url}/staff/api/kyc/instances"))
+        .send()
+        .await?;
+    assert_eq!(staff_no_auth.status().as_u16(), 401);
 
     Ok(())
 }
