@@ -18,7 +18,8 @@ jobs:
       - name: Run cargo test (workspace)
         run: cargo test --workspace --locked
       - name: Run OAS integration tests
-        run: cargo test -p backend-server --features it-tests api::it_tests:: --locked
+        run: |
+          cargo test -p backend-server --features it-tests api::it_tests:: --locked
 
   release-build:
     name: Release Build
