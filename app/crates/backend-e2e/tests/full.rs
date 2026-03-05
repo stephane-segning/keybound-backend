@@ -381,15 +381,9 @@ async fn scenario_sms_permanent_error_terminal_no_infinite_retries(
 
     let bff_base = format!("{}/bff", env.user_storage_url);
     let staff_base = format!("{}/staff", env.user_storage_url);
-    let (session_id, _step_id, _otp_ref) = create_phone_step_and_issue_otp(
-        client,
-        &bff_base,
-        &token,
-        &subject,
-        "+237690000100",
-        120,
-    )
-    .await?;
+    let (session_id, _step_id, _otp_ref) =
+        create_phone_step_and_issue_otp(client, &bff_base, &token, &subject, "+237690000100", 120)
+            .await?;
 
     wait_for_step_status(
         client,

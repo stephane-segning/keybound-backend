@@ -70,12 +70,9 @@ impl SmsProvider for ApiSmsProvider {
             req = req.bearer_auth(token);
         }
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| {
-                backend_core::Error::internal("SMS_SEND_TRANSIENT", format!("sms transport error: {e}"))
-            })?;
+        let resp = req.send().await.map_err(|e| {
+            backend_core::Error::internal("SMS_SEND_TRANSIENT", format!("sms transport error: {e}"))
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();

@@ -194,13 +194,12 @@ impl Engine {
             .sm
             .get_latest_step_attempt(instance_id, STEP_DEPOSIT_REGISTER_CUSTOMER)
             .await?
+            && latest_register_attempt.status != ATTEMPT_STATUS_FAILED
         {
-            if latest_register_attempt.status != ATTEMPT_STATUS_FAILED {
-                return Err(Error::conflict(
-                    "DEPOSIT_ALREADY_APPROVED",
-                    "Deposit has already been approved for processing",
-                ));
-            }
+            return Err(Error::conflict(
+                "DEPOSIT_ALREADY_APPROVED",
+                "Deposit has already been approved for processing",
+            ));
         }
 
         self.emit_event(
@@ -876,5 +875,7 @@ fn sms_error_is_transient(error: &Error) -> bool {
 fn sms_retry_backoff_seconds(attempt_no: i32) -> i64 {
     let exponent = attempt_no.saturating_sub(1).max(0) as u32;
     let factor = 2_i64.saturating_pow(exponent);
-    SMS_SEND_INITIAL_BACKOFF_SECONDS.saturating_mul(factor).max(1)
+    SMS_SEND_INITIAL_BACKOFF_SECONDS
+        .saturating_mul(factor)
+        .max(1)
 }

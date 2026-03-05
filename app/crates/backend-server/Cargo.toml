@@ -7,7 +7,7 @@ publish.workspace = true
 authors.workspace = true
 
 [features]
-test-utils = []
+test-utils = ["dep:mockall"]
 it-tests = []
 
 [dependencies]
@@ -42,6 +42,7 @@ redis = { workspace = true }
 apalis = { workspace = true }
 apalis-redis = { workspace = true }
 bytes = { workspace = true }
+mockall = { workspace = true, optional = true }
 
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
