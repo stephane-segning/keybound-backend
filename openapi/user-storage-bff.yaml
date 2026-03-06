@@ -21,6 +21,39 @@ security:
 
 paths:
   /internal/kyc/sessions:
+    get:
+      tags: [ sessions ]
+      summary: List KYC sessions
+      description: >
+        Lists sessions for a user and/or flow. By default, only active sessions
+        are returned so callers can reuse an in-progress session.
+      operationId: internalListKycSessions
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: flow
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/KycFlowType"
+        - name: activeOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycSessionListResponse"
     post:
       tags: [ sessions ]
       summary: Create or resume KYC session
@@ -378,6 +411,16 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [ id, userId, flow, status, stepIds, createdAt, updatedAt ]
+
+    KycSessionListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KycSession"
+      required: [ items ]
 
     CreateKycSessionRequest:
       type: object
