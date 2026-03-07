@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.5
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+LABEL maintainer="Stephane Segning Lambou <stephane.segning-lambou@adorsys>"
+LABEL maintainer="GIS Cameroon <udm-gis@adorsys>"
+LABEL org.opencontainers.image.description="adorsys GIS Cameroon"
+
+ENV RUST_LOG=warn
+ENV PORT=3000
+
+WORKDIR /app
+
+COPY backend /app/server
+COPY healthcheck /app/healthcheck
+
+USER nonroot:nonroot
+
+EXPOSE $PORT
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=2s --retries=5 CMD ["/app/healthcheck"]
+
+ENTRYPOINT ["/app/server"]

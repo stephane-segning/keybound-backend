@@ -8,29 +8,53 @@ env:
   CARGO_TARGET_DIR: target
 
 jobs:
-  tests:
-    name: Run Tests
+  test-workspace:
+    name: Tests (Workspace)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-rust
         name: Setup rust
       - name: Run cargo test (workspace)
-        run: cargo test --workspace --locked
-      - name: Run OAS integration tests
+        id: run_tests
         run: |
-          cargo test -p backend-server --features it-tests api::it_tests:: --locked
+          start_ts="$(date +%s)"
+          cargo test --workspace --locked
+          end_ts="$(date +%s)"
+          echo "duration_seconds=$((end_ts - start_ts))" >> "$GITHUB_OUTPUT"
+      - name: Test report
+        if: always()
+        run: |
+          {
+            echo "### Tests Report: Workspace"
+            echo "- Command: \\`cargo test --workspace --locked\\`"
+            echo "- Result: **${{ steps.run_tests.outcome }}**"
+            echo "- Duration: ${{ steps.run_tests.outputs.duration_seconds }}s"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  release-build:
-    name: Release Build
-    needs: tests
+  test-oas:
+    name: Tests (OAS Integration)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-rust
         name: Setup rust
-      - name: Run cargo build --release
-        run: cargo build --release --workspace --locked
+      - name: Run OAS integration tests
+        id: run_tests
+        run: |
+          start_ts="$(date +%s)"
+          cargo test -p backend-server --features it-tests api::it_tests:: --locked
+          end_ts="$(date +%s)"
+          echo "duration_seconds=$((end_ts - start_ts))" >> "$GITHUB_OUTPUT"
+      - name: Test report
+        if: always()
+        run: |
+          {
+            echo "### Tests Report: OAS Integration"
+            echo "- Command: \\`cargo test -p backend-server --features it-tests api::it_tests:: --locked\\`"
+            echo "- Result: **${{ steps.run_tests.outcome }}**"
+            echo "- Duration: ${{ steps.run_tests.outputs.duration_seconds }}s"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   cargo-version:
     name: Cargo Version Change Detector
@@ -46,66 +70,345 @@ jobs:
         with:
           before-sha: ${{ github.event.before }}
           after-sha: ${{ github.sha }}
+      - name: Version report
+        run: |
+          {
+            echo "### Cargo Version Report"
+            echo "- Changed: **${{ steps.detection.outputs.changed }}**"
+            echo "- Version: **${{ steps.detection.outputs.version }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  container-build-dev:
-    name: Container Build (Dev)
-    permissions:
-      contents: read
-      packages: write
+  build-musl:
+    name: Build MUSL (${{ matrix.arch }})
     needs:
-      - release-build
-      - tests
-    if: github.ref != 'refs/heads/master'
-    runs-on: ubuntu-latest
+      - test-workspace
+      - test-oas
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            rust_target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            rust_target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-rust
         name: Setup rust
+      - name: Install MUSL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            clang \
+            llvm-dev \
+            musl-tools \
+            pkg-config \
+            perl \
+            protobuf-compiler
+      - name: Add rust target
+        run: rustup target add "${{ matrix.rust_target }}"
+      - name: Build backend + health (MUSL)
+        id: build
+        run: |
+          start_ts="$(date +%s)"
+          cargo build --release --locked --target "${{ matrix.rust_target }}" -p backend
+          mkdir -p dist
+          cp "target/${{ matrix.rust_target }}/release/backend" dist/backend
+          cp "target/${{ matrix.rust_target }}/release/health" dist/healthcheck
+          chmod +x dist/backend dist/healthcheck
+          end_ts="$(date +%s)"
+          echo "duration_seconds=$((end_ts - start_ts))" >> "$GITHUB_OUTPUT"
+      - name: Collect binary size metadata
+        id: sizes
+        run: |
+          backend_bytes="$(stat -c%s dist/backend)"
+          health_bytes="$(stat -c%s dist/healthcheck)"
+          total_bytes="$((backend_bytes + health_bytes))"
+          echo "backend_bytes=${backend_bytes}" >> "$GITHUB_OUTPUT"
+          echo "health_bytes=${health_bytes}" >> "$GITHUB_OUTPUT"
+          echo "total_bytes=${total_bytes}" >> "$GITHUB_OUTPUT"
+      - name: Upload MUSL binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: musl-binaries-${{ matrix.arch }}
+          path: dist/
+      - name: Build report
+        if: always()
+        run: |
+          {
+            echo "### MUSL Build Report (${{ matrix.arch }})"
+            echo "- Target: \\`${{ matrix.rust_target }}\\`"
+            echo "- Result: **${{ steps.build.outcome }}**"
+            echo "- Duration: ${{ steps.build.outputs.duration_seconds }}s"
+            echo "- backend size: ${{ steps.sizes.outputs.backend_bytes }} bytes"
+            echo "- healthcheck size: ${{ steps.sizes.outputs.health_bytes }} bytes"
+            echo "- total size: ${{ steps.sizes.outputs.total_bytes }} bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  container-build-dev-arch:
+    name: Container Build Dev (${{ matrix.arch }})
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - build-musl
+      - test-workspace
+      - test-oas
+    if: github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-docker
         id: setup
         with:
           app-version: dev-${{ github.sha }}
           image-name: ${{ github.repository }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: musl-binaries-${{ matrix.arch }}
+          path: image_ctx
+      - name: Prepare image context
+        run: |
+          chmod +x image_ctx/backend image_ctx/healthcheck
+          cp deploy/docker/user-storage/Dockerfile.runtime image_ctx/Dockerfile
+      - name: Set image tag
+        id: image
+        run: |
+          tag="ghcr.io/${{ github.repository_owner }}/user-storage:dev-${{ github.sha }}-${{ matrix.arch }}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: Build and push dev image
+        id: build_image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: deploy/docker/user-storage/Dockerfile
+          context: image_ctx
+          file: image_ctx/Dockerfile
           push: true
           no-cache: false
-          platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/${{ github.repository_owner }}/user-storage:dev-${{ github.sha }}
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.image.outputs.tag }}
+      - name: Collect image metadata
+        id: image_meta
+        run: |
+          inspect_output="$(docker buildx imagetools inspect "${{ steps.image.outputs.tag }}")"
+          printf '%s\n' "$inspect_output"
+          size_line="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2; exit }')"
+          echo "size=${size_line:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Image report
+        if: always()
+        run: |
+          {
+            echo "### Container Report: Dev (${{ matrix.arch }})"
+            echo "- Tag: \\`${{ steps.image.outputs.tag }}\\`"
+            echo "- Digest: \\`${{ steps.build_image.outputs.digest }}\\`"
+            echo "- Reported manifest size: ${{ steps.image_meta.outputs.size }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  container-build-prod:
-    name: Container Build (Prod)
+  container-build-dev-manifest:
+    name: Container Build Dev (Manifest)
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - container-build-dev-arch
+    if: github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-docker
+        id: setup
+        with:
+          app-version: dev-${{ github.sha }}
+          image-name: ${{ github.repository }}
+      - name: Create and push multi-arch manifest
+        id: manifest
+        run: |
+          base_tag="ghcr.io/${{ github.repository_owner }}/user-storage:dev-${{ github.sha }}"
+          docker buildx imagetools create \
+            -t "${base_tag}" \
+            "${base_tag}-amd64" \
+            "${base_tag}-arm64"
+          inspect_output="$(docker buildx imagetools inspect "${base_tag}")"
+          printf '%s\n' "$inspect_output"
+          total_sizes="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2 }' | paste -sd ', ' -)"
+          echo "tag=${base_tag}" >> "$GITHUB_OUTPUT"
+          echo "sizes=${total_sizes:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Manifest report
+        if: always()
+        run: |
+          {
+            echo "### Container Report: Dev Manifest"
+            echo "- Tag: \\`${{ steps.manifest.outputs.tag }}\\`"
+            echo "- Per-arch manifest sizes: ${{ steps.manifest.outputs.sizes }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  container-build-prod-prepare:
+    name: Container Build Prod (Prepare Tags)
     permissions:
       contents: read
       packages: write
     needs:
       - cargo-version
-      - release-build
-      - tests
+      - build-musl
+      - test-workspace
+      - test-oas
     if: github.ref == 'refs/heads/master' && needs.cargo-version.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.setup.outputs.tags }}
+      version: ${{ needs.cargo-version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-rust
-        name: Setup rust
       - uses: ./.github/actions/setup-docker
         id: setup
         with:
           app-version: ${{ needs.cargo-version.outputs.version }}
           image-name: ${{ github.repository }}
+      - name: Tags report
+        run: |
+          {
+            echo "### Container Report: Prod Tags"
+            echo "- Version: **${{ needs.cargo-version.outputs.version }}**"
+            echo "- Tags:"
+            while IFS= read -r tag; do
+              [ -n "$tag" ] && echo "  - \\`${tag}\\`"
+            done <<< "${{ steps.setup.outputs.tags }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  container-build-prod-arch:
+    name: Container Build Prod (${{ matrix.arch }})
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - container-build-prod-prepare
+      - build-musl
+    if: needs.container-build-prod-prepare.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-docker
+        id: setup
+        with:
+          app-version: ${{ needs.container-build-prod-prepare.outputs.version }}
+          image-name: ${{ github.repository }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: musl-binaries-${{ matrix.arch }}
+          path: image_ctx
+      - name: Prepare image context
+        run: |
+          chmod +x image_ctx/backend image_ctx/healthcheck
+          cp deploy/docker/user-storage/Dockerfile.runtime image_ctx/Dockerfile
+      - name: Derive architecture tags
+        id: tags
+        run: |
+          first_tag=""
+          {
+            echo "arch_tags<<EOF"
+            while IFS= read -r tag; do
+              [ -z "$tag" ] && continue
+              arch_tag="${tag}-${{ matrix.arch }}"
+              [ -z "$first_tag" ] && first_tag="$arch_tag"
+              echo "$arch_tag"
+            done <<< "${{ needs.container-build-prod-prepare.outputs.tags }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "first_tag=${first_tag}" >> "$GITHUB_OUTPUT"
       - name: Build and push prod image
+        id: build_image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: deploy/docker/user-storage/Dockerfile
+          context: image_ctx
+          file: image_ctx/Dockerfile
           push: true
           no-cache: true
-          tags: ${{ steps.setup.outputs.tags }}
-          labels: ${{ steps.setup.outputs.labels }}
-          annotations: ${{ steps.setup.outputs.annotations }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.tags.outputs.arch_tags }}
           provenance: true
           sbom: true
+      - name: Collect image metadata
+        id: image_meta
+        run: |
+          inspect_output="$(docker buildx imagetools inspect "${{ steps.tags.outputs.first_tag }}")"
+          printf '%s\n' "$inspect_output"
+          size_line="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2; exit }')"
+          echo "size=${size_line:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Image report
+        if: always()
+        run: |
+          {
+            echo "### Container Report: Prod (${{ matrix.arch }})"
+            echo "- Example tag: \\`${{ steps.tags.outputs.first_tag }}\\`"
+            echo "- Digest: \\`${{ steps.build_image.outputs.digest }}\\`"
+            echo "- Reported manifest size: ${{ steps.image_meta.outputs.size }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  container-build-prod-manifest:
+    name: Container Build Prod (Manifest)
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - container-build-prod-prepare
+      - container-build-prod-arch
+    if: needs.container-build-prod-prepare.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-docker
+        id: setup
+        with:
+          app-version: ${{ needs.container-build-prod-prepare.outputs.version }}
+          image-name: ${{ github.repository }}
+      - name: Create and push multi-arch manifests
+        id: manifests
+        run: |
+          first_tag=""
+          first_sizes=""
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            [ -z "$first_tag" ] && first_tag="$tag"
+            docker buildx imagetools create \
+              -t "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+            inspect_output="$(docker buildx imagetools inspect "$tag")"
+            printf '%s\n' "$inspect_output"
+            sizes="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2 }' | paste -sd ', ' -)"
+            if [ -z "$first_sizes" ]; then
+              first_sizes="${sizes:-unknown}"
+            fi
+          done <<< "${{ needs.container-build-prod-prepare.outputs.tags }}"
+          echo "first_tag=${first_tag}" >> "$GITHUB_OUTPUT"
+          echo "first_sizes=${first_sizes}" >> "$GITHUB_OUTPUT"
+      - name: Manifest report
+        if: always()
+        run: |
+          {
+            echo "### Container Report: Prod Manifest"
+            echo "- Example tag: \\`${{ steps.manifests.outputs.first_tag }}\\`"
+            echo "- Per-arch manifest sizes: ${{ steps.manifests.outputs.first_sizes }}"
+          } >> "$GITHUB_STEP_SUMMARY"
