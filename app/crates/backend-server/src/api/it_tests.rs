@@ -874,6 +874,26 @@ async fn bff_magic_email_verify_success() {
     sm.expect_get_step_attempt_by_external_ref()
         .times(1)
         .return_once(move |_, _, _| Ok(Some(attempt)));
+    sm.expect_append_event()
+        .times(1)
+        .withf(|input| {
+            input.instance_id == "ins_otp_004"
+                && input.kind == "MAGIC_EMAIL_VERIFIED"
+                && input.actor_type == "USER"
+                && input.actor_id.as_deref() == Some("usr_001")
+                && input.payload.get("step_id").and_then(Value::as_str)
+                    == Some("ins_otp_004__EMAIL_MAGIC")
+                && input.payload.get("token_ref").and_then(Value::as_str) == Some("magic_ref_002")
+        })
+        .return_once(|input| Ok(sm_event_row(&input.instance_id)));
+    sm.expect_update_instance_status()
+        .times(1)
+        .withf(|instance_id, status, completed_at| {
+            instance_id == "ins_otp_004"
+                && status == INSTANCE_STATUS_COMPLETED
+                && completed_at.is_some()
+        })
+        .return_once(|_, _, _| Ok(()));
 
     let api = build_api(
         sm,
