@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KYC Backend Internal API (BFF)
-  version: 0.2.0
+  version: 0.2.1
   description: >
     Internal BFF-facing API for KYC orchestration. The API keeps a generic
     session model and exposes case-specific paths for phone OTP, email magic,
@@ -522,7 +522,10 @@ components:
       additionalProperties: false
       properties:
         userId: { type: string }
-        level: { $ref: "#/components/schemas/UserKycLevel" }
+        level:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserKycLevel"
         phoneOtpVerified: { type: boolean }
         firstDepositVerified: { type: boolean }
       required: [ userId, level, phoneOtpVerified, firstDepositVerified ]
@@ -532,7 +535,10 @@ components:
       additionalProperties: false
       properties:
         userId: { type: string }
-        level: { $ref: "#/components/schemas/UserKycLevel" }
+        level:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserKycLevel"
         phoneOtpStatus:
           allOf:
             - $ref: "#/components/schemas/KycSessionStatus"

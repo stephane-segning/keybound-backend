@@ -23,6 +23,22 @@ fn test_context() -> Result<(Env, reqwest::Client)> {
     Ok((env, client))
 }
 
+fn require_level_values(body: &Option<Value>) -> Result<Vec<String>> {
+    let level = require_json_field(body, "level")?
+        .as_array()
+        .ok_or_else(|| anyhow!("level must be array"))?;
+
+    level
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow!("level entries must be strings"))
+        })
+        .collect()
+}
+
 #[tokio::test]
 #[file_serial]
 async fn full_01_auth_enforcement() -> Result<()> {
@@ -491,10 +507,8 @@ async fn scenario_bff_user_endpoints(client: &reqwest::Client, env: &Env) -> Res
     .await?;
     assert_eq!(initial_level.status, 200, "{}", initial_level.text);
     assert_eq!(
-        require_json_field(&initial_level.body, "level")?
-            .as_str()
-            .ok_or_else(|| anyhow!("level must be string"))?,
-        "NONE"
+        require_level_values(&initial_level.body)?,
+        vec!["NONE".to_owned()]
     );
     assert_eq!(
         require_json_field(&initial_level.body, "phoneOtpVerified")?.as_bool(),
@@ -541,10 +555,8 @@ async fn scenario_bff_user_endpoints(client: &reqwest::Client, env: &Env) -> Res
     .await?;
     assert_eq!(after_phone_level.status, 200, "{}", after_phone_level.text);
     assert_eq!(
-        require_json_field(&after_phone_level.body, "level")?
-            .as_str()
-            .ok_or_else(|| anyhow!("level must be string"))?,
-        "PHONE_OTP_VERIFIED"
+        require_level_values(&after_phone_level.body)?,
+        vec!["PHONE_OTP_VERIFIED".to_owned()]
     );
     assert_eq!(
         require_json_field(&after_phone_level.body, "phoneOtpVerified")?.as_bool(),
@@ -565,10 +577,8 @@ async fn scenario_bff_user_endpoints(client: &reqwest::Client, env: &Env) -> Res
     .await?;
     assert_eq!(phone_summary.status, 200, "{}", phone_summary.text);
     assert_eq!(
-        require_json_field(&phone_summary.body, "level")?
-            .as_str()
-            .ok_or_else(|| anyhow!("level must be string"))?,
-        "PHONE_OTP_VERIFIED"
+        require_level_values(&phone_summary.body)?,
+        vec!["PHONE_OTP_VERIFIED".to_owned()]
     );
     assert_eq!(
         require_json_field(&phone_summary.body, "phoneOtpStatus")?
@@ -593,10 +603,11 @@ async fn scenario_bff_user_endpoints(client: &reqwest::Client, env: &Env) -> Res
         after_deposit_level.text
     );
     assert_eq!(
-        require_json_field(&after_deposit_level.body, "level")?
-            .as_str()
-            .ok_or_else(|| anyhow!("level must be string"))?,
-        "FIRST_DEPOSIT_VERIFIED"
+        require_level_values(&after_deposit_level.body)?,
+        vec![
+            "PHONE_OTP_VERIFIED".to_owned(),
+            "FIRST_DEPOSIT_VERIFIED".to_owned()
+        ]
     );
     assert_eq!(
         require_json_field(&after_deposit_level.body, "firstDepositVerified")?.as_bool(),
@@ -613,10 +624,11 @@ async fn scenario_bff_user_endpoints(client: &reqwest::Client, env: &Env) -> Res
     .await?;
     assert_eq!(final_summary.status, 200, "{}", final_summary.text);
     assert_eq!(
-        require_json_field(&final_summary.body, "level")?
-            .as_str()
-            .ok_or_else(|| anyhow!("level must be string"))?,
-        "FIRST_DEPOSIT_VERIFIED"
+        require_level_values(&final_summary.body)?,
+        vec![
+            "PHONE_OTP_VERIFIED".to_owned(),
+            "FIRST_DEPOSIT_VERIFIED".to_owned()
+        ]
     );
     assert_eq!(
         require_json_field(&final_summary.body, "firstDepositStatus")?

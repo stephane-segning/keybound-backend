@@ -15,7 +15,7 @@ use gen_oas_server_bff::models;
 
 #[derive(Debug, Clone)]
 struct UserKycProjection {
-    level: models::UserKycLevel,
+    level: Vec<models::UserKycLevel>,
     phone_otp_verified: bool,
     first_deposit_verified: bool,
     phone_otp_status: Option<models::KycSessionStatus>,
@@ -145,13 +145,7 @@ async fn build_user_kyc_projection(
         Some(models::KycSessionStatus::Completed)
     );
 
-    let level = if first_deposit_verified {
-        models::UserKycLevel::FirstDepositVerified
-    } else if phone_otp_verified {
-        models::UserKycLevel::PhoneOtpVerified
-    } else {
-        models::UserKycLevel::None
-    };
+    let level = build_user_kyc_levels(phone_otp_verified, first_deposit_verified);
 
     let latest_session_updated_at = [phone_otp_instance, first_deposit_instance]
         .into_iter()
@@ -167,6 +161,25 @@ async fn build_user_kyc_projection(
         first_deposit_status,
         latest_session_updated_at,
     })
+}
+
+fn build_user_kyc_levels(
+    phone_otp_verified: bool,
+    first_deposit_verified: bool,
+) -> Vec<models::UserKycLevel> {
+    let mut levels = Vec::new();
+
+    if phone_otp_verified {
+        levels.push(models::UserKycLevel::PhoneOtpVerified);
+    }
+    if first_deposit_verified {
+        levels.push(models::UserKycLevel::FirstDepositVerified);
+    }
+    if levels.is_empty() {
+        levels.push(models::UserKycLevel::None);
+    }
+
+    levels
 }
 
 async fn latest_instance_for_kind(
@@ -343,7 +356,13 @@ mod tests {
 
         let InternalGetUserKycLevelResponse::Status200_KYCLevel(payload) = response;
         assert_eq!(payload.user_id, "usr_001");
-        assert_eq!(payload.level, models::UserKycLevel::FirstDepositVerified);
+        assert_eq!(
+            payload.level,
+            vec![
+                models::UserKycLevel::PhoneOtpVerified,
+                models::UserKycLevel::FirstDepositVerified
+            ]
+        );
         assert!(payload.phone_otp_verified);
         assert!(payload.first_deposit_verified);
     }
@@ -404,7 +423,10 @@ mod tests {
 
         let InternalGetUserKycSummaryResponse::Status200_KYCSummary(payload) = response;
         assert_eq!(payload.user_id, "usr_001");
-        assert_eq!(payload.level, models::UserKycLevel::FirstDepositVerified);
+        assert_eq!(
+            payload.level,
+            vec![models::UserKycLevel::FirstDepositVerified]
+        );
         assert_eq!(
             payload.phone_otp_status,
             Some(models::KycSessionStatus::Open)

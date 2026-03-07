@@ -1645,7 +1645,10 @@ async fn bff_get_user_kyc_level_success() {
             assert_eq!(level.user_id, "usr_001");
             assert_eq!(
                 level.level,
-                gen_oas_server_bff::models::UserKycLevel::FirstDepositVerified
+                vec![
+                    gen_oas_server_bff::models::UserKycLevel::PhoneOtpVerified,
+                    gen_oas_server_bff::models::UserKycLevel::FirstDepositVerified
+                ]
             );
             assert!(level.phone_otp_verified);
             assert!(level.first_deposit_verified);
@@ -1713,7 +1716,10 @@ async fn bff_get_user_kyc_summary_success() {
             summary,
         ) => {
             assert_eq!(summary.user_id, "usr_001");
-            assert_eq!(summary.level, gen_oas_server_bff::models::UserKycLevel::None);
+            assert_eq!(
+                summary.level,
+                vec![gen_oas_server_bff::models::UserKycLevel::None]
+            );
             assert_eq!(
                 summary.phone_otp_status,
                 Some(gen_oas_server_bff::models::KycSessionStatus::Running)
