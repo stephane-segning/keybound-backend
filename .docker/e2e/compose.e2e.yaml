@@ -220,7 +220,7 @@ services:
       context: ../../.docker/e2e/stubs/cuss
       dockerfile: Dockerfile
     ports:
-      - '8080:8080'
+      - '18080:8080'
     restart: 'on-failure'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/__admin/requests >/dev/null 2>&1"]
@@ -236,7 +236,7 @@ services:
       context: ../../.docker/e2e/stubs/sms-sink
       dockerfile: Dockerfile
     ports:
-      - '8081:8081'
+      - '18081:8081'
     restart: 'no'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/__admin/messages >/dev/null 2>&1"]

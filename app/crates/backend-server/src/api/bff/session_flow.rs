@@ -54,9 +54,10 @@ impl SessionFlow for BackendApi {
             context = Value::Object(Default::default());
         }
         if let Some(obj) = context.as_object_mut()
-            && !obj.get("step_ids").is_some_and(Value::is_array) {
-                obj.insert("step_ids".to_owned(), Value::Array(vec![]));
-            }
+            && !obj.get("step_ids").is_some_and(Value::is_array)
+        {
+            obj.insert("step_ids".to_owned(), Value::Array(vec![]));
+        }
         put_flow_in_context(&mut context, body.flow);
 
         let engine = Engine::new(self.state.clone());

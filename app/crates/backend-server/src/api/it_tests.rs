@@ -17,7 +17,9 @@ use backend_auth::{JwtToken, SignatureContext};
 use backend_core::{Config, Error};
 use chrono::{Duration, Utc};
 use gen_oas_server_bff::apis::deposits::Deposits;
-use gen_oas_server_bff::apis::notifications::Notifications;
+use gen_oas_server_bff::apis::email_magic::EmailMagic;
+use gen_oas_server_bff::apis::phone_otp::PhoneOtp;
+use gen_oas_server_bff::apis::sessions::Sessions;
 use gen_oas_server_bff::apis::steps::Steps;
 use gen_oas_server_bff::apis::uploads::Uploads;
 use gen_oas_server_kc::apis::devices::Devices;
@@ -547,7 +549,7 @@ async fn bff_session_and_step_success() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_ACTIVE,
         Some("usr_001"),
-        json!({"step_ids": []}),
+        json!({"step_ids": ["ins_otp_001__PHONE_OTP"]}),
     );
 
     let mut sm = MockStateMachineRepo::new();
@@ -556,7 +558,7 @@ async fn bff_session_and_step_success() {
         .times(1)
         .return_once(move |_| Ok(Some(for_start)));
     sm.expect_get_instance()
-        .times(2)
+        .times(3)
         .returning(move |_| Ok(Some(session.clone())));
     sm.expect_update_instance_context()
         .times(1)
@@ -576,54 +578,56 @@ async fn bff_session_and_step_success() {
     );
 
     let start_resp = api
-        .internal_start_session(
+        .internal_create_kyc_session(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::InternalStartSessionRequest::new("usr_001".to_owned()),
+            &gen_oas_server_bff::models::CreateKycSessionRequest::new(
+                "usr_001".to_owned(),
+                gen_oas_server_bff::models::KycFlowType::PhoneOtp,
+            ),
         )
         .await
         .expect("start session");
     assert!(matches!(
         start_resp,
-        gen_oas_server_bff::apis::steps::InternalStartSessionResponse::Status201_Session(_)
+        gen_oas_server_bff::apis::sessions::InternalCreateKycSessionResponse::Status201_SessionCreatedOrResumed(_)
     ));
 
     let create_resp = api
-        .internal_create_step(
+        .internal_create_phone_otp_step(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::CreateStepRequest::new(
+            &gen_oas_server_bff::models::CreateCaseStepRequest::new(
                 "ins_otp_001".to_owned(),
                 "usr_001".to_owned(),
-                gen_oas_server_bff::models::StepType::Phone,
             ),
         )
         .await
         .expect("create step");
     assert!(matches!(
         create_resp,
-        gen_oas_server_bff::apis::steps::InternalCreateStepResponse::Status201_StepCreated(_)
+        gen_oas_server_bff::apis::phone_otp::InternalCreatePhoneOtpStepResponse::Status201_StepCreated(_)
     ));
 
     let get_resp = api
-        .internal_get_step(
+        .internal_get_kyc_step(
             &Method::GET,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::InternalGetStepPathParams {
-                step_id: "ins_otp_001__PHONE".to_owned(),
+            &gen_oas_server_bff::models::InternalGetKycStepPathParams {
+                step_id: "ins_otp_001__PHONE_OTP".to_owned(),
             },
         )
         .await
         .expect("get step");
     assert!(matches!(
         get_resp,
-        gen_oas_server_bff::apis::steps::InternalGetStepResponse::Status200_Step(_)
+        gen_oas_server_bff::apis::steps::InternalGetKycStepResponse::Status200_Step(_)
     ));
 }
 
@@ -634,7 +638,7 @@ async fn bff_issue_and_verify_otp_success() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_RUNNING,
         Some("usr_001"),
-        json!({}),
+        json!({"step_ids": ["ins_otp_002__PHONE_OTP"]}),
     );
     let otp_hash = hash_secret("123456").expect("otp hash");
 
@@ -732,13 +736,14 @@ async fn bff_issue_and_verify_otp_success() {
     );
 
     let issue_resp = api
-        .internal_issue_otp(
+        .internal_issue_phone_otp_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::IssueOtpRequest::new(
-                "ins_otp_002__PHONE".to_owned(),
+            &gen_oas_server_bff::models::IssuePhoneOtpRequest::new(
+                "ins_otp_002".to_owned(),
+                "ins_otp_002__PHONE_OTP".to_owned(),
                 "+491111111".to_owned(),
             ),
         )
@@ -746,17 +751,18 @@ async fn bff_issue_and_verify_otp_success() {
         .expect("issue otp");
     assert!(matches!(
         issue_resp,
-        gen_oas_server_bff::apis::notifications::InternalIssueOtpResponse::Status200_Challenge(_)
+        gen_oas_server_bff::apis::phone_otp::InternalIssuePhoneOtpChallengeResponse::Status200_OTPChallenge(_)
     ));
 
     let verify_resp = api
-        .internal_verify_otp(
+        .internal_verify_phone_otp_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::VerifyOtpInternalRequest::new(
-                "ins_otp_002__PHONE".to_owned(),
+            &gen_oas_server_bff::models::VerifyPhoneOtpRequest::new(
+                "ins_otp_002".to_owned(),
+                "ins_otp_002__PHONE_OTP".to_owned(),
                 "otp_ref_001".to_owned(),
                 "123456".to_owned(),
             ),
@@ -765,7 +771,7 @@ async fn bff_issue_and_verify_otp_success() {
         .expect("verify otp");
     assert!(matches!(
         verify_resp,
-        gen_oas_server_bff::apis::notifications::InternalVerifyOtpResponse::Status200_VerificationOutcome(_)
+        gen_oas_server_bff::apis::phone_otp::InternalVerifyPhoneOtpChallengeResponse::Status200_VerificationOutcome(_)
     ));
 }
 
@@ -776,7 +782,7 @@ async fn bff_magic_email_issue_success() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_RUNNING,
         Some("usr_001"),
-        json!({}),
+        json!({"step_ids": ["ins_otp_003__EMAIL_MAGIC"]}),
     );
     let created = sm_attempt_row(
         "att_magic",
@@ -819,13 +825,14 @@ async fn bff_magic_email_issue_success() {
     );
 
     let response = api
-        .internal_issue_magic_email(
+        .internal_issue_magic_email_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::IssueMagicEmailRequest::new(
-                "ins_otp_003__EMAIL".to_owned(),
+                "ins_otp_003".to_owned(),
+                "ins_otp_003__EMAIL_MAGIC".to_owned(),
                 "alice@example.test".to_owned(),
             ),
         )
@@ -833,7 +840,7 @@ async fn bff_magic_email_issue_success() {
         .expect("issue magic");
     assert!(matches!(
         response,
-        gen_oas_server_bff::apis::notifications::InternalIssueMagicEmailResponse::Status200_Challenge(_)
+        gen_oas_server_bff::apis::email_magic::InternalIssueMagicEmailChallengeResponse::Status200_MagicEmailChallenge(_)
     ));
 }
 
@@ -857,11 +864,11 @@ async fn bff_magic_email_verify_success() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_RUNNING,
         Some("usr_001"),
-        json!({}),
+        json!({"step_ids": ["ins_otp_004__EMAIL_MAGIC"]}),
     );
 
     let mut sm = MockStateMachineRepo::new();
-    sm.expect_get_instance_by_idempotency_key()
+    sm.expect_get_instance()
         .times(1)
         .return_once(move |_| Ok(Some(session)));
     sm.expect_get_step_attempt_by_external_ref()
@@ -879,12 +886,14 @@ async fn bff_magic_email_verify_success() {
     );
 
     let response = api
-        .internal_verify_magic_email(
+        .internal_verify_magic_email_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::VerifyMagicEmailRequest::new(
+                "ins_otp_004".to_owned(),
+                "ins_otp_004__EMAIL_MAGIC".to_owned(),
                 "magic_ref_002.very-secret".to_owned(),
             ),
         )
@@ -892,13 +901,14 @@ async fn bff_magic_email_verify_success() {
         .expect("verify magic");
     assert!(matches!(
         response,
-        gen_oas_server_bff::apis::notifications::InternalVerifyMagicEmailResponse::Status200_Outcome(_)
+        gen_oas_server_bff::apis::email_magic::InternalVerifyMagicEmailChallengeResponse::Status200_VerificationOutcome(_)
     ));
 }
 
 #[tokio::test]
 async fn bff_phone_deposit_create_and_get_success() {
     let context = json!({
+        "step_ids": ["dep_001__PHONE_DEPOSIT"],
         "deposit": {
             "status": "CONTACT_PROVIDED",
             "amount": 1250.0,
@@ -920,19 +930,9 @@ async fn bff_phone_deposit_create_and_get_success() {
     );
 
     let mut sm = MockStateMachineRepo::new();
-    sm.expect_select_deposit_staff_contact()
-        .times(1)
-        .return_once(|_| {
-            Ok((
-                "usr_staff".to_owned(),
-                "Staff One".to_owned(),
-                "+490000".to_owned(),
-            ))
-        });
-    let for_create = instance.clone();
-    sm.expect_get_instance_by_idempotency_key()
-        .times(1)
-        .return_once(move |_| Ok(Some(for_create)));
+    sm.expect_get_instance()
+        .times(2)
+        .returning(move |_| Ok(Some(instance.clone())));
     sm.expect_get_latest_step_attempt()
         .times(1)
         .return_once(|_, _| {
@@ -946,10 +946,6 @@ async fn bff_phone_deposit_create_and_get_success() {
                 None,
             )))
         });
-    sm.expect_get_instance()
-        .times(1)
-        .return_once(move |_| Ok(Some(instance)));
-
     let api = build_api(
         sm,
         MockUserRepo::new(),
@@ -961,12 +957,13 @@ async fn bff_phone_deposit_create_and_get_success() {
     );
 
     let create_resp = api
-        .internal_create_phone_deposit(
+        .internal_create_phone_deposit_request(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::CreatePhoneDepositRequest::new(
+                "dep_001".to_owned(),
                 "usr_001".to_owned(),
                 1250.0,
                 "XAF".to_owned(),
@@ -976,29 +973,42 @@ async fn bff_phone_deposit_create_and_get_success() {
         .expect("create deposit");
     assert!(matches!(
         create_resp,
-        gen_oas_server_bff::apis::deposits::InternalCreatePhoneDepositResponse::Status201_DepositRequestCreated(_)
+        gen_oas_server_bff::apis::deposits::InternalCreatePhoneDepositRequestResponse::Status201_DepositRequestCreated(_)
     ));
 
     let get_resp = api
-        .internal_get_phone_deposit(
+        .internal_get_phone_deposit_request(
             &Method::GET,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::InternalGetPhoneDepositPathParams {
-                deposit_id: "dep_001".to_owned(),
+            &gen_oas_server_bff::models::InternalGetPhoneDepositRequestPathParams {
+                deposit_request_id: "dep_001".to_owned(),
             },
         )
         .await
         .expect("get deposit");
     assert!(matches!(
         get_resp,
-        gen_oas_server_bff::apis::deposits::InternalGetPhoneDepositResponse::Status200_DepositRequest(_)
+        gen_oas_server_bff::apis::deposits::InternalGetPhoneDepositRequestResponse::Status200_DepositRequest(_)
     ));
 }
 
 #[tokio::test]
 async fn bff_upload_presign_and_complete_success() {
+    let session = sm_instance_row(
+        "ins_otp_001",
+        KIND_KYC_PHONE_OTP,
+        INSTANCE_STATUS_RUNNING,
+        Some("usr_001"),
+        json!({"step_ids": ["ins_otp_001__PHONE_OTP"]}),
+    );
+
+    let mut sm = MockStateMachineRepo::new();
+    sm.expect_get_instance()
+        .times(2)
+        .returning(move |_| Ok(Some(session.clone())));
+
     let mut minio = MockMinioStorage::new();
     minio
         .expect_upload_presigned()
@@ -1018,7 +1028,7 @@ async fn bff_upload_presign_and_complete_success() {
         .return_once(|_, _| Ok(()));
 
     let api = build_api(
-        MockStateMachineRepo::new(),
+        sm,
         MockUserRepo::new(),
         MockDeviceRepo::new(),
         MockStateMachineQueue::new(),
@@ -1034,7 +1044,8 @@ async fn bff_upload_presign_and_complete_success() {
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::InternalPresignRequest::new(
-                "ins_otp_001__PHONE".to_owned(),
+                "ins_otp_001".to_owned(),
+                "ins_otp_001__PHONE_OTP".to_owned(),
                 "usr_001".to_owned(),
                 gen_oas_server_bff::models::InternalUploadPurpose::KycIdentity,
                 gen_oas_server_bff::models::IdentityAssetType::IdFront,
@@ -1046,7 +1057,7 @@ async fn bff_upload_presign_and_complete_success() {
         .expect("presign upload");
     assert!(matches!(
         presign_resp,
-        gen_oas_server_bff::apis::uploads::InternalPresignUploadResponse::Status200_PresignResponse(
+        gen_oas_server_bff::apis::uploads::InternalPresignUploadResponse::Status200_PresignedUploadResponse(
             _
         )
     ));
@@ -1058,6 +1069,8 @@ async fn bff_upload_presign_and_complete_success() {
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::InternalCompleteUploadRequest::new(
+                "ins_otp_001".to_owned(),
+                "ins_otp_001__PHONE_OTP".to_owned(),
                 "upl_001".to_owned(),
                 "kyc-bucket".to_owned(),
                 "uploads/usr_001/upl_001".to_owned(),
@@ -1494,12 +1507,15 @@ async fn bff_start_session_user_mismatch_is_unauthorized() {
         None,
     );
     let error = api
-        .internal_start_session(
+        .internal_create_kyc_session(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_auth"),
-            &gen_oas_server_bff::models::InternalStartSessionRequest::new("usr_other".to_owned()),
+            &gen_oas_server_bff::models::CreateKycSessionRequest::new(
+                "usr_other".to_owned(),
+                gen_oas_server_bff::models::KycFlowType::PhoneOtp,
+            ),
         )
         .await
         .expect_err("expected unauthorized");
@@ -1521,15 +1537,14 @@ async fn bff_create_step_session_not_found() {
         None,
     );
     let error = api
-        .internal_create_step(
+        .internal_create_phone_otp_step(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::CreateStepRequest::new(
+            &gen_oas_server_bff::models::CreateCaseStepRequest::new(
                 "ins_missing".to_owned(),
                 "usr_001".to_owned(),
-                gen_oas_server_bff::models::StepType::Phone,
             ),
         )
         .await
@@ -1538,7 +1553,7 @@ async fn bff_create_step_session_not_found() {
 }
 
 #[tokio::test]
-async fn bff_create_step_address_success() {
+async fn bff_create_email_step_success() {
     let session = sm_instance_row(
         "ins_otp_005",
         KIND_KYC_PHONE_OTP,
@@ -1567,22 +1582,21 @@ async fn bff_create_step_address_success() {
         None,
     );
     let response = api
-        .internal_create_step(
+        .internal_create_email_magic_step(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::CreateStepRequest::new(
+            &gen_oas_server_bff::models::CreateCaseStepRequest::new(
                 "ins_otp_005".to_owned(),
                 "usr_001".to_owned(),
-                gen_oas_server_bff::models::StepType::Address,
             ),
         )
         .await
-        .expect("expected address step to be created");
+        .expect("expected email step to be created");
     assert!(matches!(
         response,
-        gen_oas_server_bff::apis::steps::InternalCreateStepResponse::Status201_StepCreated(_)
+        gen_oas_server_bff::apis::email_magic::InternalCreateEmailMagicStepResponse::Status201_StepCreated(_)
     ));
 }
 
@@ -1598,12 +1612,12 @@ async fn bff_get_step_invalid_step_id() {
         None,
     );
     let error = api
-        .internal_get_step(
+        .internal_get_kyc_step(
             &Method::GET,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::InternalGetStepPathParams {
+            &gen_oas_server_bff::models::InternalGetKycStepPathParams {
                 step_id: "bad-format".to_owned(),
             },
         )
@@ -1619,7 +1633,7 @@ async fn bff_issue_otp_rate_limited() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_RUNNING,
         Some("usr_001"),
-        json!({}),
+        json!({"step_ids": ["ins_otp_006__PHONE_OTP"]}),
     );
     let recent_attempt = sm_attempt_row(
         "att_rate",
@@ -1650,13 +1664,14 @@ async fn bff_issue_otp_rate_limited() {
     );
 
     let error = api
-        .internal_issue_otp(
+        .internal_issue_phone_otp_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::IssueOtpRequest::new(
-                "ins_otp_006__PHONE".to_owned(),
+            &gen_oas_server_bff::models::IssuePhoneOtpRequest::new(
+                "ins_otp_006".to_owned(),
+                "ins_otp_006__PHONE_OTP".to_owned(),
                 "+49111111".to_owned(),
             ),
         )
@@ -1672,7 +1687,7 @@ async fn bff_verify_otp_missing_attempt_returns_invalid_outcome() {
         KIND_KYC_PHONE_OTP,
         INSTANCE_STATUS_RUNNING,
         Some("usr_001"),
-        json!({}),
+        json!({"step_ids": ["ins_otp_007__PHONE_OTP"]}),
     );
     let mut sm = MockStateMachineRepo::new();
     sm.expect_get_instance()
@@ -1692,13 +1707,14 @@ async fn bff_verify_otp_missing_attempt_returns_invalid_outcome() {
         None,
     );
     let response = api
-        .internal_verify_otp(
+        .internal_verify_phone_otp_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::VerifyOtpInternalRequest::new(
-                "ins_otp_007__PHONE".to_owned(),
+            &gen_oas_server_bff::models::VerifyPhoneOtpRequest::new(
+                "ins_otp_007".to_owned(),
+                "ins_otp_007__PHONE_OTP".to_owned(),
                 "missing_ref".to_owned(),
                 "000000".to_owned(),
             ),
@@ -1707,14 +1723,26 @@ async fn bff_verify_otp_missing_attempt_returns_invalid_outcome() {
         .expect("verify otp response");
     assert!(matches!(
         response,
-        gen_oas_server_bff::apis::notifications::InternalVerifyOtpResponse::Status200_VerificationOutcome(_)
+        gen_oas_server_bff::apis::phone_otp::InternalVerifyPhoneOtpChallengeResponse::Status200_VerificationOutcome(_)
     ));
 }
 
 #[tokio::test]
 async fn bff_magic_verify_invalid_token_returns_failed_outcome() {
+    let session = sm_instance_row(
+        "ins_otp_008",
+        KIND_KYC_PHONE_OTP,
+        INSTANCE_STATUS_RUNNING,
+        Some("usr_001"),
+        json!({"step_ids": ["ins_otp_008__EMAIL_MAGIC"]}),
+    );
+    let mut sm = MockStateMachineRepo::new();
+    sm.expect_get_instance()
+        .times(1)
+        .return_once(move |_| Ok(Some(session)));
+
     let api = build_api(
-        MockStateMachineRepo::new(),
+        sm,
         MockUserRepo::new(),
         MockDeviceRepo::new(),
         MockStateMachineQueue::new(),
@@ -1723,12 +1751,14 @@ async fn bff_magic_verify_invalid_token_returns_failed_outcome() {
         None,
     );
     let response = api
-        .internal_verify_magic_email(
+        .internal_verify_magic_email_challenge(
             &Method::POST,
             &host(),
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::VerifyMagicEmailRequest::new(
+                "ins_otp_008".to_owned(),
+                "ins_otp_008__EMAIL_MAGIC".to_owned(),
                 "invalid-token-without-dot".to_owned(),
             ),
         )
@@ -1736,7 +1766,7 @@ async fn bff_magic_verify_invalid_token_returns_failed_outcome() {
         .expect("verify magic response");
     assert!(matches!(
         response,
-        gen_oas_server_bff::apis::notifications::InternalVerifyMagicEmailResponse::Status200_Outcome(_)
+        gen_oas_server_bff::apis::email_magic::InternalVerifyMagicEmailChallengeResponse::Status200_VerificationOutcome(_)
     ));
 }
 
@@ -1755,13 +1785,13 @@ async fn bff_get_phone_deposit_not_found() {
         None,
     );
     let error = api
-        .internal_get_phone_deposit(
+        .internal_get_phone_deposit_request(
             &Method::GET,
             &host(),
             &cookies(),
             &claims("usr_001"),
-            &gen_oas_server_bff::models::InternalGetPhoneDepositPathParams {
-                deposit_id: "dep_missing".to_owned(),
+            &gen_oas_server_bff::models::InternalGetPhoneDepositRequestPathParams {
+                deposit_request_id: "dep_missing".to_owned(),
             },
         )
         .await
@@ -1788,6 +1818,7 @@ async fn bff_presign_upload_user_mismatch() {
             &claims("usr_auth"),
             &gen_oas_server_bff::models::InternalPresignRequest::new(
                 "ins__PHONE".to_owned(),
+                "ins__PHONE__PHONE_OTP".to_owned(),
                 "usr_other".to_owned(),
                 gen_oas_server_bff::models::InternalUploadPurpose::KycIdentity,
                 gen_oas_server_bff::models::IdentityAssetType::IdBack,
@@ -1802,8 +1833,20 @@ async fn bff_presign_upload_user_mismatch() {
 
 #[tokio::test]
 async fn bff_presign_upload_without_storage_config_fails() {
+    let session = sm_instance_row(
+        "ins_otp_009",
+        KIND_KYC_PHONE_OTP,
+        INSTANCE_STATUS_RUNNING,
+        Some("usr_001"),
+        json!({"step_ids": ["ins_otp_009__PHONE_OTP"]}),
+    );
+    let mut sm = MockStateMachineRepo::new();
+    sm.expect_get_instance()
+        .times(1)
+        .return_once(move |_| Ok(Some(session)));
+
     let api = build_api(
-        MockStateMachineRepo::new(),
+        sm,
         MockUserRepo::new(),
         MockDeviceRepo::new(),
         MockStateMachineQueue::new(),
@@ -1818,7 +1861,8 @@ async fn bff_presign_upload_without_storage_config_fails() {
             &cookies(),
             &claims("usr_001"),
             &gen_oas_server_bff::models::InternalPresignRequest::new(
-                "ins__PHONE".to_owned(),
+                "ins_otp_009".to_owned(),
+                "ins_otp_009__PHONE_OTP".to_owned(),
                 "usr_001".to_owned(),
                 gen_oas_server_bff::models::InternalUploadPurpose::KycIdentity,
                 gen_oas_server_bff::models::IdentityAssetType::SelfieCloseup,

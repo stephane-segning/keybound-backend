@@ -237,12 +237,29 @@ async fn scenario_auth_disabled_bypass(client: &reqwest::Client, env: &Env) -> R
     let user_id = "usr_auth_disabled";
     ensure_bff_fixtures(&env.database_url, user_id).await?;
 
+    let session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/bff/internal/kyc/sessions", base_url),
+        None,
+        Some(json!({
+            "userId": user_id,
+            "flow": "FIRST_DEPOSIT"
+        })),
+    )
+    .await?;
+    assert_ne!(session.status, 401, "{}", session.text);
+    let session_id = require_json_field(&session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("session id must be a string"))?;
+
     let bff_no_auth = send_json(
         client,
         Method::POST,
-        &format!("{}/bff/internal/deposits/phone", base_url),
+        &format!("{}/bff/internal/kyc/deposits/phone/requests", base_url),
         None,
         Some(json!({
+            "sessionId": session_id,
             "userId": user_id,
             "amount": 1000,
             "currency": "XAF",
@@ -445,41 +462,32 @@ async fn scenario_auth_enforcement(client: &reqwest::Client, env: &Env) -> Resul
     let staff_base = format!("{}/staff", env.user_storage_url);
 
     let no_auth = client
-        .post(format!("{}/internal/deposits/phone", bff_base))
+        .post(format!("{}/internal/kyc/sessions", bff_base))
         .json(&json!({
             "userId": "usr_auth_probe",
-            "amount": 100,
-            "currency": "XAF",
-            "provider": "MTN_CM",
-            "reason": "auth probe"
+            "flow": "PHONE_OTP"
         }))
         .send()
         .await?;
     assert_eq!(no_auth.status().as_u16(), 401);
 
     let non_bearer = client
-        .post(format!("{}/internal/deposits/phone", bff_base))
+        .post(format!("{}/internal/kyc/sessions", bff_base))
         .header("Authorization", "Basic dGVzdDp0ZXN0")
         .json(&json!({
             "userId": "usr_auth_probe",
-            "amount": 100,
-            "currency": "XAF",
-            "provider": "MTN_CM",
-            "reason": "auth probe"
+            "flow": "PHONE_OTP"
         }))
         .send()
         .await?;
     assert_eq!(non_bearer.status().as_u16(), 401);
 
     let invalid = client
-        .post(format!("{}/internal/deposits/phone", bff_base))
+        .post(format!("{}/internal/kyc/sessions", bff_base))
         .header("Authorization", "Bearer definitely-invalid-token")
         .json(&json!({
             "userId": "usr_auth_probe",
-            "amount": 100,
-            "currency": "XAF",
-            "provider": "MTN_CM",
-            "reason": "auth probe"
+            "flow": "PHONE_OTP"
         }))
         .send()
         .await?;
@@ -495,14 +503,11 @@ async fn scenario_auth_enforcement(client: &reqwest::Client, env: &Env) -> Resul
     ensure_bff_fixtures(&env.database_url, &subject).await?;
 
     let valid = client
-        .post(format!("{}/internal/deposits/phone", bff_base))
+        .post(format!("{}/internal/kyc/sessions", bff_base))
         .header("Authorization", format!("Bearer {token}"))
         .json(&json!({
             "userId": subject,
-            "amount": 100,
-            "currency": "XAF",
-            "provider": "MTN_CM",
-            "reason": "auth probe"
+            "flow": "PHONE_OTP"
         }))
         .send()
         .await?;
@@ -519,12 +524,27 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     let bff_base = format!("{}/bff", env.user_storage_url);
     let staff_base = format!("{}/staff", env.user_storage_url);
 
+    let deposit_session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({ "userId": subject.clone(), "flow": "FIRST_DEPOSIT" })),
+    )
+    .await?;
+    assert_eq!(deposit_session.status, 201, "{}", deposit_session.text);
+    let deposit_session_id = require_json_field(&deposit_session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("deposit session id must be a string"))?
+        .to_owned();
+
     let deposit_response = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/deposits/phone", bff_base),
+        &format!("{}/internal/kyc/deposits/phone/requests", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": deposit_session_id,
             "userId": subject.clone(),
             "amount": 150000,
             "currency": "XAF",
@@ -535,14 +555,17 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     .await?;
     assert_eq!(deposit_response.status, 201, "{}", deposit_response.text);
 
-    let deposit_id = require_json_field(&deposit_response.body, "depositId")?
+    let deposit_id = require_json_field(&deposit_response.body, "depositRequestId")?
         .as_str()
-        .ok_or_else(|| anyhow!("depositId must be a string"))?;
+        .ok_or_else(|| anyhow!("depositRequestId must be a string"))?;
 
     let lookup = send_json(
         client,
         Method::GET,
-        &format!("{}/internal/deposits/{}", bff_base, deposit_id),
+        &format!(
+            "{}/internal/kyc/deposits/phone/requests/{}",
+            bff_base, deposit_id
+        ),
         Some(&token),
         None,
     )
@@ -562,7 +585,7 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
@@ -574,12 +597,11 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     let step = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
+        &format!("{}/internal/kyc/phone-otp/steps", bff_base),
         Some(&token),
         Some(json!({
             "sessionId": session_id,
             "userId": subject,
-            "type": "PHONE",
             "policy": {}
         })),
     )
@@ -611,9 +633,10 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     let issue = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/issue", bff_base),
+        &format!("{}/internal/kyc/phone-otp/challenges", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": step_id,
             "msisdn": "+237690000033",
             "channel": "SMS",
@@ -667,9 +690,10 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     let wrong_verify = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/verify", bff_base),
+        &format!("{}/internal/kyc/phone-otp/verifications", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": step_id,
             "otpRef": otp_ref,
             "code": wrong_code
@@ -724,9 +748,10 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
     let verify = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/verify", bff_base),
+        &format!("{}/internal/kyc/phone-otp/verifications", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": step_id,
             "otpRef": otp_ref,
             "code": otp
@@ -785,13 +810,27 @@ async fn scenario_bff_deposit_expiry_behavior(client: &reqwest::Client, env: &En
     ensure_bff_fixtures(&env.database_url, &subject).await?;
 
     let bff_base = format!("{}/bff", env.user_storage_url);
+    let deposit_session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({ "userId": subject.clone(), "flow": "FIRST_DEPOSIT" })),
+    )
+    .await?;
+    assert_eq!(deposit_session.status, 201, "{}", deposit_session.text);
+    let deposit_session_id = require_json_field(&deposit_session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("deposit session id must be a string"))?
+        .to_owned();
 
     let created = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/deposits/phone", bff_base),
+        &format!("{}/internal/kyc/deposits/phone/requests", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": deposit_session_id,
             "userId": subject,
             "amount": 4200,
             "currency": "XAF",
@@ -801,9 +840,9 @@ async fn scenario_bff_deposit_expiry_behavior(client: &reqwest::Client, env: &En
     )
     .await?;
     assert_eq!(created.status, 201, "{}", created.text);
-    let deposit_id = require_json_field(&created.body, "depositId")?
+    let deposit_id = require_json_field(&created.body, "depositRequestId")?
         .as_str()
-        .ok_or_else(|| anyhow!("depositId must be a string"))?
+        .ok_or_else(|| anyhow!("depositRequestId must be a string"))?
         .to_owned();
 
     force_deposit_expiry(
@@ -816,7 +855,10 @@ async fn scenario_bff_deposit_expiry_behavior(client: &reqwest::Client, env: &En
     let fetched = send_json(
         client,
         Method::GET,
-        &format!("{}/internal/deposits/{}", bff_base, deposit_id),
+        &format!(
+            "{}/internal/kyc/deposits/phone/requests/{}",
+            bff_base, deposit_id
+        ),
         Some(&token),
         None,
     )
@@ -849,7 +891,7 @@ async fn scenario_bff_session_resume_and_otp_limits(
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session_one.status, 201, "{}", session_one.text);
@@ -863,7 +905,7 @@ async fn scenario_bff_session_resume_and_otp_limits(
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session_two.status, 201, "{}", session_two.text);
@@ -879,12 +921,11 @@ async fn scenario_bff_session_resume_and_otp_limits(
     let phone_step = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
+        &format!("{}/internal/kyc/phone-otp/steps", bff_base),
         Some(&token),
         Some(json!({
             "sessionId": session_id_one,
             "userId": subject,
-            "type": "PHONE",
             "policy": {}
         })),
     )
@@ -898,12 +939,11 @@ async fn scenario_bff_session_resume_and_otp_limits(
     let email_step = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
+        &format!("{}/internal/kyc/email-magic/steps", bff_base),
         Some(&token),
         Some(json!({
             "sessionId": session_id_two,
             "userId": subject,
-            "type": "EMAIL",
             "policy": {}
         })),
     )
@@ -914,54 +954,8 @@ async fn scenario_bff_session_resume_and_otp_limits(
         .ok_or_else(|| anyhow!("email step id must be a string"))?
         .to_owned();
     assert!(
-        email_step_id.ends_with("__EMAIL"),
+        email_step_id.ends_with("__EMAIL_MAGIC"),
         "expected deterministic EMAIL step id"
-    );
-
-    let address_step = send_json(
-        client,
-        Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
-        Some(&token),
-        Some(json!({
-            "sessionId": session_id_two,
-            "userId": subject,
-            "type": "ADDRESS",
-            "policy": {}
-        })),
-    )
-    .await?;
-    assert_eq!(address_step.status, 201, "{}", address_step.text);
-    let address_step_id = require_json_field(&address_step.body, "id")?
-        .as_str()
-        .ok_or_else(|| anyhow!("address step id must be a string"))?
-        .to_owned();
-    assert!(
-        address_step_id.ends_with("__ADDRESS"),
-        "expected deterministic ADDRESS step id"
-    );
-
-    let identity_step = send_json(
-        client,
-        Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
-        Some(&token),
-        Some(json!({
-            "sessionId": session_id_two,
-            "userId": subject,
-            "type": "IDENTITY",
-            "policy": {}
-        })),
-    )
-    .await?;
-    assert_eq!(identity_step.status, 201, "{}", identity_step.text);
-    let identity_step_id = require_json_field(&identity_step.body, "id")?
-        .as_str()
-        .ok_or_else(|| anyhow!("identity step id must be a string"))?
-        .to_owned();
-    assert!(
-        identity_step_id.ends_with("__IDENTITY"),
-        "expected deterministic IDENTITY step id"
     );
 
     let mut last_otp_ref = String::new();
@@ -969,9 +963,10 @@ async fn scenario_bff_session_resume_and_otp_limits(
         let issue = send_json(
             client,
             Method::POST,
-            &format!("{}/internal/kyc/phone/otp/issue", bff_base),
+            &format!("{}/internal/kyc/phone-otp/challenges", bff_base),
             Some(&token),
             Some(json!({
+                "sessionId": session_id_one,
                 "stepId": phone_step_id,
                 "msisdn": "+237690000077",
                 "channel": "SMS",
@@ -995,9 +990,10 @@ async fn scenario_bff_session_resume_and_otp_limits(
     let limited = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/issue", bff_base),
+        &format!("{}/internal/kyc/phone-otp/challenges", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id_one,
             "stepId": phone_step_id,
             "msisdn": "+237690000077",
             "channel": "SMS",
@@ -1021,9 +1017,10 @@ async fn scenario_bff_session_resume_and_otp_limits(
     let expired = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/verify", bff_base),
+        &format!("{}/internal/kyc/phone-otp/verifications", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id_one,
             "stepId": phone_step_id,
             "otpRef": last_otp_ref,
             "code": otp
@@ -1069,7 +1066,7 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
@@ -1081,12 +1078,11 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let email_step = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
+        &format!("{}/internal/kyc/email-magic/steps", bff_base),
         Some(&token),
         Some(json!({
             "sessionId": session_id,
             "userId": subject,
-            "type": "EMAIL",
             "policy": {}
         })),
     )
@@ -1100,9 +1096,10 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let issue_magic = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/email/magic/issue", bff_base),
+        &format!("{}/internal/kyc/email-magic/challenges", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": email_step_id,
             "email": "e2e-magic@example.com",
             "ttlSeconds": 120
@@ -1117,9 +1114,11 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let invalid_magic = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/email/magic/verify", bff_base),
+        &format!("{}/internal/kyc/email-magic/verifications", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
+            "stepId": email_step_id,
             "token": format!("{token_ref}.invalid-secret")
         })),
     )
@@ -1157,9 +1156,11 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let valid_magic = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/email/magic/verify", bff_base),
+        &format!("{}/internal/kyc/email-magic/verifications", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
+            "stepId": email_step_id,
             "token": format!("{known_token_ref}.{known_secret}")
         })),
     )
@@ -1193,9 +1194,10 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let presign = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/uploads/presign", bff_base),
+        &format!("{}/internal/kyc/uploads/presign", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": email_step_id,
             "userId": subject,
             "purpose": "KYC_IDENTITY",
@@ -1221,7 +1223,7 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
         .ok_or_else(|| anyhow!("url must be a string"))?;
     let (upload_url, host_override) = if upload_url.contains("://minio:9000") {
         (
-            upload_url.replace("://minio:9000", "://127.0.0.1:9000"),
+            upload_url.replace("://minio:9000", "://127.0.0.1:19000"),
             Some("minio:9000"),
         )
     } else {
@@ -1269,9 +1271,11 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let complete = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/uploads/complete", bff_base),
+        &format!("{}/internal/kyc/uploads/complete", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
+            "stepId": email_step_id,
             "uploadId": upload_id,
             "bucket": bucket,
             "objectKey": object_key
@@ -1286,9 +1290,11 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
     let invalid_complete = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/uploads/complete", bff_base),
+        &format!("{}/internal/kyc/uploads/complete", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": session_id,
+            "stepId": email_step_id,
             "uploadId": "upl_invalid_e2e",
             "bucket": bucket,
             "objectKey": format!("{object_key}.missing")
@@ -1319,7 +1325,10 @@ async fn scenario_bff_deposit_denies_non_owner(client: &reqwest::Client, env: &E
     let lookup = send_json(
         client,
         Method::GET,
-        &format!("{}/internal/deposits/{}", bff_base, foreign_deposit_id),
+        &format!(
+            "{}/internal/kyc/deposits/phone/requests/{}",
+            bff_base, foreign_deposit_id
+        ),
         Some(&token),
         None,
     )
@@ -1436,12 +1445,27 @@ async fn scenario_staff_summary_and_instances(client: &reqwest::Client, env: &En
     let bff_base = format!("{}/bff", env.user_storage_url);
     let staff_base = format!("{}/staff", env.user_storage_url);
 
+    let deposit_session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({ "userId": subject.clone(), "flow": "FIRST_DEPOSIT" })),
+    )
+    .await?;
+    assert_eq!(deposit_session.status, 201, "{}", deposit_session.text);
+    let deposit_session_id = require_json_field(&deposit_session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("deposit session id must be a string"))?
+        .to_owned();
+
     let deposit = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/deposits/phone", bff_base),
+        &format!("{}/internal/kyc/deposits/phone/requests", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": deposit_session_id,
             "userId": subject.clone(),
             "amount": 1200,
             "currency": "XAF",
@@ -1582,12 +1606,27 @@ async fn scenario_staff_deposit_flow_triggers_worker_and_cuss(
     .await?;
     assert_eq!(reset.status, 200, "{}", reset.text);
 
+    let deposit_session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({ "userId": subject.clone(), "flow": "FIRST_DEPOSIT" })),
+    )
+    .await?;
+    assert_eq!(deposit_session.status, 201, "{}", deposit_session.text);
+    let deposit_session_id = require_json_field(&deposit_session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("deposit session id must be a string"))?
+        .to_owned();
+
     let deposit_response = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/deposits/phone", bff_base),
+        &format!("{}/internal/kyc/deposits/phone/requests", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": deposit_session_id,
             "userId": subject,
             "amount": 2500,
             "currency": "XAF",
@@ -1597,9 +1636,9 @@ async fn scenario_staff_deposit_flow_triggers_worker_and_cuss(
     )
     .await?;
     assert_eq!(deposit_response.status, 201, "{}", deposit_response.text);
-    let instance_id = require_json_field(&deposit_response.body, "depositId")?
+    let instance_id = require_json_field(&deposit_response.body, "depositRequestId")?
         .as_str()
-        .ok_or_else(|| anyhow!("depositId must be a string"))?;
+        .ok_or_else(|| anyhow!("depositRequestId must be a string"))?;
 
     let confirm = send_json(
         client,
@@ -1721,7 +1760,7 @@ async fn create_phone_step_and_issue_otp(
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
@@ -1733,12 +1772,11 @@ async fn create_phone_step_and_issue_otp(
     let step = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/steps", bff_base),
+        &format!("{}/internal/kyc/phone-otp/steps", bff_base),
         Some(token),
         Some(json!({
             "sessionId": session_id,
             "userId": subject,
-            "type": "PHONE",
             "policy": {}
         })),
     )
@@ -1752,9 +1790,10 @@ async fn create_phone_step_and_issue_otp(
     let issue = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/issue", bff_base),
+        &format!("{}/internal/kyc/phone-otp/challenges", bff_base),
         Some(token),
         Some(json!({
+            "sessionId": session_id,
             "stepId": step_id,
             "msisdn": msisdn,
             "channel": "SMS",
@@ -1811,6 +1850,41 @@ async fn force_deposit_expiry(
         )
         .await
         .map_err(|error| anyhow!("failed to force deposit expiry: {error}"))?;
+
+    Ok(())
+}
+
+async fn register_step_id_in_context(
+    database_url: &str,
+    instance_id: &str,
+    step_id: &str,
+) -> Result<()> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls)
+        .await
+        .map_err(|error| anyhow!("failed to connect to postgres: {error}"))?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("postgres connection task failed: {error}");
+        }
+    });
+
+    client
+        .execute(
+            r#"
+            UPDATE sm_instance
+            SET context = jsonb_set(
+                COALESCE(context, '{}'::jsonb),
+                '{step_ids}',
+                to_jsonb(ARRAY[$2]::text[]),
+                true
+            )
+            WHERE id = $1
+            "#,
+            &[&instance_id, &step_id],
+        )
+        .await
+        .map_err(|error| anyhow!("failed to register step id in context: {error}"))?;
 
     Ok(())
 }
@@ -2698,9 +2772,10 @@ async fn scenario_error_mapping_representative(client: &reqwest::Client, env: &E
     let bad_step_id = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/kyc/phone/otp/issue", bff_base),
+        &format!("{}/internal/kyc/phone-otp/challenges", bff_base),
         Some(&token),
         Some(json!({
+            "sessionId": "ins_invalid",
             "stepId": "invalid-step-id",
             "msisdn": "+237690000088"
         })),
@@ -2719,7 +2794,10 @@ async fn scenario_error_mapping_representative(client: &reqwest::Client, env: &E
     let missing_deposit = send_json(
         client,
         Method::GET,
-        &format!("{}/internal/deposits/missing-deposit", bff_base),
+        &format!(
+            "{}/internal/kyc/deposits/phone/requests/missing-deposit",
+            bff_base
+        ),
         Some(&token),
         None,
     )
@@ -2752,21 +2830,20 @@ async fn scenario_error_mapping_representative(client: &reqwest::Client, env: &E
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject })),
+        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
     let session_id = require_json_field(&session.body, "id")?
         .as_str()
         .ok_or_else(|| anyhow!("session id must be a string"))?;
+    let unsupported_step_id = format!("{session_id}__UNSUPPORTED_TYPE");
+    register_step_id_in_context(&env.database_url, session_id, &unsupported_step_id).await?;
 
     let internal_step_type = send_json(
         client,
         Method::GET,
-        &format!(
-            "{}/internal/kyc/steps/{}__UNSUPPORTED_TYPE",
-            bff_base, session_id
-        ),
+        &format!("{}/internal/kyc/steps/{}", bff_base, unsupported_step_id),
         Some(&token),
         None,
     )
@@ -2981,12 +3058,27 @@ async fn create_confirm_and_approve_deposit_instance(
 ) -> Result<String> {
     clear_first_deposit_instances(database_url, subject).await?;
 
+    let session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(token),
+        Some(json!({ "userId": subject, "flow": "FIRST_DEPOSIT" })),
+    )
+    .await?;
+    assert_eq!(session.status, 201, "{}", session.text);
+    let session_id = require_json_field(&session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("session id must be a string"))?
+        .to_owned();
+
     let deposit_response = send_json(
         client,
         Method::POST,
-        &format!("{}/internal/deposits/phone", bff_base),
+        &format!("{}/internal/kyc/deposits/phone/requests", bff_base),
         Some(token),
         Some(json!({
+            "sessionId": session_id,
             "userId": subject,
             "amount": 3600,
             "currency": "XAF",
@@ -2996,9 +3088,9 @@ async fn create_confirm_and_approve_deposit_instance(
     )
     .await?;
     assert_eq!(deposit_response.status, 201, "{}", deposit_response.text);
-    let instance_id = require_json_field(&deposit_response.body, "depositId")?
+    let instance_id = require_json_field(&deposit_response.body, "depositRequestId")?
         .as_str()
-        .ok_or_else(|| anyhow!("depositId must be a string"))?
+        .ok_or_else(|| anyhow!("depositRequestId must be a string"))?
         .to_owned();
 
     let confirm = send_json(
