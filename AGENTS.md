@@ -6,7 +6,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - BFF: `/bff/*`
 - Staff: `/staff/*`
 
-## Revamp Status (2026-03-04)
+## Revamp Status (2026-03-07)
 - Legacy KYC SQL tables (`kyc_*`, `phone_deposit`) are replaced by a generic persisted state-machine store:
   - `sm_instance`, `sm_event`, `sm_step_attempt`
 - Two KYC processes are implemented as state machines:
@@ -16,6 +16,9 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - OAS3 integration tests are implemented in `backend-server` under `app/crates/backend-server/src/api/it_tests.rs` and gated by the `it-tests` crate feature.
 - Local OAS integration test command is available via `just test-it`.
 - CI now runs both workspace tests and the OAS integration test suite.
+- BFF OpenAPI (`openapi/user-storage-bff.yaml`) is rewritten around case-scoped routes under `/internal/kyc/*`.
+- BFF handlers are split into flow modules under `app/crates/backend-server/src/api/bff/` to keep endpoint logic cohesive.
+- Session listing is available via `GET /internal/kyc/sessions` so callers can reuse active sessions per flow.
 - Compose E2E runner is Rust-based (`app/crates/backend-e2e`), replacing the previous TypeScript runner:
   - `just test-e2e-smoke` executes smoke scenarios.
   - `just test-e2e-full` executes full scenarios.
@@ -56,7 +59,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - Runtime is native `axum`, using `Router::nest` to mount each API surface under a configurable base path.
 - Layering is strict: `controller -> repository` (explicit service layer removed).
 - Controllers: `app/crates/backend-server/src/api/mod.rs` (and submodules)
-- API modules: `api/bff.rs`, `api/kc.rs`, `api/staff.rs`
+- API modules: `api/bff/mod.rs` (split by flow modules), `api/kc.rs`, `api/staff.rs`
 - Repository: `app/crates/backend-repository/src/pg/mod.rs` (and submodules)
   - State machines: `app/crates/backend-repository/src/pg/state_machine.rs`
 
@@ -226,6 +229,9 @@ Before finalizing:
 ## Docker & Build System
 - **Target**: `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`.
 - **Base Image**: `rust:1-alpine` for building, `gcr.io/distroless/static-debian12:nonroot` for execution.
+- **Dockerfiles**:
+  - `deploy/docker/user-storage/Dockerfile`: builder + runtime image (builds the MUSL binaries inside the container).
+  - `deploy/docker/user-storage/Dockerfile.runtime`: runtime-only image (expects prebuilt `backend` + `healthcheck` in the build context).
 - **Static Linking**:
     - OpenSSL is statically linked via `openssl = { version = "0.10", features = ["vendored"] }`.
     - libpq is statically linked via `diesel = { version = "2.3", features = ["postgres", ..., "pq-src"] }`.
@@ -233,14 +239,23 @@ Before finalizing:
 
 ## CI/CD (GitHub Actions)
 - Main workflow: `.github/workflows/ci.yaml`
-- Reusable actions:
-  - `.github/actions/setup-rust/action.yaml`
-  - `.github/actions/setup-docker/action.yaml`
-  - `.github/actions/check-cargo-change/action.yaml`
-- `tests` job runs:
-  - `cargo test --workspace --locked`
-  - `cargo test -p backend-server --features it-tests api::it_tests:: --locked`
-- Docker build context is repository root; Dockerfile at `deploy/docker/user-storage/Dockerfile`.
+- CI is structured as: parallel tests -> native per-arch MUSL binaries -> per-arch image builds -> manifest publish.
+- Tests:
+  - `test-workspace`: `cargo test --workspace --locked`
+  - `test-oas`: `cargo test -p backend-server --features it-tests api::it_tests:: --locked`
+- Caching:
+  - Uses `Swatinem/rust-cache@v2` on test/build jobs to cache `target/` and the Cargo registry.
+- MUSL binaries:
+  - `build-musl` matrix builds `x86_64-unknown-linux-musl` on an amd64 runner and `aarch64-unknown-linux-musl` on an arm64 runner.
+  - Outputs are uploaded as artifacts: `musl-binaries-amd64` and `musl-binaries-arm64`.
+  - Caveat: if the amd64 MUSL link step references `/usr/lib/x86_64-linux-gnu/libc.a` or `__gcc_personality_v0`, the build is accidentally pulling glibc libs. In that case, prefer building the binaries in the `deploy/docker/user-storage/Dockerfile` builder stage (Alpine + musl) and then packaging with `Dockerfile.runtime`.
+- Containers:
+  - Per-arch container builds use `deploy/docker/user-storage/Dockerfile.runtime` and the downloaded MUSL artifacts.
+  - Multi-arch tags are created via `docker buildx imagetools create` (manifest list assembly).
+  - QEMU is intentionally not used; builds run natively per architecture.
+- Version gating (master only):
+  - `cargo-version` compares `workspace.package.version` in `Cargo.toml` against the latest git tag (supports `vX.Y.Z` tags).
+  - Prod image publishing is gated on "workspace version != latest tag version".
 
 ## Work flavors
 Let's talk about all the rules we're having to work efficiently:
@@ -303,21 +318,41 @@ All backends:
 
 ### BFF KYC Sessions & Steps (Current)
 - **Endpoints (under the `/bff` surface)**:
+  - `GET /internal/kyc/sessions` (filter by `userId`, `flow`, `activeOnly`)
   - `POST /internal/kyc/sessions`
-  - `POST /internal/kyc/steps`
-- **Step IDs**: deterministic `"{sessionId}__{type}"` stored in the session `context.step_ids`.
-- **Supported `type` values**: `PHONE`, `EMAIL`, `ADDRESS` (as defined in `openapi/user-storage-bff.yaml`).
-- **Type enforcement happens at operation level**:
-  - OTP issue/verify expects `PHONE` step IDs.
-  - Magic email issue expects `EMAIL` step IDs.
-- **Error behavior**: there is no dedicated `STEP_TYPE_NOT_SUPPORTED` domain error today; unknown values fail request decoding/validation before reaching handlers.
+  - `GET /internal/kyc/sessions/{sessionId}`
+  - `POST /internal/kyc/phone-otp/steps`
+  - `POST /internal/kyc/email-magic/steps`
+  - `GET /internal/kyc/steps/{stepId}`
+- **Session create behavior**:
+  - Requires `flow` in request payload.
+  - Persists normalized `context.flow` and `context.step_ids`.
+  - Reuses active session via `ensure_active_instance` keying by `{kind}:{flow}:{userId}`.
+- **Step IDs**: deterministic `"{sessionId}__{stepType}"` stored in session `context.step_ids`.
+- **Flow-to-kind mapping**:
+  - `PHONE_OTP` and `EMAIL_MAGIC` map to `KYC_PHONE_OTP`.
+  - `FIRST_DEPOSIT` maps to `KYC_FIRST_DEPOSIT`.
+  - `ID_DOCUMENT` and `ADDRESS_PROOF` map to dedicated kinds for future extension.
+
+### KYC Challenges & Uploads (Current)
+- **Phone OTP**:
+  - `POST /internal/kyc/phone-otp/challenges`
+  - `POST /internal/kyc/phone-otp/verifications`
+- **Email magic**:
+  - `POST /internal/kyc/email-magic/challenges`
+  - `POST /internal/kyc/email-magic/verifications`
+- **Uploads**:
+  - `POST /internal/kyc/uploads/presign`
+  - `POST /internal/kyc/uploads/complete`
+- **Identity requirement**: challenge/verification/upload payloads carry both `sessionId` and `stepId`.
 
 ### Phone Deposit Requests (Current)
 - **Endpoints (under the `/bff` surface)**:
-  - `POST /internal/deposits/phone`
-  - `GET /internal/deposits/{depositId}`
-- **Persistence**: stored as a `KYC_FIRST_DEPOSIT` state-machine instance (JSON context + step attempts), not the legacy `phone_deposit` table.
-- **Ownership**: API enforces JWT user ownership at create/get time.
+  - `POST /internal/kyc/deposits/phone/requests`
+  - `GET /internal/kyc/deposits/phone/requests/{depositRequestId}`
+- **Session requirement**: create requires a `sessionId` that belongs to the caller and is a `FIRST_DEPOSIT` flow session.
+- **Persistence**: stored in `KYC_FIRST_DEPOSIT` state-machine context/attempts, not in a dedicated legacy table.
+- **Ownership**: API enforces JWT user ownership for create/get access.
 
 ### Background Worker for SMS Retries
 - **Description**: A background worker, powered by the `apalis` crate, handles the retrying of SMS messages.
