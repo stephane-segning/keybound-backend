@@ -181,20 +181,24 @@ jobs:
             cc_bin="musl-gcc"
             cxx_bin="g++"
             ar_bin="ar"
-            if command -v x86_64-linux-musl-gcc >/dev/null 2>&1; then
-              cc_bin="x86_64-linux-musl-gcc"
-            fi
             if command -v x86_64-linux-musl-g++ >/dev/null 2>&1; then
               cxx_bin="x86_64-linux-musl-g++"
             fi
             if command -v x86_64-linux-musl-ar >/dev/null 2>&1; then
               ar_bin="x86_64-linux-musl-ar"
             fi
+            musl_libdir="/usr/lib/x86_64-linux-musl"
+            rustflags="-Clink-arg=-lm -Clink-arg=-lgcc_eh"
+            if [ -d "${musl_libdir}" ]; then
+              rustflags="-Lnative=${musl_libdir} ${rustflags}"
+            fi
             echo "CC_x86_64_unknown_linux_musl=${cc_bin}" >> "$GITHUB_ENV"
             echo "CXX_x86_64_unknown_linux_musl=${cxx_bin}" >> "$GITHUB_ENV"
             echo "AR_x86_64_unknown_linux_musl=${ar_bin}" >> "$GITHUB_ENV"
             echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=${cc_bin}" >> "$GITHUB_ENV"
             echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_AR=${ar_bin}" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=${rustflags}" >> "$GITHUB_ENV"
+            echo "SELECTED_MUSL_LIBDIR=${musl_libdir}" >> "$GITHUB_ENV"
             echo "SELECTED_MUSL_LINKER=${cc_bin}" >> "$GITHUB_ENV"
           elif [ "${MUSL_TARGET}" = "aarch64-unknown-linux-musl" ]; then
             cc_bin="musl-gcc"
@@ -205,10 +209,17 @@ jobs:
             if command -v aarch64-linux-musl-ar >/dev/null 2>&1; then
               ar_bin="aarch64-linux-musl-ar"
             fi
+            musl_libdir="/usr/lib/aarch64-linux-musl"
+            rustflags="-Clink-arg=-lm -Clink-arg=-lgcc_eh"
+            if [ -d "${musl_libdir}" ]; then
+              rustflags="-Lnative=${musl_libdir} ${rustflags}"
+            fi
             echo "CC_aarch64_unknown_linux_musl=${cc_bin}" >> "$GITHUB_ENV"
             echo "AR_aarch64_unknown_linux_musl=${ar_bin}" >> "$GITHUB_ENV"
             echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=${cc_bin}" >> "$GITHUB_ENV"
             echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_AR=${ar_bin}" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=${rustflags}" >> "$GITHUB_ENV"
+            echo "SELECTED_MUSL_LIBDIR=${musl_libdir}" >> "$GITHUB_ENV"
             echo "SELECTED_MUSL_LINKER=${cc_bin}" >> "$GITHUB_ENV"
           fi
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
@@ -218,6 +229,7 @@ jobs:
           command -v x86_64-linux-musl-gcc || true
           command -v aarch64-linux-musl-gcc || true
           echo "selected linker: ${SELECTED_MUSL_LINKER:-unset}"
+          echo "selected musl libdir: ${SELECTED_MUSL_LIBDIR:-unset}"
       - name: Build backend + health (MUSL)
         id: build
         run: |
