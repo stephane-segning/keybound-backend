@@ -1,3 +1,9 @@
+//! Authentication middleware for HTTP requests.
+//!
+//! Provides middleware layers for:
+//! - JWT token verification using JWKS from OIDC provider
+//! - Keycloak signature verification for KC API surface
+
 use crate::oidc_state::OidcState;
 use crate::signature_principal::SignatureState;
 use axum::body::{Body, to_bytes};
@@ -13,6 +19,8 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use tracing::error;
 
+/// Validates Keycloak signature on incoming requests.
+/// Returns the request if valid, or an error response if signature is invalid or missing.
 pub async fn require_kc_signature(
     enabled: bool,
     state: &SignatureState,
@@ -46,10 +54,12 @@ pub fn kc_signature_layer(enabled: bool, state: Arc<SignatureState>) -> KcSignat
     KcSignatureLayer::new(enabled, state)
 }
 
+/// Creates a new JWKS authentication layer for the given OIDC state and base paths.
 pub fn jwks_auth_layer(oidc_state: Arc<OidcState>, base_paths: Vec<String>) -> JwksAuthLayer {
     JwksAuthLayer::new(oidc_state, base_paths)
 }
 
+/// Tower middleware layer for JWT authentication using JWKS.
 #[derive(Clone)]
 pub struct JwksAuthLayer {
     oidc_state: Arc<OidcState>,

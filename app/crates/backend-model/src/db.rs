@@ -1,7 +1,14 @@
+//! Database row types for Diesel ORM operations.
+//!
+//! Each struct corresponds to a table row and implements Diesel traits
+//! for query, insert, and selection operations.
+
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde_json::Value;
 
+/// User account data stored in app_user table.
+/// Primary key: user_id (prefixed CUID like usr_*)
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::app_user)]
 pub struct UserRow {
@@ -19,61 +26,85 @@ pub struct UserRow {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Device binding data stored in device table.
+/// Composite primary key: (device_id, public_jwk)
+/// This ensures uniqueness per device per key.
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::device)]
 pub struct DeviceRow {
     pub device_id: String,
     pub user_id: String,
+    /// JWK thumbprint (SHA-256 of sorted JWK)
     pub jkt: String,
+    /// Full JWK JSON string
     pub public_jwk: String,
+    /// Deterministic ID: device_id + SHA-256 of sorted JWK
     pub device_record_id: String,
     pub status: String,
     pub label: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Updated on every lookup for usage tracking
     pub last_seen_at: Option<DateTime<Utc>>,
 }
 
+/// State machine instance - represents a single KYC flow execution.
+/// Status: pending, running, completed, failed
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::sm_instance)]
 pub struct SmInstanceRow {
     pub id: String,
+    /// Process kind: KYC_PHONE_OTP, KYC_FIRST_DEPOSIT, etc.
     pub kind: String,
     pub user_id: Option<String>,
+    /// Idempotency key for deduplication
     pub idempotency_key: String,
     pub status: String,
+    /// JSON context with flow-specific data
     pub context: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
 
+/// State machine event - records transitions and external inputs.
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::sm_event)]
 pub struct SmEventRow {
     pub id: String,
     pub instance_id: String,
+    /// Event kind: step_started, step_completed, external_input, etc.
     pub kind: String,
+    /// Actor type: user, system, staff
     pub actor_type: String,
     pub actor_id: Option<String>,
     pub payload: Value,
     pub created_at: DateTime<Utc>,
 }
 
+/// State machine step attempt - tracks individual step executions with retry support.
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::sm_step_attempt)]
 pub struct SmStepAttemptRow {
     pub id: String,
     pub instance_id: String,
+    /// Step identifier within the state machine
     pub step_name: String,
+    /// Retry count (1 for first attempt)
     pub attempt_no: i32,
+    /// Status: pending, running, succeeded, failed
     pub status: String,
+    /// External reference (e.g., SMS ID, CUSS transaction ID)
     pub external_ref: Option<String>,
+    /// Input parameters for the step
     pub input: Value,
+    /// Output from successful execution
     pub output: Option<Value>,
+    /// Error details from failed execution
     pub error: Option<Value>,
     pub queued_at: Option<DateTime<Utc>>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
+    /// Scheduled time for next retry
     pub next_retry_at: Option<DateTime<Utc>>,
 }
 

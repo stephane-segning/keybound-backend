@@ -1,26 +1,64 @@
+//! Object storage abstraction layer for S3-compatible services.
+//!
+//! Provides a unified interface for file operations using S3-compatible storage
+//! (AWS S3, MinIO, etc.). Supports presigned URLs, encryption modes, and basic
+//! object operations.
+
 use backend_core::Error;
 use bytes::Bytes;
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Presigned upload information returned by the storage provider.
+///
+/// Contains the URL and required headers for uploading files via presigned URLs.
 #[derive(Debug, Clone)]
 pub struct PresignedUpload {
+    /// The presigned URL for uploading
     pub url: String,
+    /// Required headers to include with the upload request
     pub headers: HashMap<String, String>,
 }
 
+/// Server-side encryption modes for stored objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncryptionMode {
+    /// No server-side encryption
     None,
+    /// S3-managed encryption (AES-256)
     S3,
+    /// AWS KMS-managed encryption
     Kms,
 }
 
+/// Storage trait for S3-compatible object storage operations.
+///
+/// This trait abstracts S3 operations and is implemented for different storage backends.
+/// It provides methods for uploading, downloading, and generating presigned URLs.
 #[cfg_attr(any(test, feature = "test-utils"), mockall::automock)]
 #[backend_core::async_trait]
 pub trait MinioStorage: Send + Sync {
+    /// Checks if an object exists in the bucket.
+    ///
+    /// # Arguments
+    /// * `bucket` - S3 bucket name
+    /// * `key` - Object key/path
+    ///
+    /// # Returns
+    /// `Result<()>` - Ok if object exists, Err otherwise
     async fn head_object(&self, bucket: &str, key: &str) -> Result<(), Error>;
 
+    /// Uploads an object directly to storage.
+    ///
+    /// # Arguments
+    /// * `bucket` - S3 bucket name
+    /// * `key` - Object key/path
+    /// * `mime_type` - MIME type of the content
+    /// * `encryption` - Server-side encryption mode
+    /// * `body` - Object content as bytes
+    ///
+    /// # Returns
+    /// `Result<()>` indicating success or error
     async fn upload(
         &self,
         bucket: &str,
@@ -30,6 +68,17 @@ pub trait MinioStorage: Send + Sync {
         body: Bytes,
     ) -> Result<(), Error>;
 
+    /// Generates a presigned URL for uploading an object.
+    ///
+    /// # Arguments
+    /// * `bucket` - S3 bucket name
+    /// * `key` - Object key/path
+    /// * `mime_type` - MIME type of the content
+    /// * `encryption` - Server-side encryption mode
+    /// * `expires_in` - URL expiration duration
+    ///
+    /// # Returns
+    /// `Result<PresignedUpload>` containing the URL and required headers
     async fn upload_presigned(
         &self,
         bucket: &str,
@@ -39,8 +88,26 @@ pub trait MinioStorage: Send + Sync {
         expires_in: Duration,
     ) -> Result<PresignedUpload, Error>;
 
+    /// Downloads an object directly from storage.
+    ///
+    /// # Arguments
+    /// * `bucket` - S3 bucket name  
+    /// * `key` - Object key/path
+    ///
+    /// # Returns
+    /// `Result<Bytes>` containing the object content
     async fn download(&self, bucket: &str, key: &str) -> Result<Bytes, Error>;
 
+    /// Generates a presigned URL for downloading an object.
+    ///
+    /// # Arguments
+    /// * `bucket` - S3 bucket name
+    /// * `key` - Object key/path
+    /// * `expires_in` - URL expiration duration
+    /// * `content_disposition` - Optional Content-Disposition header value
+    ///
+    /// # Returns
+    /// `Result<String>` containing the presigned download URL
     async fn download_presigned(
         &self,
         bucket: &str,
@@ -50,11 +117,16 @@ pub trait MinioStorage: Send + Sync {
     ) -> Result<String, Error>;
 }
 
+/// S3-compatible storage implementation using the AWS SDK.
 pub struct S3CompatibleMinioStorage {
     client: aws_sdk_s3::Client,
 }
 
 impl S3CompatibleMinioStorage {
+    /// Creates a new S3-compatible storage instance.
+    ///
+    /// # Arguments
+    /// * `client` - AWS SDK S3 client (configured for S3 or MinIO)
     pub fn new(client: aws_sdk_s3::Client) -> Self {
         Self { client }
     }

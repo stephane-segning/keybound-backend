@@ -1,3 +1,9 @@
+//! Main backend server library for the tokenization backend.
+//!
+//! This crate provides the HTTP server, API surfaces (KC, BFF, Staff),
+//! state machine engine, background workers, and all application logic.
+//! It handles user storage, device binding, KYC flows, and integrations.
+
 pub(crate) mod api;
 pub(crate) mod file_storage;
 pub(crate) mod health;
@@ -22,6 +28,20 @@ use tower::service_fn;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+/// Starts the HTTP server with all API surfaces and background workers.
+///
+/// This is the main entry point for running the application server.
+/// It initializes the database connection, application state, builds the router,
+/// and starts listening for requests.
+///
+/// # Arguments
+/// * `core_config` - Application configuration
+///
+/// # Returns
+/// `Result<()>` indicating successful server shutdown or error
+///
+/// # Errors
+/// Returns an error if initialization fails or the server cannot start
 pub async fn serve(core_config: &Config) -> Result<()> {
     let listen_addr = core_config.api_listen_addr()?;
     let pool = connect_postgres_and_migrate(&core_config.database.url).await?;
@@ -65,6 +85,20 @@ pub async fn serve(core_config: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Runs the background worker for async tasks and state machine processing.
+///
+/// This function starts the worker that processes state machine steps and notifications.
+/// It acquires a distributed lock to ensure only one worker instance runs at a time.
+/// An optional health check server is started if in worker-only mode.
+///
+/// # Arguments
+/// * `core_config` - Application configuration
+///
+/// # Returns
+/// `Result<()>` indicating successful worker shutdown or error
+///
+/// # Errors
+/// Returns an error if Redis is unavailable or worker initialization fails
 pub async fn run_worker(core_config: &Config) -> Result<()> {
     let pool = connect_postgres_and_migrate(&core_config.database.url).await?;
     let _conn = pool
@@ -128,6 +162,19 @@ pub async fn run_worker(core_config: &Config) -> Result<()> {
     worker_res
 }
 
+/// Builds the main Axum router with all API surfaces and middleware.
+///
+/// Configures and mounts all API routers (KC, BFF, Staff) onto the main router.
+/// Applies authentication layers (KC signature verification and JWT validation)
+/// and request logging middleware based on configuration.
+///
+/// # Arguments
+/// * `api` - Backend API handler
+/// * `config` - Application configuration
+/// * `oidc_state` - OIDC authentication state
+///
+/// # Returns
+/// Configured `Router` ready to serve requests
 fn build_router(
     api: api::BackendApi,
     config: &Config,
@@ -208,6 +255,16 @@ fn build_router(
     }
 }
 
+/// Extracts the request path for logging purposes.
+///
+/// Prefers the OriginalUri extension if available (for nested routers),
+/// otherwise falls back to the request's direct URI path.
+///
+/// # Arguments
+/// * `req` - HTTP request
+///
+/// # Returns
+/// String representation of the request path
 fn request_path(req: &HttpRequest<Body>) -> String {
     req.extensions()
         .get::<axum::extract::OriginalUri>()

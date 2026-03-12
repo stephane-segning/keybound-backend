@@ -1,3 +1,8 @@
+//! Keycloak signature verification for KC API surface.
+//!
+//! This module provides signature verification for requests coming from Keycloak.
+//! The signature is an HMAC-SHA256 over a canonical payload format.
+
 use axum::http::{HeaderMap, Method, Uri};
 use backend_core::{Error, Result};
 use base64::Engine;
@@ -5,10 +10,14 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tracing::instrument;
 
+/// State for verifying Keycloak request signatures.
 #[derive(Clone, Debug)]
 pub struct SignatureState {
+    /// Shared secret for HMAC verification
     pub signature_secret: String,
+    /// Maximum allowed clock skew in seconds (for timestamp validation)
     pub max_clock_skew_seconds: i64,
+    /// Maximum allowed body size in bytes
     pub max_body_bytes: usize,
 }
 

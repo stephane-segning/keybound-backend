@@ -1,3 +1,8 @@
+//! Data transfer objects for KC (Keycloak) API surface.
+//!
+//! These types use the o2o crate for automatic conversion from generated
+//! OpenAPI types (gen_oas_server_kc) to internal domain types.
+
 use chrono::{DateTime, Utc};
 use hex::encode;
 use o2o::o2o;
@@ -6,9 +11,12 @@ use sha2::{Digest, Sha256};
 
 use crate::db;
 
+/// Keycloak attribute map (string -> string)
 pub type KcMap = std::collections::HashMap<String, String>;
+/// Keycloak any-type attribute map (string -> Object)
 pub type KcAnyMap = std::collections::HashMap<String, gen_oas_server_kc::types::Object>;
 
+/// User upsert request from Keycloak.
 #[derive(Debug, Clone, o2o)]
 #[from_owned(gen_oas_server_kc::models::UserUpsertRequest)]
 pub struct UserUpsert {
@@ -22,6 +30,7 @@ pub struct UserUpsert {
     pub attributes: Option<KcMap>,
 }
 
+/// User search request from Keycloak.
 #[derive(Debug, Clone, o2o)]
 #[from_owned(gen_oas_server_kc::models::UserSearchRequest)]
 pub struct UserSearch {
@@ -39,6 +48,7 @@ pub struct UserSearch {
     pub max_results: Option<i32>,
 }
 
+/// Device descriptor for device binding operations.
 #[derive(Debug, Clone, o2o)]
 #[from_owned(gen_oas_server_kc::models::DeviceDescriptor)]
 pub struct DeviceDescriptor {
@@ -51,6 +61,7 @@ pub struct DeviceDescriptor {
     pub app_version: Option<String>,
 }
 
+/// Device lookup request from Keycloak.
 #[derive(Debug, Clone, o2o)]
 #[from_owned(gen_oas_server_kc::models::DeviceLookupRequest)]
 pub struct DeviceLookupRequest {

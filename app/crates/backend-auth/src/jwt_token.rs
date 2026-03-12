@@ -1,23 +1,38 @@
+//! JWT token handling and verification.
+//!
+//! Provides JWT token parsing, validation against JWKS, and claim extraction.
+
 use crate::claims::Claims;
 use crate::oidc_state::OidcState;
 use backend_core::{Error, Result};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use tracing::instrument;
 
+/// Wrapper around JWT claims with verification capabilities.
 #[derive(Debug, Clone)]
 pub struct JwtToken {
     pub claims: Claims,
 }
 
 impl JwtToken {
+    /// Creates a new JwtToken from parsed claims (typically after successful verification).
     pub fn new(claims: Claims) -> JwtToken {
         JwtToken { claims }
     }
 
+    /// Returns the user ID from the token's subject claim.
     pub fn user_id(&self) -> &str {
         &self.claims.sub
     }
 
+    /// Verifies a JWT token against the OIDC state's JWKS.
+    ///
+    /// Steps:
+    /// 1. Fetch JWKS from OIDC state (with caching)
+    /// 2. Extract the key ID (kid) from the token header
+    /// 3. Find the matching JWK in the JWKS
+    /// 4. Create a decoding key from the JWK
+    /// 5. Validate the token signature and claims
     #[instrument(skip(oidc_state))]
     pub async fn verify(token: &str, oidc_state: &OidcState) -> Result<Self> {
         let jwks = oidc_state.get_jwks().await?;

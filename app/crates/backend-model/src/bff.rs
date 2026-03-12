@@ -1,3 +1,8 @@
+//! Data transfer objects for BFF (Backend-for-Frontend) API surface.
+//!
+//! These types are used by the BFF layer to communicate with the frontend.
+
+/// Request to patch KYC information for a user.
 #[derive(Debug, Clone)]
 pub struct KycInformationPatchRequest {
     pub full_name: Option<String>,

@@ -1,3 +1,8 @@
+//! HTTP client for fetching OIDC documents.
+//!
+//! Provides a wrapper around reqwest with reasonable defaults for
+//! fetching JSON documents from OIDC providers.
+
 use std::time::Duration;
 
 use backend_core::AppResult;
@@ -6,6 +11,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tracing::instrument;
 
+/// HTTP client wrapper with connection pooling and timeouts.
 #[derive(Clone)]
 pub struct HttpClient {
     client: Client,

@@ -1,3 +1,9 @@
+//! Authentication and authorization library for the tokenization backend.
+//!
+//! This crate provides JWT token validation, OIDC discovery integration,
+//! Keycloak signature verification, and HTTP middleware for request authentication.
+//! It supports three API surfaces: KC (Keycloak), BFF (Backend-for-Frontend), and Staff.
+
 mod claims;
 mod document;
 mod http_client;
@@ -6,6 +12,7 @@ mod middleware;
 mod oidc_state;
 mod signature_principal;
 
+// Re-export all public types
 pub use claims::*;
 pub use document::*;
 pub use http_client::*;

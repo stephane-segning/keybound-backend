@@ -1,10 +1,20 @@
+//! Error handling types and HTTP error construction.
+//!
+//! This module provides the core error types used throughout the application.
+//! Errors are structured to support rich metadata, context, and automatic
+//! HTTP response mapping.
+
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
+/// Alias for Result with Error as the default error type.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+/// Alias for Result<T, Error> - the standard application result type.
 pub type AppResult<T> = Result<T, Error>;
 
+/// Serializable error payload for HTTP API responses.
+/// Contains error key, human-readable message, and optional context.
 #[derive(Debug, Clone, Serialize)]
 pub struct ErrorPayload {
     pub error_key: String,
@@ -13,6 +23,8 @@ pub struct ErrorPayload {
     pub context: Option<Value>,
 }
 
+/// Static error metadata with compile-time error key and status code.
+/// Used for constructing errors with known error codes.
 #[derive(Debug, Clone)]
 pub struct ErrorMeta {
     pub error_key: &'static str,
@@ -22,6 +34,7 @@ pub struct ErrorMeta {
 }
 
 impl ErrorMeta {
+    /// Converts static metadata into a serializable payload.
     pub fn payload(&self) -> ErrorPayload {
         ErrorPayload {
             error_key: self.error_key.to_owned(),
@@ -31,6 +44,8 @@ impl ErrorMeta {
     }
 }
 
+/// Main error enum representing all possible error conditions in the application.
+/// Uses thiserror for automatic Display implementation and From implementations.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("IO error: {0}")]
@@ -93,6 +108,7 @@ pub enum Error {
 }
 
 impl Error {
+    /// Creates an unauthorized (401) HTTP error.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::Http {
             error_key: "UNAUTHORIZED",
@@ -102,6 +118,7 @@ impl Error {
         }
     }
 
+    /// Creates a bad request (400) HTTP error with a specific error key.
     pub fn bad_request(error_key: &'static str, message: impl Into<String>) -> Self {
         Self::Http {
             error_key,
@@ -111,6 +128,7 @@ impl Error {
         }
     }
 
+    /// Creates a not found (404) HTTP error with a specific error key.
     pub fn not_found(error_key: &'static str, message: impl Into<String>) -> Self {
         Self::Http {
             error_key,
@@ -120,6 +138,7 @@ impl Error {
         }
     }
 
+    /// Creates a conflict (409) HTTP error with a specific error key.
     pub fn conflict(error_key: &'static str, message: impl Into<String>) -> Self {
         Self::Http {
             error_key,
@@ -129,6 +148,7 @@ impl Error {
         }
     }
 
+    /// Creates an internal server error (500) HTTP error with a specific error key.
     pub fn internal(error_key: &'static str, message: impl Into<String>) -> Self {
         Self::Http {
             error_key,
@@ -138,10 +158,12 @@ impl Error {
         }
     }
 
+    /// Creates an S3-specific error.
     pub fn s3(message: impl Into<String>) -> Self {
         Self::S3(message.into())
     }
 
+    /// Adds context data to an HTTP error, preserving the original error key and status code.
     pub fn with_context(self, context: Value) -> Self {
         match self {
             Self::Http {
@@ -159,6 +181,8 @@ impl Error {
         }
     }
 
+    /// Extracts error metadata including HTTP status code, error key, and message.
+    /// Maps various error types to appropriate HTTP responses.
     pub fn meta(&self) -> ErrorMeta {
         match self {
             Self::NotFound => ErrorMeta {
@@ -218,13 +242,14 @@ impl Error {
     }
 }
 
+/// Axum integration for converting errors to HTTP responses.
 #[cfg(feature = "axum")]
 mod axum_impl {
     use super::Error;
     use axum::{
-        Json,
         http::StatusCode,
         response::{IntoResponse, Response},
+        Json,
     };
 
     impl IntoResponse for Error {

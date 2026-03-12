@@ -1,3 +1,10 @@
+//! Configuration management for the tokenization backend.
+//!
+//! This module provides configuration structures that are loaded from YAML files
+//! with environment variable expansion support. Configuration is hierarchical
+//! and covers all aspects of the application including server settings,
+//! authentication, storage, and external service integrations.
+
 use crate::error::{Error, Result};
 use regex::Regex;
 use serde::Deserialize;
@@ -6,6 +13,11 @@ use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
+/// Application runtime mode determining which components to start.
+///
+/// - Server: Start only the HTTP API server
+/// - Worker: Start only the background worker for async tasks
+/// - Shared: Start both server and worker in the same process
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
@@ -16,6 +28,7 @@ pub enum RuntimeMode {
     Shared,
 }
 
+/// Runtime configuration controlling application mode.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Runtime {
     #[serde(default)]
@@ -30,6 +43,7 @@ impl Default for Runtime {
     }
 }
 
+/// Redis connection configuration for caching and queues.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Redis {
     pub url: String,
@@ -43,6 +57,7 @@ impl Default for Redis {
     }
 }
 
+/// HTTP server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Server {
     pub address: String,
@@ -50,6 +65,7 @@ pub struct Server {
     pub tls: Tls,
 }
 
+/// Logging configuration with support for structured JSON and flame graphs.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Logging {
     pub level: String,
@@ -60,12 +76,14 @@ pub struct Logging {
     pub log_requests_enabled: bool,
 }
 
+/// PostgreSQL database connection configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Database {
     pub url: String,
     pub pool_size: Option<u32>,
 }
 
+/// OAuth2/OIDC configuration for JWT verification.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Oauth2 {
     pub issuer: String,
@@ -86,6 +104,7 @@ pub struct AwsS3 {
     pub presign_ttl_seconds: u64,
 }
 
+/// Storage backend type selection.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum StorageType {
@@ -93,6 +112,7 @@ pub enum StorageType {
     Minio,
 }
 
+/// MinIO/S3-compatible storage configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MinioStorage {
     pub endpoint: String,
@@ -104,6 +124,7 @@ pub struct MinioStorage {
     pub presign_ttl_seconds: u64,
 }
 
+/// Storage configuration wrapper that selects between S3 and MinIO.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Storage {
     #[serde(rename = "type")]
@@ -122,6 +143,7 @@ pub struct AwsSns {
     pub initial_backoff_seconds: u64,
 }
 
+/// SMS provider selection for OTP delivery.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SmsProviderType {
@@ -130,6 +152,7 @@ pub enum SmsProviderType {
     Api,
 }
 
+/// SMS configuration for OTP delivery.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SmsConfig {
     pub provider: SmsProviderType,
@@ -137,12 +160,14 @@ pub struct SmsConfig {
     pub api: Option<SmsApi>,
 }
 
+/// Third-party SMS API configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SmsApi {
     pub base_url: String,
     pub auth_token: Option<String>,
 }
 
+/// Main application configuration containing all sub-systems.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub server: Server,
@@ -165,12 +190,14 @@ pub struct Config {
     pub cuss: Cuss,
 }
 
+/// TLS certificate configuration for HTTPS.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Tls {
     pub cert_path: String,
     pub key_path: String,
 }
 
+/// Keycloak API surface authentication configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct KcAuth {
     pub enabled: bool,
@@ -181,6 +208,7 @@ pub struct KcAuth {
     pub max_body_bytes: usize,
 }
 
+/// BFF (Backend-for-Frontend) API surface authentication configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BffAuth {
     pub enabled: bool,
@@ -188,6 +216,7 @@ pub struct BffAuth {
     pub base_path: String,
 }
 
+/// Staff API surface authentication configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StaffAuth {
     pub enabled: bool,
@@ -195,11 +224,16 @@ pub struct StaffAuth {
     pub base_path: String,
 }
 
+/// CUSS (Customer Service System) integration configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cuss {
     pub api_url: String,
 }
 
+/// Load configuration from a YAML file with environment variable expansion.
+///
+/// Supports `${VAR}` and `${VAR:-default}` syntax for environment variable substitution.
+/// Returns an error if required environment variables are missing.
 pub fn load_from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Config> {
     let content = read_to_string(path)?;
     let expanded = expand_env_vars(&content)?;
@@ -244,10 +278,13 @@ fn expand_env_vars(content: &str) -> Result<String> {
 }
 
 impl Config {
+    /// Returns the combined address and port for the HTTP server to listen on.
     pub fn api_listen_addr(&self) -> Result<SocketAddr> {
         Ok(format!("{}:{}", self.server.address, self.server.port).parse()?)
     }
 
+    /// Returns the TLS certificate and key file paths if both files exist.
+    /// Returns None if either file is missing, indicating TLS should be disabled.
     pub fn api_tls_files(&self) -> Option<(PathBuf, PathBuf)> {
         let cert_path: PathBuf = self.server.tls.cert_path.clone().into();
         let key_path: PathBuf = self.server.tls.key_path.clone().into();
@@ -259,6 +296,7 @@ impl Config {
         }
     }
 
+    /// Returns the database connection pool size, defaulting to 10 if not configured.
     pub fn database_pool_size(&self) -> u32 {
         self.database.pool_size.unwrap_or(10)
     }

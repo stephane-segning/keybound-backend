@@ -41,13 +41,38 @@
   },
   "clients": [
     {
-      "clientId": "web-vite",
+      "clientId": "web-mobile",
       "name": "Keybound Vite Web",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": []
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    },
+    {
+      "clientId": "kyc-client",
+      "name": "KYC Mngr",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "some-secret",
+      "bearerOnly": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "authorizationServicesEnabled": true,
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "+"
+      ]
     },
     {
       "clientId": "resource-server",

@@ -1,3 +1,12 @@
+//! Background worker for async tasks and state machine processing.
+//!
+//! This module implements a distributed worker system using Redis for coordination.
+//! It processes two types of jobs:
+//! - State machine steps (KYC flows, etc.)
+//! - Notifications (SMS OTP, email magic links)
+//!
+//! The worker uses a distributed lock to ensure only one instance runs at a time.
+
 use crate::sms_provider::{ApiSmsProvider, ConsoleSmsProvider, SmsProvider, SnsSmsProvider};
 use crate::state::AppState;
 use crate::state_machine::engine::Engine;
@@ -14,11 +23,25 @@ use tokio::sync::oneshot;
 use tokio::time::{Duration, interval};
 use tracing::{info, warn};
 
+/// Redis namespace for notification queue
 const NOTIFICATION_QUEUE_NAMESPACE: &str = "backend:notifications";
+/// Redis key for worker distributed lock
 const WORKER_CONSUMER_LOCK_KEY: &str = "backend:worker:consumer-lock";
+/// TTL for worker lock in seconds
 const WORKER_CONSUMER_LOCK_TTL_SECONDS: i64 = 30;
+/// Interval for renewing worker lock in seconds
 const WORKER_CONSUMER_LOCK_RENEW_SECONDS: u64 = 10;
 
+/// Verifies Redis connectivity before starting the worker.
+///
+/// # Arguments
+/// * `redis_url` - Redis connection URL
+///
+/// # Returns
+/// `Result<()>` indicating Redis is ready or error
+///
+/// # Errors
+/// Returns error if Redis is unreachable or not responding
 pub async fn ensure_redis_ready(redis_url: &str) -> backend_core::Result<()> {
     let client = redis::Client::open(redis_url)
         .map_err(|error| backend_core::Error::Server(format!("invalid redis url: {error}")))?;
@@ -42,6 +65,10 @@ pub async fn ensure_redis_ready(redis_url: &str) -> backend_core::Result<()> {
     Ok(())
 }
 
+/// Distributed lock for ensuring only one worker runs at a time.
+///
+/// Uses Redis SET NX EX for acquiring the lock and maintains it with periodic renewal.
+/// The lock is automatically released when dropped or when the worker stops.
 pub struct WorkerConsumerLock {
     redis_url: String,
     key: String,
@@ -51,6 +78,13 @@ pub struct WorkerConsumerLock {
 }
 
 impl WorkerConsumerLock {
+    /// Releases the worker lock and stops the renewal task.
+    ///
+    /// This should be called when the worker is shutting down to ensure
+    /// the lock is properly released for other instances.
+    ///
+    /// # Returns
+    /// `Result<()>` indicating successful release or error
     pub async fn release(mut self) -> backend_core::Result<()> {
         if let Some(stop) = self.stop_renew.take() {
             let _ = stop.send(());
@@ -82,6 +116,20 @@ impl WorkerConsumerLock {
     }
 }
 
+/// Acquires a distributed lock for exclusive worker execution.
+///
+/// Uses Redis SET NX EX to atomically acquire a lock. If successful, starts a
+/// background task to periodically renew the lock. Only one worker can hold
+/// the lock at a time, preventing multiple workers from processing the same jobs.
+///
+/// # Arguments
+/// * `redis_url` - Redis connection URL
+///
+/// # Returns
+/// `Result<WorkerConsumerLock>` containing the lock handle or error
+///
+/// # Errors
+/// Returns error if Redis is unavailable or lock is already held by another instance
 pub async fn acquire_worker_consumer_lock(
     redis_url: &str,
 ) -> backend_core::Result<WorkerConsumerLock> {

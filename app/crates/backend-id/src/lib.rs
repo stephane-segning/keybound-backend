@@ -1,3 +1,8 @@
+//! ID generation utilities following application conventions.
+//!
+//! Provides functions to generate strongly-typed, globally unique identifiers
+//! for various domain entities. All IDs use a prefix CUID pattern for
+//! improved readability and debugging (e.g. `usr_abc123`)
 use backend_core::{Error, Result};
 
 pub fn prefixed(prefix: &str) -> Result<String> {

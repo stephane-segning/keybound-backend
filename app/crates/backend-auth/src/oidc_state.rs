@@ -1,3 +1,8 @@
+//! OIDC state management with caching for discovery and JWKS.
+//!
+//! This module provides the OidcState struct which manages OIDC discovery
+//! document and JWKS caching for JWT token verification.
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -7,16 +12,24 @@ use tokio::sync::RwLock;
 use crate::document::DiscoveryDocument;
 use crate::http_client::HttpClient;
 
+/// OIDC state for managing discovery document and JWKS caching.
 #[derive(Clone)]
 pub struct OidcState {
+    /// Expected audience(s) for JWT validation
     pub(crate) audiences: Option<Vec<String>>,
+    /// OIDC issuer URL
     issuer: String,
+    /// Time-to-live for cached discovery document
     discovery_ttl: Duration,
+    /// Time-to-live for cached JWKS
     jwks_ttl: Duration,
+    /// HTTP client for fetching OIDC documents
     http: HttpClient,
+    /// Internal state with cached data
     inner: Arc<RwLock<Inner>>,
 }
 
+/// Internal state holding cached OIDC data with timestamps.
 #[derive(Clone)]
 struct Inner {
     discovery: Option<(Arc<DiscoveryDocument>, Instant)>,
@@ -35,6 +48,7 @@ impl std::fmt::Debug for OidcState {
 }
 
 impl OidcState {
+    /// Creates a new OidcState instance.
     pub fn new(
         issuer: String,
         audiences: Option<Vec<String>>,
@@ -55,6 +69,8 @@ impl OidcState {
         }
     }
 
+    /// Returns the OIDC discovery document, fetching and caching if necessary.
+    /// Uses double-checked locking pattern for thread safety.
     #[tracing::instrument(skip(self))]
     pub async fn get_discovery(&self) -> AppResult<Arc<DiscoveryDocument>> {
         let now = Instant::now();
@@ -73,6 +89,8 @@ impl OidcState {
         Ok(doc)
     }
 
+    /// Returns the JWKS (JSON Web Key Set) for token verification, fetching and caching if necessary.
+    /// Automatically fetches discovery document if not cached or expired.
     #[tracing::instrument(skip(self))]
     pub async fn get_jwks(&self) -> AppResult<Arc<jsonwebtoken::jwk::JwkSet>> {
         let now = Instant::now();
