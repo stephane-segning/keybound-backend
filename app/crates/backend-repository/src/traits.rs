@@ -148,6 +148,25 @@ pub struct UserDataUpsertInput {
     pub eager_fetch: bool,
 }
 
+/// Deposit recipient data synced from static configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DepositRecipientUpsertInput {
+    pub provider: String,
+    pub full_name: String,
+    pub phone_number: String,
+    pub phone_regex: String,
+    pub currency: String,
+}
+
+/// Resolved contact for a deposit request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DepositRecipientContact {
+    pub provider: String,
+    pub full_name: String,
+    pub phone_number: String,
+    pub currency: String,
+}
+
 /// Repository trait for state machine persistence operations.
 #[backend_core::async_trait]
 pub trait StateMachineRepo: Send + Sync {
@@ -250,12 +269,18 @@ pub trait StateMachineRepo: Send + Sync {
     /// Gets the next attempt number for a step (1-indexed).
     async fn next_attempt_no(&self, instance_id: &str, step_name: &str) -> RepoResult<i32>;
 
-    /// Retrieves staff contact info for deposit approvals.
-    /// Returns (full_name, username, email).
-    async fn select_deposit_staff_contact(
+    /// Replaces configured deposit recipients with a new static set.
+    async fn sync_deposit_recipients(
         &self,
-        user_id: &str,
-    ) -> RepoResult<(String, String, String)>;
+        recipients: Vec<DepositRecipientUpsertInput>,
+    ) -> RepoResult<usize>;
+
+    /// Resolves the deposit recipient using the caller phone number and currency.
+    async fn select_deposit_recipient_contact(
+        &self,
+        user_phone_number: &str,
+        currency: &str,
+    ) -> RepoResult<DepositRecipientContact>;
 }
 
 /// Repository trait for user account operations.

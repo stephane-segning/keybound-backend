@@ -187,6 +187,7 @@ pub struct Config {
     pub kc: KcAuth,
     pub bff: BffAuth,
     pub staff: StaffAuth,
+    pub deposit_flow: Option<DepositFlow>,
     pub cuss: Cuss,
 }
 
@@ -222,6 +223,31 @@ pub struct StaffAuth {
     pub enabled: bool,
     #[serde(alias = "base-path")]
     pub base_path: String,
+}
+
+/// Deposit flow routing configuration for provider-specific recipients.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DepositFlow {
+    #[serde(default)]
+    pub staff: DepositFlowStaff,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DepositFlowStaff {
+    #[serde(default)]
+    pub recipients: Vec<DepositRecipient>,
+}
+
+/// Static recipient row loaded from YAML and synced into app_deposit_recipients.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DepositRecipient {
+    pub provider: String,
+    #[serde(rename = "fullname", alias = "full-name")]
+    pub full_name: String,
+    #[serde(alias = "phone-number")]
+    pub phone_number: String,
+    pub regex: String,
+    pub currency: String,
 }
 
 /// CUSS (Customer Service System) integration configuration.

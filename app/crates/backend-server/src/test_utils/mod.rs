@@ -7,8 +7,9 @@ use backend_auth::{OidcState, SignatureState};
 use backend_core::async_trait;
 use backend_core::{Config, Error};
 use backend_repository::{
-    DeviceRepo, RepoResult, SmEventCreateInput, SmInstanceCreateInput, SmInstanceFilter,
-    SmStepAttemptCreateInput, SmStepAttemptPatch, StateMachineRepo, UserDataUpsertInput, UserRepo,
+    DepositRecipientContact, DepositRecipientUpsertInput, DeviceRepo, RepoResult,
+    SmEventCreateInput, SmInstanceCreateInput, SmInstanceFilter, SmStepAttemptCreateInput,
+    SmStepAttemptPatch, StateMachineRepo, UserDataUpsertInput, UserRepo,
 };
 use bytes::Bytes;
 use mockall::mock;
@@ -161,10 +162,16 @@ mock! {
             step_name: &str,
         ) -> RepoResult<i32>;
 
-        async fn select_deposit_staff_contact(
+        async fn sync_deposit_recipients(
             &self,
-            user_id: &str,
-        ) -> RepoResult<(String, String, String)>;
+            recipients: Vec<DepositRecipientUpsertInput>,
+        ) -> RepoResult<usize>;
+
+        async fn select_deposit_recipient_contact(
+            &self,
+            user_phone_number: &str,
+            currency: &str,
+        ) -> RepoResult<DepositRecipientContact>;
     }
 }
 

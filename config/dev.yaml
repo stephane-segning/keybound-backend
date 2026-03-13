@@ -66,5 +66,19 @@ staff:
   enabled: true
   base-path: /staff
 
+deposit_flow:
+  staff:
+    recipients:
+      - provider: MTN_CM
+        fullname: "Mbarga Benn"
+        phone-number: "+237690000111"
+        regex: "^\\+23769[0-4][0-9]{6}$"
+        currency: XAF
+      - provider: ORANGE_CM
+        fullname: "Nkoumou Linda"
+        phone-number: "+237699000222"
+        regex: "^\\+23769[5-9][0-9]{6}$"
+        currency: XAF
+
 cuss:
   api_url: http://cuss:8080

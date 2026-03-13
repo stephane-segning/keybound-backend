@@ -33,6 +33,7 @@ use http::uri::Authority;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn host() -> Host {
     Host::from(Authority::from_static("it.local"))
@@ -1085,6 +1086,129 @@ async fn bff_phone_deposit_create_and_get_success() {
         get_resp,
         gen_oas_server_bff::apis::deposits::InternalGetPhoneDepositRequestResponse::Status200_DepositRequest(_)
     ));
+}
+
+#[tokio::test]
+async fn bff_phone_deposit_create_resolves_recipient_from_user_phone() {
+    let instance = sm_instance_row(
+        "dep_002",
+        KIND_KYC_FIRST_DEPOSIT,
+        INSTANCE_STATUS_ACTIVE,
+        Some("usr_001"),
+        json!({}),
+    );
+    let updated_instance = sm_instance_row(
+        "dep_002",
+        KIND_KYC_FIRST_DEPOSIT,
+        INSTANCE_STATUS_ACTIVE,
+        Some("usr_001"),
+        json!({
+            "step_ids": ["dep_002__PHONE_DEPOSIT"],
+            "deposit": {
+                "status": "CONTACT_PROVIDED",
+                "amount": 1500.0,
+                "currency": "XAF",
+                "provider": "MTN_CM",
+                "expires_at": (Utc::now() + Duration::hours(2)).to_rfc3339(),
+                "contact": {
+                    "staff_id": "dep_recipient_mtn_cm",
+                    "full_name": "Mbarga Benn",
+                    "phone_number": "+237690000111"
+                }
+            }
+        }),
+    );
+
+    let mut sm = MockStateMachineRepo::new();
+    let first_instance = instance.clone();
+    let second_instance = updated_instance.clone();
+    let get_instance_calls = Arc::new(AtomicUsize::new(0));
+    let get_instance_counter = get_instance_calls.clone();
+    sm.expect_get_instance().times(2).returning(move |_| {
+        let call_index = get_instance_counter.fetch_add(1, Ordering::SeqCst);
+        if call_index == 0 {
+            Ok(Some(first_instance.clone()))
+        } else {
+            Ok(Some(second_instance.clone()))
+        }
+    });
+    sm.expect_select_deposit_recipient_contact()
+        .times(1)
+        .withf(|phone, currency| phone == "+237690123456" && currency == "XAF")
+        .return_once(|_, _| {
+            Ok(backend_repository::DepositRecipientContact {
+                provider: "MTN_CM".to_owned(),
+                full_name: "Mbarga Benn".to_owned(),
+                phone_number: "+237690000111".to_owned(),
+                currency: "XAF".to_owned(),
+            })
+        });
+    sm.expect_update_instance_context()
+        .times(1)
+        .withf(|instance_id, context| {
+            instance_id == "dep_002"
+                && context
+                    .get("deposit")
+                    .and_then(Value::as_object)
+                    .is_some_and(|deposit| deposit.get("provider") == Some(&json!("MTN_CM")))
+        })
+        .return_once(|_, _| Ok(()));
+    sm.expect_get_latest_step_attempt()
+        .times(1)
+        .return_once(|_, _| {
+            Ok(Some(sm_attempt_row(
+                "att_wait",
+                "dep_002",
+                STEP_DEPOSIT_AWAIT_PAYMENT,
+                ATTEMPT_STATUS_RUNNING,
+                1,
+                None,
+                None,
+            )))
+        });
+
+    let mut user = MockUserRepo::new();
+    user.expect_get_user().times(1).return_once(|_| {
+        let mut row = user_row("usr_001");
+        row.phone_number = Some("+237690123456".to_owned());
+        Ok(Some(row))
+    });
+
+    let api = build_api(
+        sm,
+        user,
+        MockDeviceRepo::new(),
+        MockStateMachineQueue::new(),
+        MockNotificationQueue::new(),
+        MockMinioStorage::new(),
+        None,
+    );
+
+    let create_resp = api
+        .internal_create_phone_deposit_request(
+            &Method::POST,
+            &host(),
+            &cookies(),
+            &claims("usr_001"),
+            &gen_oas_server_bff::models::CreatePhoneDepositRequest::new(
+                "dep_002".to_owned(),
+                "usr_001".to_owned(),
+                1500.0,
+                "XAF".to_owned(),
+            ),
+        )
+        .await
+        .expect("create deposit");
+
+    match create_resp {
+        gen_oas_server_bff::apis::deposits::InternalCreatePhoneDepositRequestResponse::Status201_DepositRequestCreated(
+            body,
+        ) => {
+            assert_eq!(body.contact.phone_number, "+237690000111");
+            assert_eq!(body.contact.staff_id, "dep_recipient_mtn_cm");
+            assert_eq!(body.contact.full_name, "Mbarga Benn");
+        }
+    }
 }
 
 #[tokio::test]

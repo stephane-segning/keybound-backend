@@ -287,7 +287,6 @@ async fn scenario_auth_disabled_bypass(client: &reqwest::Client, env: &Env) -> R
             "userId": user_id,
             "amount": 1000,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "auth-disabled-bypass"
         })),
     )
@@ -738,7 +737,6 @@ async fn scenario_bff_deposit_and_otp_flow(client: &reqwest::Client, env: &Env) 
             "userId": subject.clone(),
             "amount": 150000,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "e2e test"
         })),
     )
@@ -1024,7 +1022,6 @@ async fn scenario_bff_deposit_expiry_behavior(client: &reqwest::Client, env: &En
             "userId": subject,
             "amount": 4200,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "expiry-check"
         })),
     )
@@ -1659,7 +1656,6 @@ async fn scenario_staff_summary_and_instances(client: &reqwest::Client, env: &En
             "userId": subject.clone(),
             "amount": 1200,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "summary-fixture"
         })),
     )
@@ -1820,7 +1816,6 @@ async fn scenario_staff_deposit_flow_triggers_worker_and_cuss(
             "userId": subject,
             "amount": 2500,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "deposit-worker-flow"
         })),
     )
@@ -3326,7 +3321,6 @@ async fn create_confirm_and_approve_deposit_instance(
             "userId": subject,
             "amount": 3600,
             "currency": "XAF",
-            "provider": "MTN_CM",
             "reason": "worker-failure-flow"
         })),
     )

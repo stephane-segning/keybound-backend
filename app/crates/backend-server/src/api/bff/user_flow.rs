@@ -12,7 +12,7 @@ use gen_oas_server_bff::apis::users::{
     InternalGetUserByIdResponse, InternalGetUserKycLevelResponse, InternalGetUserKycSummaryResponse,
 };
 use gen_oas_server_bff::models;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 #[derive(Debug, Clone)]
 struct UserKycProjection {
@@ -71,7 +71,7 @@ impl UserFlow for BackendApi {
         ensure_user_match(claims, &path_params.user_id)?;
         let user_id = normalized_user_id(&path_params.user_id);
         require_user(self, &user_id).await?;
-
+        
         let projection = build_user_kyc_projection(self, &user_id).await?;
         let payload = models::UserKycLevelResponse::new(
             user_id,
@@ -151,6 +151,14 @@ async fn build_user_kyc_projection(
         Some(models::KycSessionStatus::Completed)
     );
 
+    if let Some(r) = phone_otp_status {
+        info!("Found phone otp session {}", r);
+    }
+    if let Some(r) = first_deposit_status {
+        info!("Found first deposit session {}", r);
+    }
+
+    info!("Phone OTP Verified: {}-{}", phone_otp_verified, first_deposit_verified);
     let level = build_user_kyc_levels(phone_otp_verified, first_deposit_verified);
 
     let latest_session_updated_at = [phone_otp_instance, first_deposit_instance]

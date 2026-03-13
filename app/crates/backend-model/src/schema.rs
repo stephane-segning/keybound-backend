@@ -11,6 +11,19 @@
 //! - sm_step_attempt: Individual step execution records with retry support
 
 diesel::table! {
+    /// Static deposit recipients synced from configuration
+    app_deposit_recipients (provider, currency) {
+        provider -> Text,
+        full_name -> Text,
+        phone_number -> Text,
+        phone_regex -> Text,
+        currency -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     /// User accounts - primary key: user_id (CUID)
     app_user (user_id) {
         user_id -> Text,
@@ -111,6 +124,7 @@ diesel::joinable!(sm_event -> sm_instance (instance_id));
 diesel::joinable!(sm_step_attempt -> sm_instance (instance_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    app_deposit_recipients,
     app_user,
     app_user_data,
     device,

@@ -4,8 +4,8 @@ use crate::worker::{NotificationQueue, RedisNotificationQueue};
 use backend_auth::{HttpClient, OidcState, SignatureState};
 use backend_core::Config;
 use backend_repository::{
-    DeviceRepo, DeviceRepository, StateMachineRepo, StateMachineRepository, UserRepo,
-    UserRepository,
+    DepositRecipientUpsertInput, DeviceRepo, DeviceRepository, StateMachineRepo,
+    StateMachineRepository, UserRepo, UserRepository,
 };
 use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::deadpool::Pool;
@@ -107,7 +107,33 @@ impl AppState {
             }
         };
 
-        let sm: Arc<dyn StateMachineRepo> = Arc::new(StateMachineRepository::new(pool.clone()));
+        let sm_repo = StateMachineRepository::new(pool.clone());
+        let deposit_flow_configured = cfg.deposit_flow.is_some();
+        let recipient_rows = cfg
+            .deposit_flow
+            .as_ref()
+            .map(|deposit_flow| deposit_flow.staff.recipients.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .map(|recipient| DepositRecipientUpsertInput {
+                provider: recipient.provider.clone(),
+                full_name: recipient.full_name.clone(),
+                phone_number: recipient.phone_number.clone(),
+                phone_regex: recipient.regex.clone(),
+                currency: recipient.currency.clone(),
+            })
+            .collect::<Vec<_>>();
+        if deposit_flow_configured {
+            let synced_rows = sm_repo.sync_deposit_recipients(recipient_rows).await?;
+            info!(
+                synced_rows,
+                "deposit recipients synchronized from configuration"
+            );
+        } else {
+            info!("deposit recipient sync skipped; deposit_flow not configured");
+        }
+
+        let sm: Arc<dyn StateMachineRepo> = Arc::new(sm_repo);
         let user: Arc<dyn UserRepo> = Arc::new(UserRepository::new(pool.clone()));
         let device: Arc<dyn DeviceRepo> = Arc::new(DeviceRepository::new(pool.clone()));
 

@@ -1071,6 +1071,7 @@ dependencies = [
  "gen_oas_server_kc",
  "openssl",
  "openssl-sys",
+ "regex",
  "serde_json",
  "testcontainers",
  "testcontainers-modules",

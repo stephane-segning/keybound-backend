@@ -7,6 +7,20 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde_json::Value;
 
+/// Static deposit recipient entry synced from configuration.
+/// Composite primary key: (provider, currency)
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::app_deposit_recipients)]
+pub struct AppDepositRecipientRow {
+    pub provider: String,
+    pub full_name: String,
+    pub phone_number: String,
+    pub phone_regex: String,
+    pub currency: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// User account data stored in app_user table.
 /// Primary key: user_id (prefixed CUID like usr_*)
 #[derive(Debug, Clone, Queryable, Selectable, Insertable)]
@@ -130,6 +144,14 @@ impl diesel::associations::HasTable for UserRow {
     }
 }
 
+impl diesel::associations::HasTable for AppDepositRecipientRow {
+    type Table = crate::schema::app_deposit_recipients::table;
+
+    fn table() -> Self::Table {
+        crate::schema::app_deposit_recipients::table
+    }
+}
+
 impl diesel::associations::HasTable for UserDataRow {
     type Table = crate::schema::app_user_data::table;
 
@@ -175,6 +197,14 @@ impl<'a> diesel::Identifiable for &'a UserRow {
 
     fn id(self) -> Self::Id {
         self.user_id.as_str()
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a AppDepositRecipientRow {
+    type Id = (&'a str, &'a str);
+
+    fn id(self) -> Self::Id {
+        (self.provider.as_str(), self.currency.as_str())
     }
 }
 

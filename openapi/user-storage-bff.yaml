@@ -293,8 +293,10 @@ paths:
       tags: [ deposits ]
       summary: Create phone deposit request
       description: >
-        Creates a mobile-money deposit request for the provided session and
-        returns the selected staff contact details.
+        Creates a mobile-money deposit request for the provided session.
+        The backend resolves the deposit provider from the authenticated
+        user phone number using configured prefix regex rules and returns
+        the selected recipient contact details.
       operationId: internalCreatePhoneDepositRequest
       security:
         - BearerAuth: [ ]
@@ -704,8 +706,6 @@ components:
         userId:
           type: string
           description: User initiating the deposit.
-        provider:
-          $ref: "#/components/schemas/DepositProvider"
         amount:
           type: number
           minimum: 0.01
@@ -739,6 +739,7 @@ components:
         sessionId: { type: string }
         stepId: { type: string }
         status: { $ref: "#/components/schemas/DepositStatus" }
+        provider: { $ref: "#/components/schemas/DepositProvider" }
         amount: { type: number }
         currency: { type: string }
         contact: { $ref: "#/components/schemas/StaffContact" }

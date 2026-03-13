@@ -19,6 +19,7 @@ Tokenization/user-storage backend with three HTTP surfaces:
 - BFF OpenAPI (`openapi/user-storage-bff.yaml`) is rewritten around case-scoped routes under `/internal/kyc/*`.
 - BFF handlers are split into flow modules under `app/crates/backend-server/src/api/bff/` to keep endpoint logic cohesive.
 - Session listing is available via `GET /internal/kyc/sessions` so callers can reuse active sessions per flow.
+- First-deposit contact routing now supports static recipient configuration via `deposit_flow.staff.recipients` (`provider`, `fullname`, `phone-number`, `regex`, `currency`) synced into `app_deposit_recipients`; provider selection is resolved by regex match against the requester phone prefix.
 - Compose E2E runner is Rust-based (`app/crates/backend-e2e`), replacing the previous TypeScript runner:
   - `just test-e2e-smoke` executes smoke scenarios.
   - `just test-e2e-full` executes full scenarios.
@@ -351,6 +352,7 @@ All backends:
   - `POST /internal/kyc/deposits/phone/requests`
   - `GET /internal/kyc/deposits/phone/requests/{depositRequestId}`
 - **Session requirement**: create requires a `sessionId` that belongs to the caller and is a `FIRST_DEPOSIT` flow session.
+- **Provider routing**: request payload does not require provider; backend resolves provider/recipient from caller phone number using configured `deposit_flow.staff.recipients[*].regex` rules.
 - **Persistence**: stored in `KYC_FIRST_DEPOSIT` state-machine context/attempts, not in a dedicated legacy table.
 - **Ownership**: API enforces JWT user ownership for create/get access.
 

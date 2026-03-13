@@ -8,10 +8,10 @@ use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::deadpool::Pool;
+use regex::Regex;
 use serde_json::Value;
+use std::collections::HashSet;
 use tracing::{debug, info, instrument, warn};
-
-const STAFF_REALM: &str = "staff";
 
 #[derive(Clone)]
 pub struct StateMachineRepository {
@@ -32,14 +32,12 @@ impl StateMachineRepository {
             .map_err(|e| backend_core::Error::DieselPool(e.to_string()))
     }
 
-    fn build_contact_full_name(full_name: Option<String>, username: String) -> String {
-        if let Some(full) = full_name {
-            let trimmed = full.trim().to_owned();
-            if !trimmed.is_empty() {
-                return trimmed;
-            }
+    fn normalize_phone_regex(raw_regex: &str) -> String {
+        let trimmed = raw_regex.trim();
+        if trimmed.len() >= 2 && trimmed.starts_with('/') && trimmed.ends_with('/') {
+            return trimmed[1..trimmed.len() - 1].trim().to_owned();
         }
-        username
+        trimmed.to_owned()
     }
 }
 
@@ -534,83 +532,155 @@ impl StateMachineRepo for StateMachineRepository {
         Ok(current_max.unwrap_or(0) + 1)
     }
 
-    #[instrument(skip(self))]
-    async fn select_deposit_staff_contact(
+    #[instrument(skip(self, recipients))]
+    async fn sync_deposit_recipients(
         &self,
-        user_id_val: &str,
-    ) -> RepoResult<(String, String, String)> {
-        type CandidateRow = (String, Option<String>, String, Option<String>);
+        recipients: Vec<DepositRecipientUpsertInput>,
+    ) -> RepoResult<usize> {
+        use backend_model::schema::app_deposit_recipients;
 
-        #[instrument(skip(conn))]
-        async fn fetch_candidate(
-            conn: &mut AsyncPgConnection,
-            user_id_val: &str,
-            prefer_staff_realm: bool,
-            exclude_user: bool,
-        ) -> Result<Option<CandidateRow>, Error> {
-            use backend_model::schema::app_user;
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+        let mut rows = Vec::with_capacity(recipients.len());
+        let mut seen = HashSet::new();
 
-            let mut query = app_user::table
-                .filter(app_user::disabled.eq(false))
-                .filter(app_user::phone_number.is_not_null())
-                .into_boxed();
+        for recipient in recipients {
+            let provider = recipient.provider.trim().to_owned();
+            let full_name = recipient.full_name.trim().to_owned();
+            let phone_number = recipient.phone_number.trim().to_owned();
+            let phone_regex =
+                StateMachineRepository::normalize_phone_regex(recipient.phone_regex.as_str());
+            let currency = recipient.currency.trim().to_uppercase();
 
-            if prefer_staff_realm {
-                query = query.filter(app_user::realm.eq(STAFF_REALM));
+            if provider.is_empty()
+                || full_name.is_empty()
+                || phone_number.is_empty()
+                || phone_regex.is_empty()
+                || currency.is_empty()
+            {
+                return Err(Error::bad_request(
+                    "DEPOSIT_RECIPIENT_CONFIG_INVALID",
+                    "Deposit recipients cannot contain empty provider/fullname/phone/regex/currency values",
+                ));
             }
-            if exclude_user {
-                query = query.filter(app_user::user_id.ne(user_id_val));
+            if !seen.insert((provider.clone(), currency.clone())) {
+                return Err(Error::bad_request(
+                    "DEPOSIT_RECIPIENT_CONFIG_DUPLICATE",
+                    format!(
+                        "Duplicate deposit recipient entry for provider {provider} and currency {currency}"
+                    ),
+                ));
             }
+            Regex::new(phone_regex.as_str()).map_err(|error| {
+                Error::bad_request(
+                    "DEPOSIT_RECIPIENT_REGEX_INVALID",
+                    format!("Invalid regex for provider {provider}: {error}"),
+                )
+            })?;
 
-            debug!(prefer_staff_realm, exclude_user, "fetching staff candidate");
-            query
-                .order(app_user::created_at.asc())
-                .select((
-                    app_user::user_id,
-                    app_user::full_name,
-                    app_user::username,
-                    app_user::phone_number,
-                ))
-                .first::<CandidateRow>(conn)
-                .await
-                .optional()
-                .map_err(Error::from)
+            rows.push(db::AppDepositRecipientRow {
+                provider,
+                full_name,
+                phone_number,
+                phone_regex,
+                currency,
+                created_at: now,
+                updated_at: now,
+            });
         }
 
-        debug!(user_id = user_id_val, "selecting deposit staff contact");
-        let mut conn = self.get_conn().await?;
+        diesel::delete(app_deposit_recipients::table)
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
 
-        let preferred = fetch_candidate(&mut conn, user_id_val, true, true).await?;
-        let fallback = if preferred.is_none() {
-            fetch_candidate(&mut conn, user_id_val, false, true).await?
-        } else {
-            None
-        };
-        let requester_fallback = if preferred.is_none() && fallback.is_none() {
-            fetch_candidate(&mut conn, user_id_val, false, false).await?
-        } else {
-            None
-        };
+        if rows.is_empty() {
+            info!("deposit recipients sync completed with 0 rows");
+            return Ok(0);
+        }
 
-        let Some((staff_id, full_name, username, phone_number)) =
-            preferred.or(fallback).or(requester_fallback)
-        else {
-            warn!("No preferred staff found");
+        let inserted = diesel::insert_into(app_deposit_recipients::table)
+            .values(rows)
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        info!(inserted, "deposit recipients sync completed");
+        Ok(inserted)
+    }
+
+    #[instrument(skip(self))]
+    async fn select_deposit_recipient_contact(
+        &self,
+        user_phone_number_val: &str,
+        currency_val: &str,
+    ) -> RepoResult<DepositRecipientContact> {
+        use backend_model::schema::app_deposit_recipients;
+
+        let normalized_phone = user_phone_number_val.trim();
+        if normalized_phone.is_empty() {
             return Err(Error::bad_request(
-                "STAFF_CONTACT_NOT_AVAILABLE",
-                "No active staff contact with phone number is available",
+                "USER_PHONE_REQUIRED",
+                "User phone number is required for deposit provider resolution",
             ));
-        };
+        }
 
-        let staff_phone_number = phone_number.ok_or_else(|| {
-            Error::internal(
-                "STAFF_CONTACT_INVALID",
-                "Staff contact is missing a phone number",
-            )
-        })?;
+        let normalized_currency = currency_val.trim().to_uppercase();
+        if normalized_currency.is_empty() {
+            return Err(Error::bad_request(
+                "DEPOSIT_CURRENCY_REQUIRED",
+                "Currency is required for deposit provider resolution",
+            ));
+        }
 
-        let contact_name = StateMachineRepository::build_contact_full_name(full_name, username);
-        debug!(staff_id = %staff_id, contact_name = %contact_name, "selected deposit staff contact");
-        Ok((staff_id, contact_name, staff_phone_number))
+        let mut conn = self.get_conn().await?;
+        let recipients = app_deposit_recipients::table
+            .filter(app_deposit_recipients::currency.eq(&normalized_currency))
+            .order(app_deposit_recipients::provider.asc())
+            .select(db::AppDepositRecipientRow::as_select())
+            .load::<db::AppDepositRecipientRow>(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        if recipients.is_empty() {
+            return Err(Error::bad_request(
+                "DEPOSIT_RECIPIENT_NOT_CONFIGURED",
+                format!(
+                    "No deposit recipients configured for currency {}",
+                    normalized_currency
+                ),
+            ));
+        }
+
+        for recipient in recipients {
+            let regex = match Regex::new(recipient.phone_regex.as_str()) {
+                Ok(regex) => regex,
+                Err(error) => {
+                    warn!(
+                        provider = %recipient.provider,
+                        regex = %recipient.phone_regex,
+                        %error,
+                        "invalid deposit recipient regex stored in database"
+                    );
+                    continue;
+                }
+            };
+            if regex.is_match(normalized_phone) {
+                return Ok(DepositRecipientContact {
+                    provider: recipient.provider,
+                    full_name: recipient.full_name,
+                    phone_number: recipient.phone_number,
+                    currency: recipient.currency,
+                });
+            }
+        }
+
+        Err(Error::bad_request(
+            "DEPOSIT_PROVIDER_NOT_SUPPORTED",
+            format!(
+                "No deposit recipient matches phone prefix for currency {}",
+                normalized_currency
+            ),
+        ))
     }
 }
