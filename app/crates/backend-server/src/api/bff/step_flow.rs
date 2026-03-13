@@ -1,4 +1,3 @@
-use tracing::instrument;
 use super::super::BackendApi;
 use super::shared::{
     ensure_step_registered, parse_step_status, parse_step_type, split_step_id, user_id_matches,
@@ -7,6 +6,7 @@ use backend_auth::JwtToken;
 use backend_core::Error;
 use gen_oas_server_bff::apis::steps::InternalGetKycStepResponse;
 use gen_oas_server_bff::models;
+use tracing::instrument;
 
 #[backend_core::async_trait]
 pub(super) trait StepFlow {

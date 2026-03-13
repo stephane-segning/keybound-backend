@@ -8,11 +8,11 @@ use backend_core::Error;
 use backend_model::db::{SmInstanceRow, UserRow};
 use backend_repository::SmInstanceFilter;
 use chrono::{DateTime, Utc};
-use tracing::instrument;
 use gen_oas_server_bff::apis::users::{
     InternalGetUserByIdResponse, InternalGetUserKycLevelResponse, InternalGetUserKycSummaryResponse,
 };
 use gen_oas_server_bff::models;
+use tracing::instrument;
 
 #[derive(Debug, Clone)]
 struct UserKycProjection {

@@ -1,8 +1,8 @@
 use super::super::BackendApi;
 use super::shared::{
-    api_map_to_value, ensure_user_match, flow_kind, is_instance_active,
-    normalized_user_id, parse_flow, put_flow_in_context, session_from_instance, user_id_matches,
     KIND_KYC_ADDRESS_PROOF, KIND_KYC_FIRST_DEPOSIT, KIND_KYC_ID_DOCUMENT, KIND_KYC_PHONE_OTP,
+    api_map_to_value, ensure_user_match, flow_kind, is_instance_active, normalized_user_id,
+    parse_flow, put_flow_in_context, session_from_instance, user_id_matches,
 };
 use crate::state_machine::engine::Engine;
 use backend_auth::JwtToken;
@@ -106,11 +106,7 @@ impl SessionFlow for BackendApi {
         }
 
         let session = session_from_instance(instance);
-        Ok(
-            InternalCreateKycSessionResponse::Status201_SessionCreatedOrResumed(
-                session,
-            ),
-        )
+        Ok(InternalCreateKycSessionResponse::Status201_SessionCreatedOrResumed(session))
     }
 
     #[instrument(skip(self))]

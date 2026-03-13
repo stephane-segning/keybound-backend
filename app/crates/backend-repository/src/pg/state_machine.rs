@@ -9,7 +9,7 @@ use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::deadpool::Pool;
 use serde_json::Value;
-use log::info;
+use tracing::{debug, info, instrument};
 
 const STAFF_REALM: &str = "staff";
 
@@ -45,11 +45,13 @@ impl StateMachineRepository {
 
 #[async_trait]
 impl StateMachineRepo for StateMachineRepository {
+    #[instrument(skip(self, input))]
     async fn create_instance(&self, input: SmInstanceCreateInput) -> RepoResult<db::SmInstanceRow> {
         use backend_model::schema::sm_instance;
 
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
+        debug!(instance_id = %input.id, kind = %input.kind, "creating state machine instance built");
 
         let row = db::SmInstanceRow {
             id: input.id,
@@ -89,9 +91,11 @@ impl StateMachineRepo for StateMachineRepository {
         }
     }
 
+    #[instrument(skip(self))]
     async fn get_instance(&self, instance_id: &str) -> RepoResult<Option<db::SmInstanceRow>> {
         use backend_model::schema::sm_instance;
 
+        debug!(instance_id = instance_id, "fetching state machine instance");
         let mut conn = self.get_conn().await?;
         sm_instance::table
             .filter(sm_instance::id.eq(instance_id))
@@ -102,12 +106,17 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn get_instance_by_idempotency_key(
         &self,
         idempotency_key_val: &str,
     ) -> RepoResult<Option<db::SmInstanceRow>> {
         use backend_model::schema::sm_instance;
 
+        debug!(
+            idempotency_key = idempotency_key_val,
+            "fetching instance by idempotency key"
+        );
         let mut conn = self.get_conn().await?;
         sm_instance::table
             .filter(sm_instance::idempotency_key.eq(idempotency_key_val))
@@ -118,6 +127,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self, filter))]
     async fn list_instances(
         &self,
         filter: SmInstanceFilter,
@@ -125,6 +135,7 @@ impl StateMachineRepo for StateMachineRepository {
         use backend_model::schema::{app_user, sm_instance};
 
         let filter = filter.normalized();
+        debug!(?filter, "listing state machine instances");
         let mut conn = self.get_conn().await?;
 
         let mut count_query = sm_instance::table.into_boxed();
@@ -189,6 +200,7 @@ impl StateMachineRepo for StateMachineRepository {
         Ok((rows, total))
     }
 
+    #[instrument(skip(self))]
     async fn update_instance_status(
         &self,
         instance_id: &str,
@@ -197,6 +209,7 @@ impl StateMachineRepo for StateMachineRepository {
     ) -> RepoResult<()> {
         use backend_model::schema::sm_instance;
 
+        debug!(instance_id = instance_id, status = status, completed_at = ?completed_at, "updating state machine instance status");
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
 
@@ -213,9 +226,14 @@ impl StateMachineRepo for StateMachineRepository {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     async fn update_instance_context(&self, instance_id: &str, context: Value) -> RepoResult<()> {
         use backend_model::schema::sm_instance;
 
+        debug!(
+            instance_id = instance_id,
+            "updating state machine instance context"
+        );
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
 
@@ -231,11 +249,13 @@ impl StateMachineRepo for StateMachineRepository {
         Ok(())
     }
 
+    #[instrument(skip(self, input))]
     async fn append_event(&self, input: SmEventCreateInput) -> RepoResult<db::SmEventRow> {
         use backend_model::schema::sm_event;
 
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
+        debug!(event_id = %input.id, instance_id = %input.instance_id, kind = %input.kind, "appending state machine event");
 
         let row = db::SmEventRow {
             id: input.id,
@@ -254,9 +274,14 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn list_events(&self, instance_id_val: &str) -> RepoResult<Vec<db::SmEventRow>> {
         use backend_model::schema::sm_event;
 
+        debug!(
+            instance_id = instance_id_val,
+            "listing state machine events"
+        );
         let mut conn = self.get_conn().await?;
         sm_event::table
             .filter(sm_event::instance_id.eq(instance_id_val))
@@ -267,6 +292,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self, input))]
     async fn create_step_attempt(
         &self,
         input: SmStepAttemptCreateInput,
@@ -274,6 +300,7 @@ impl StateMachineRepo for StateMachineRepository {
         use backend_model::schema::sm_step_attempt;
 
         let mut conn = self.get_conn().await?;
+        debug!(attempt_id = %input.id, instance_id = %input.instance_id, step_name = %input.step_name, attempt_no = input.attempt_no, "creating state machine step attempt");
 
         let row = db::SmStepAttemptRow {
             id: input.id,
@@ -298,6 +325,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self, patch))]
     async fn patch_step_attempt(
         &self,
         attempt_id: &str,
@@ -305,6 +333,7 @@ impl StateMachineRepo for StateMachineRepository {
     ) -> RepoResult<db::SmStepAttemptRow> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(attempt_id = attempt_id, patch = ?patch, "patching state machine step attempt");
         let mut conn = self.get_conn().await?;
         let current = sm_step_attempt::table
             .filter(sm_step_attempt::id.eq(attempt_id))
@@ -341,12 +370,17 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn claim_step_attempt(
         &self,
         attempt_id_val: &str,
     ) -> RepoResult<Option<db::SmStepAttemptRow>> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            attempt_id = attempt_id_val,
+            "claiming state machine step attempt"
+        );
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
 
@@ -367,12 +401,17 @@ impl StateMachineRepo for StateMachineRepository {
         .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn list_step_attempts(
         &self,
         instance_id_val: &str,
     ) -> RepoResult<Vec<db::SmStepAttemptRow>> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            instance_id = instance_id_val,
+            "listing state machine step attempts"
+        );
         let mut conn = self.get_conn().await?;
         sm_step_attempt::table
             .filter(sm_step_attempt::instance_id.eq(instance_id_val))
@@ -386,6 +425,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn get_latest_step_attempt(
         &self,
         instance_id_val: &str,
@@ -393,6 +433,11 @@ impl StateMachineRepo for StateMachineRepository {
     ) -> RepoResult<Option<db::SmStepAttemptRow>> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            "fetching latest state machine step attempt"
+        );
         let mut conn = self.get_conn().await?;
         sm_step_attempt::table
             .filter(sm_step_attempt::instance_id.eq(instance_id_val))
@@ -405,6 +450,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn get_step_attempt_by_external_ref(
         &self,
         instance_id_val: &str,
@@ -413,6 +459,12 @@ impl StateMachineRepo for StateMachineRepository {
     ) -> RepoResult<Option<db::SmStepAttemptRow>> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            external_ref = external_ref_val,
+            "fetching state machine step attempt by external ref"
+        );
         let mut conn = self.get_conn().await?;
         sm_step_attempt::table
             .filter(sm_step_attempt::instance_id.eq(instance_id_val))
@@ -426,6 +478,7 @@ impl StateMachineRepo for StateMachineRepository {
             .map_err(Error::from)
     }
 
+    #[instrument(skip(self))]
     async fn cancel_other_attempts_for_step(
         &self,
         instance_id_val: &str,
@@ -434,6 +487,12 @@ impl StateMachineRepo for StateMachineRepository {
     ) -> RepoResult<()> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            keep_attempt_id = keep_attempt_id,
+            "cancelling other state machine attempts"
+        );
         let mut conn = self.get_conn().await?;
         let now = Utc::now();
         diesel::update(
@@ -454,9 +513,15 @@ impl StateMachineRepo for StateMachineRepository {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     async fn next_attempt_no(&self, instance_id_val: &str, step_name_val: &str) -> RepoResult<i32> {
         use backend_model::schema::sm_step_attempt;
 
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            "calculating next attempt number"
+        );
         let mut conn = self.get_conn().await?;
         let current_max = sm_step_attempt::table
             .filter(sm_step_attempt::instance_id.eq(instance_id_val))
@@ -469,12 +534,14 @@ impl StateMachineRepo for StateMachineRepository {
         Ok(current_max.unwrap_or(0) + 1)
     }
 
+    #[instrument(skip(self))]
     async fn select_deposit_staff_contact(
         &self,
         user_id_val: &str,
     ) -> RepoResult<(String, String, String)> {
         type CandidateRow = (String, Option<String>, String, Option<String>);
 
+        #[instrument(skip(conn))]
         async fn fetch_candidate(
             conn: &mut AsyncPgConnection,
             user_id_val: &str,
@@ -495,6 +562,7 @@ impl StateMachineRepo for StateMachineRepository {
                 query = query.filter(app_user::user_id.ne(user_id_val));
             }
 
+            debug!(prefer_staff_realm, exclude_user, "fetching staff candidate");
             query
                 .order(app_user::created_at.asc())
                 .select((
@@ -509,6 +577,7 @@ impl StateMachineRepo for StateMachineRepository {
                 .map_err(Error::from)
         }
 
+        debug!(user_id = user_id_val, "selecting deposit staff contact");
         let mut conn = self.get_conn().await?;
 
         let preferred = fetch_candidate(&mut conn, user_id_val, true, true).await?;
@@ -540,10 +609,8 @@ impl StateMachineRepo for StateMachineRepository {
             )
         })?;
 
-        Ok((
-            staff_id,
-            StateMachineRepository::build_contact_full_name(full_name, username),
-            staff_phone_number,
-        ))
+        let contact_name = StateMachineRepository::build_contact_full_name(full_name, username);
+        debug!(staff_id = %staff_id, contact_name = %contact_name, "selected deposit staff contact");
+        Ok((staff_id, contact_name, staff_phone_number))
     }
 }
