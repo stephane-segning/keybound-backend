@@ -20,6 +20,7 @@ use gen_oas_server_bff::apis::phone_otp::{
 };
 use gen_oas_server_bff::models;
 use serde_json::{Value, json};
+use tracing::info;
 
 #[backend_core::async_trait]
 pub(super) trait PhoneFlow {
@@ -49,6 +50,7 @@ impl PhoneFlow for BackendApi {
         claims: &JwtToken,
         body: &models::CreateCaseStepRequest,
     ) -> Result<InternalCreatePhoneOtpStepResponse, Error> {
+        info!("Handling create_phone_otp_step_flow called");
         ensure_user_match(claims, &body.user_id)?;
 
         let session = self

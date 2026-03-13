@@ -6,6 +6,7 @@ use crate::state_machine::types::*;
 use backend_core::Error;
 use backend_repository::{
     SmEventCreateInput, SmInstanceCreateInput, SmStepAttemptCreateInput, SmStepAttemptPatch,
+    UserDataUpsertInput,
 };
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
@@ -644,6 +645,31 @@ impl Engine {
 
         let resp = serde_json::to_value(resp)
             .map_err(|e| Error::internal("CUS_RESP_SERIALIZE_FAILED", e.to_string()))?;
+
+        if let Err(error) = self
+            .state
+            .user
+            .upsert_user_data(UserDataUpsertInput {
+                user_id: user_id.clone(),
+                name: backend_model::kc::USER_DATA_NAME_REGISTRATION_OUTPUT.to_owned(),
+                data_type: backend_model::kc::USER_DATA_TYPE_REGISTRATION_OUTPUT.to_owned(),
+                content: resp.clone(),
+                eager_fetch: true,
+            })
+            .await
+        {
+            self.mark_attempt_failed(
+                &job.attempt_id,
+                json!({
+                    "error": error.to_string(),
+                }),
+            )
+            .await?;
+            return Err(Error::internal(
+                "SM_USER_DATA_SAVE_FAILED",
+                error.to_string(),
+            ));
+        }
 
         let finished = Utc::now();
         let _ = self

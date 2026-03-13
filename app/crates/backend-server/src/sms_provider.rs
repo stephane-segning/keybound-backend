@@ -132,4 +132,3 @@ impl SmsProvider for ApiSmsProvider {
         Ok(())
     }
 }
-

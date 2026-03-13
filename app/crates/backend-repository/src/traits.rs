@@ -138,6 +138,16 @@ pub struct SmStepAttemptPatch {
     pub next_retry_at: Option<Option<DateTime<Utc>>>,
 }
 
+/// Input payload for upserting a row in app_user_data.
+#[derive(Debug, Clone)]
+pub struct UserDataUpsertInput {
+    pub user_id: String,
+    pub name: String,
+    pub data_type: String,
+    pub content: Value,
+    pub eager_fetch: bool,
+}
+
 /// Repository trait for state machine persistence operations.
 #[backend_core::async_trait]
 pub trait StateMachineRepo: Send + Sync {
@@ -256,33 +266,33 @@ pub trait UserRepo: Send + Sync {
         &self,
         req: &backend_model::kc::UserUpsert,
     ) -> RepoResult<backend_model::db::UserRow>;
-    
+
     /// Gets a user by ID.
     async fn get_user(&self, user_id: &str) -> RepoResult<Option<backend_model::db::UserRow>>;
-    
+
     /// Updates a user from Keycloak upsert request.
     async fn update_user(
         &self,
         user_id: &str,
         req: &backend_model::kc::UserUpsert,
     ) -> RepoResult<Option<backend_model::db::UserRow>>;
-    
+
     /// Deletes a user by ID. Returns rows deleted (0 or 1).
     async fn delete_user(&self, user_id: &str) -> RepoResult<u64>;
-    
+
     /// Searches users by various criteria.
     async fn search_users(
         &self,
         req: &backend_model::kc::UserSearch,
     ) -> RepoResult<Vec<backend_model::db::UserRow>>;
-    
+
     /// Finds a user by phone number within a realm.
     async fn resolve_user_by_phone(
         &self,
         realm: &str,
         phone: &str,
     ) -> RepoResult<Option<backend_model::db::UserRow>>;
-    
+
     /// Finds or creates a user by phone number.
     /// Returns (user, created) where created is true if new user was created.
     async fn resolve_or_create_user_by_phone(
@@ -290,6 +300,19 @@ pub trait UserRepo: Send + Sync {
         realm: &str,
         phone: &str,
     ) -> RepoResult<(backend_model::db::UserRow, bool)>;
+
+    /// Upserts a typed dynamic data row for a user.
+    async fn upsert_user_data(
+        &self,
+        input: UserDataUpsertInput,
+    ) -> RepoResult<backend_model::db::UserDataRow>;
+
+    /// Lists user dynamic data. When eager_fetch_only=true, returns only eagerly fetched rows.
+    async fn list_user_data(
+        &self,
+        user_id: &str,
+        eager_fetch_only: bool,
+    ) -> RepoResult<Vec<backend_model::db::UserDataRow>>;
 }
 
 /// Repository trait for device binding operations.
@@ -300,28 +323,28 @@ pub trait DeviceRepo: Send + Sync {
         &self,
         req: &backend_model::kc::DeviceLookupRequest,
     ) -> RepoResult<Option<backend_model::db::DeviceRow>>;
-    
+
     /// Lists all devices for a user, optionally including revoked ones.
     async fn list_user_devices(
         &self,
         user_id: &str,
         include_revoked: bool,
     ) -> RepoResult<Vec<backend_model::db::DeviceRow>>;
-    
+
     /// Gets a specific device for a user.
     async fn get_user_device(
         &self,
         user_id: &str,
         device_id: &str,
     ) -> RepoResult<Option<backend_model::db::DeviceRow>>;
-    
+
     /// Updates device status (active, revoked, etc.).
     async fn update_device_status(
         &self,
         record_id: &str,
         status: &str,
     ) -> RepoResult<backend_model::db::DeviceRow>;
-    
+
     /// Finds an existing device binding by device_id and JKT.
     /// Returns (user_id, device_record_id) if found.
     async fn find_device_binding(
@@ -329,13 +352,13 @@ pub trait DeviceRepo: Send + Sync {
         device_id: &str,
         jkt: &str,
     ) -> RepoResult<Option<(String, String)>>;
-    
+
     /// Binds a device to a user with public key.
     async fn bind_device(
         &self,
         req: &backend_model::kc::EnrollmentBindRequest,
     ) -> RepoResult<String>;
-    
+
     /// Counts the number of devices for a user.
     async fn count_user_devices(&self, user_id: &str) -> RepoResult<i64>;
 }

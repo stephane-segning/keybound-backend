@@ -280,6 +280,9 @@ async fn kc_user_crud_and_search_success() {
     user.expect_search_users()
         .times(1)
         .return_once(move |_| Ok(vec![updated]));
+    user.expect_list_user_data()
+        .times(4)
+        .returning(|_, _| Ok(Vec::new()));
 
     let api = build_api(
         MockStateMachineRepo::new(),
@@ -379,6 +382,75 @@ async fn kc_user_crud_and_search_success() {
         search_resp,
         gen_oas_server_kc::apis::users::SearchUsersResponse::Status200_SearchResults(_)
     ));
+}
+
+#[tokio::test]
+async fn kc_get_user_includes_eager_user_data_parameters() {
+    let mut user = MockUserRepo::new();
+    user.expect_get_user()
+        .times(1)
+        .return_once(|_| Ok(Some(user_row("usr_001"))));
+    user.expect_list_user_data()
+        .times(1)
+        .return_once(|_, eager| {
+            assert!(eager);
+            Ok(vec![backend_model::db::UserDataRow {
+                user_id: "usr_001".to_owned(),
+                name: backend_model::kc::USER_DATA_NAME_REGISTRATION_OUTPUT.to_owned(),
+                data_type: backend_model::kc::USER_DATA_TYPE_REGISTRATION_OUTPUT.to_owned(),
+                content: json!({
+                    "fineractClientId": 12345,
+                    "savingsAccountId": 45678
+                }),
+                eager_fetch: true,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }])
+        });
+
+    let api = build_api(
+        MockStateMachineRepo::new(),
+        user,
+        MockDeviceRepo::new(),
+        MockStateMachineQueue::new(),
+        MockNotificationQueue::new(),
+        MockMinioStorage::new(),
+        None,
+    );
+
+    let response = api
+        .get_user(
+            &Method::GET,
+            &host(),
+            &cookies(),
+            &signature_claims(),
+            &gen_oas_server_kc::models::GetUserPathParams {
+                user_id: "usr_001".to_owned(),
+            },
+        )
+        .await
+        .expect("get user response");
+
+    let gen_oas_server_kc::apis::users::GetUserResponse::Status200_User(user_record) = response
+    else {
+        panic!("expected user response");
+    };
+
+    let custom = user_record.custom.expect("custom map should be present");
+    let parameters = custom
+        .get("parameters")
+        .expect("parameters should be present in custom map");
+    let parsed: Value = serde_json::from_str(parameters).expect("parameters JSON");
+    assert_eq!(
+        parsed.get(backend_model::kc::USER_DATA_NAME_REGISTRATION_OUTPUT),
+        Some(&json!({
+            "data_type": backend_model::kc::USER_DATA_TYPE_REGISTRATION_OUTPUT,
+            "content": {
+                "fineractClientId": 12345,
+                "savingsAccountId": 45678
+            }
+        }))
+    );
 }
 
 #[tokio::test]

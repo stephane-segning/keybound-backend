@@ -69,10 +69,10 @@ impl Users<Error> for BackendApi {
         body: &models::UserUpsertRequest,
     ) -> Result<CreateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
-        self.state.user.create_user(&req).await.map(|row| {
-            let dto = UserRecordDto::from(row);
-            CreateUserResponse::Status201_Created(dto.into())
-        })
+        let row = self.state.user.create_user(&req).await?;
+        let user_data = self.state.user.list_user_data(&row.user_id, true).await?;
+        let dto = UserRecordDto::from_row_with_user_data(row, &user_data);
+        Ok(CreateUserResponse::Status201_Created(dto.into()))
     }
 
     async fn delete_user(
@@ -104,19 +104,18 @@ impl Users<Error> for BackendApi {
         _claims: &Self::Claims,
         path_params: &models::GetUserPathParams,
     ) -> Result<GetUserResponse, Error> {
-        self.state
-            .user
-            .get_user(&path_params.user_id)
-            .await
-            .map(|res| match res {
-                Some(row) => {
-                    let dto = UserRecordDto::from(row);
-                    GetUserResponse::Status200_User(dto.into())
-                }
-                None => {
-                    GetUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
-                }
-            })
+        let user = self.state.user.get_user(&path_params.user_id).await?;
+        match user {
+            Some(row) => {
+                let user_data = self.state.user.list_user_data(&row.user_id, true).await?;
+                let dto = UserRecordDto::from_row_with_user_data(row, &user_data);
+                Ok(GetUserResponse::Status200_User(dto.into()))
+            }
+            None => Ok(GetUserResponse::Status404_NotFound(kc_error(
+                "NOT_FOUND",
+                "User not found",
+            ))),
+        }
     }
 
     async fn search_users(
@@ -128,16 +127,19 @@ impl Users<Error> for BackendApi {
         body: &models::UserSearchRequest,
     ) -> Result<SearchUsersResponse, Error> {
         let req = UserSearch::from(body.clone());
-        self.state.user.search_users(&req).await.map(|rows| {
-            let users = rows
-                .into_iter()
-                .map(|row| UserRecordDto::from(row).into())
-                .collect();
-            SearchUsersResponse::Status200_SearchResults(models::UserSearchResponse {
+        let rows = self.state.user.search_users(&req).await?;
+        let mut users = Vec::with_capacity(rows.len());
+        for row in rows {
+            let user_data = self.state.user.list_user_data(&row.user_id, true).await?;
+            users.push(UserRecordDto::from_row_with_user_data(row, &user_data).into());
+        }
+
+        Ok(SearchUsersResponse::Status200_SearchResults(
+            models::UserSearchResponse {
                 users,
                 total_count: None,
-            })
-        })
+            },
+        ))
     }
 
     async fn update_user(
@@ -150,19 +152,22 @@ impl Users<Error> for BackendApi {
         body: &models::UserUpsertRequest,
     ) -> Result<UpdateUserResponse, Error> {
         let req = UserUpsert::from(body.clone());
-        self.state
+        let user = self
+            .state
             .user
             .update_user(&path_params.user_id, &req)
-            .await
-            .map(|res| match res {
-                Some(row) => {
-                    let dto = UserRecordDto::from(row);
-                    UpdateUserResponse::Status200_Updated(dto.into())
-                }
-                None => {
-                    UpdateUserResponse::Status404_NotFound(kc_error("NOT_FOUND", "User not found"))
-                }
-            })
+            .await?;
+        match user {
+            Some(row) => {
+                let user_data = self.state.user.list_user_data(&row.user_id, true).await?;
+                let dto = UserRecordDto::from_row_with_user_data(row, &user_data);
+                Ok(UpdateUserResponse::Status200_Updated(dto.into()))
+            }
+            None => Ok(UpdateUserResponse::Status404_NotFound(kc_error(
+                "NOT_FOUND",
+                "User not found",
+            ))),
+        }
     }
 }
 

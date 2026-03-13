@@ -29,6 +29,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    /// Additional per-user dynamic data records
+    app_user_data (user_id, name, data_type) {
+        user_id -> Text,
+        name -> Text,
+        data_type -> Text,
+        content -> Jsonb,
+        eager_fetch -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     /// Device bindings - composite primary key: (device_id, public_jwk)
     device (device_id, public_jwk) {
         device_id -> Text,
@@ -91,6 +104,7 @@ diesel::table! {
 }
 
 // Foreign key relationships
+diesel::joinable!(app_user_data -> app_user (user_id));
 diesel::joinable!(device -> app_user (user_id));
 diesel::joinable!(sm_instance -> app_user (user_id));
 diesel::joinable!(sm_event -> sm_instance (instance_id));
@@ -98,6 +112,7 @@ diesel::joinable!(sm_step_attempt -> sm_instance (instance_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     app_user,
+    app_user_data,
     device,
     sm_instance,
     sm_event,

@@ -2,6 +2,7 @@ use crate::traits::*;
 use backend_core::async_trait;
 use backend_model::{db, kc as kc_map};
 use diesel::prelude::*;
+use diesel::upsert::excluded;
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::deadpool::Pool;
@@ -231,5 +232,53 @@ impl UserRepo for UserRepository {
             .await?;
 
         Ok((user, true))
+    }
+
+    async fn upsert_user_data(&self, input: UserDataUpsertInput) -> RepoResult<db::UserDataRow> {
+        use backend_model::schema::app_user_data::dsl::*;
+
+        let mut conn = self.get_conn().await?;
+        let now = chrono::Utc::now();
+
+        diesel::insert_into(app_user_data)
+            .values((
+                user_id.eq(input.user_id),
+                name.eq(input.name),
+                data_type.eq(input.data_type),
+                content.eq(input.content),
+                eager_fetch.eq(input.eager_fetch),
+                created_at.eq(now),
+                updated_at.eq(now),
+            ))
+            .on_conflict((user_id, name, data_type))
+            .do_update()
+            .set((
+                content.eq(excluded(content)),
+                eager_fetch.eq(excluded(eager_fetch)),
+                updated_at.eq(now),
+            ))
+            .get_result::<db::UserDataRow>(&mut conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn list_user_data(
+        &self,
+        user_id_val: &str,
+        eager_fetch_only: bool,
+    ) -> RepoResult<Vec<db::UserDataRow>> {
+        use backend_model::schema::app_user_data::dsl::*;
+
+        let mut conn = self.get_conn().await?;
+        let mut query = app_user_data.filter(user_id.eq(user_id_val)).into_boxed();
+        if eager_fetch_only {
+            query = query.filter(eager_fetch.eq(true));
+        }
+
+        query
+            .order((name.asc(), data_type.asc()))
+            .load::<db::UserDataRow>(&mut conn)
+            .await
+            .map_err(Into::into)
     }
 }

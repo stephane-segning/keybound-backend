@@ -5,7 +5,7 @@
 use crate::claims::Claims;
 use crate::oidc_state::OidcState;
 use backend_core::{Error, Result};
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{DecodingKey, Validation, decode};
 use tracing::instrument;
 
 /// Wrapper around JWT claims with verification capabilities.

@@ -8,7 +8,7 @@ server:
     key_path: "./config/tls/api.key"
 
 logging:
-  level: "info"
+  level: "debug"
   log_requests_enabled: false
 
 database:

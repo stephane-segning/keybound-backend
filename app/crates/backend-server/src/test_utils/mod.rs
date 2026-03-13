@@ -8,7 +8,7 @@ use backend_core::async_trait;
 use backend_core::{Config, Error};
 use backend_repository::{
     DeviceRepo, RepoResult, SmEventCreateInput, SmInstanceCreateInput, SmInstanceFilter,
-    SmStepAttemptCreateInput, SmStepAttemptPatch, StateMachineRepo, UserRepo,
+    SmStepAttemptCreateInput, SmStepAttemptPatch, StateMachineRepo, UserDataUpsertInput, UserRepo,
 };
 use bytes::Bytes;
 use mockall::mock;
@@ -200,6 +200,15 @@ mock! {
             realm: &str,
             phone: &str,
         ) -> RepoResult<(backend_model::db::UserRow, bool)>;
+        async fn upsert_user_data(
+            &self,
+            input: UserDataUpsertInput,
+        ) -> RepoResult<backend_model::db::UserDataRow>;
+        async fn list_user_data(
+            &self,
+            user_id: &str,
+            eager_fetch_only: bool,
+        ) -> RepoResult<Vec<backend_model::db::UserDataRow>>;
     }
 }
 

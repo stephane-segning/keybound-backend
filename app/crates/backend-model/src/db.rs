@@ -26,6 +26,20 @@ pub struct UserRow {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Additional dynamic user data stored in app_user_data table.
+/// Composite primary key: (user_id, name, data_type)
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::app_user_data)]
+pub struct UserDataRow {
+    pub user_id: String,
+    pub name: String,
+    pub data_type: String,
+    pub content: Value,
+    pub eager_fetch: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// Device binding data stored in device table.
 /// Composite primary key: (device_id, public_jwk)
 /// This ensures uniqueness per device per key.
@@ -116,6 +130,14 @@ impl diesel::associations::HasTable for UserRow {
     }
 }
 
+impl diesel::associations::HasTable for UserDataRow {
+    type Table = crate::schema::app_user_data::table;
+
+    fn table() -> Self::Table {
+        crate::schema::app_user_data::table
+    }
+}
+
 impl diesel::associations::HasTable for DeviceRow {
     type Table = crate::schema::device::table;
 
@@ -153,6 +175,18 @@ impl<'a> diesel::Identifiable for &'a UserRow {
 
     fn id(self) -> Self::Id {
         self.user_id.as_str()
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a UserDataRow {
+    type Id = (&'a str, &'a str, &'a str);
+
+    fn id(self) -> Self::Id {
+        (
+            self.user_id.as_str(),
+            self.name.as_str(),
+            self.data_type.as_str(),
+        )
     }
 }
 
