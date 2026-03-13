@@ -9,6 +9,7 @@ use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::deadpool::Pool;
 use serde_json::Value;
+use log::info;
 
 const STAFF_REALM: &str = "staff";
 
@@ -525,6 +526,7 @@ impl StateMachineRepo for StateMachineRepository {
         let Some((staff_id, full_name, username, phone_number)) =
             preferred.or(fallback).or(requester_fallback)
         else {
+            info!("No preferred staff found");
             return Err(Error::bad_request(
                 "STAFF_CONTACT_NOT_AVAILABLE",
                 "No active staff contact with phone number is available",

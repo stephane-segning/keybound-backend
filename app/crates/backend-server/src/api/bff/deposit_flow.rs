@@ -13,7 +13,7 @@ use gen_oas_server_bff::apis::deposits::{
 };
 use gen_oas_server_bff::models;
 use serde_json::Value;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 #[backend_core::async_trait]
 pub(super) trait DepositFlow {
@@ -38,6 +38,7 @@ impl DepositFlow for BackendApi {
         claims: &JwtToken,
         body: &models::CreatePhoneDepositRequest,
     ) -> Result<InternalCreatePhoneDepositRequestResponse, Error> {
+        info!("AAA");
         ensure_user_match(claims, &body.user_id)?;
         let user_id = normalized_user_id(&body.user_id);
 
@@ -48,6 +49,7 @@ impl DepositFlow for BackendApi {
             .await?
             .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
 
+        info!("AAA-2");
         if instance.kind != KIND_KYC_FIRST_DEPOSIT {
             return Err(Error::bad_request(
                 "INVALID_SESSION_KIND",
@@ -60,6 +62,7 @@ impl DepositFlow for BackendApi {
             ));
         }
 
+        info!("AAA-3");
         let mut context = instance.context.clone();
         let mut changed = false;
 
@@ -67,15 +70,22 @@ impl DepositFlow for BackendApi {
             .get("deposit")
             .and_then(Value::as_object)
             .is_some_and(|deposit| !deposit.is_empty());
+
+        info!("AAA-4");
         if !deposit_exists {
+            info!("AAA-4---01");
             let (staff_id, staff_full_name, staff_phone_number) =
                 self.state.sm.select_deposit_staff_contact(&user_id).await?;
 
+            info!("AAA-4---02");
             let expires_at = Utc::now() + Duration::hours(2);
 
+            info!("AAA-4---03");
             if !context.is_object() {
                 context = Value::Object(Default::default());
             }
+
+            info!("AAA-4---04");
             if let Some(obj) = context.as_object_mut() {
                 obj.insert(
                     "deposit".to_owned(),
@@ -96,13 +106,17 @@ impl DepositFlow for BackendApi {
                 );
                 changed = true;
             }
+
+            info!("AAA-4---05");
         }
 
+        info!("AAA-5");
         let kyc_step_id = step_id(&instance.id, DEPOSIT_STEP_TYPE);
         if upsert_step_id_in_context(&mut context, &kyc_step_id) {
             changed = true;
         }
 
+        info!("AAA-6");
         if changed {
             self.state
                 .sm
@@ -116,11 +130,13 @@ impl DepositFlow for BackendApi {
                 .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
         }
 
+        info!("AAA-7");
         let engine = Engine::new(self.state.clone());
         engine
             .ensure_manual_step_running(&instance.id, STEP_DEPOSIT_AWAIT_PAYMENT)
             .await?;
 
+        info!("XXX");
         Ok(
             InternalCreatePhoneDepositRequestResponse::Status201_DepositRequestCreated(
                 phone_deposit_from_instance(instance)?,

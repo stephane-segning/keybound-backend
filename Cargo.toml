@@ -56,6 +56,7 @@ redis = { version = "1.0.4", features = ["aio", "tokio-comp"] }
 apalis = "1.0.0-rc.4"
 apalis-redis = "1.0.0-rc.4"
 
+log = "0.4.29"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json", "ansi", "serde_json"] }
 tracing-appender = { version = "0.2" }
 tracing-attributes = { version = "0.1" }
@@ -117,7 +118,7 @@ incremental = false
 strip = true
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 license = "MIT"
 publish = false
