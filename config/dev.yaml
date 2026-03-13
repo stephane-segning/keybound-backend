@@ -48,7 +48,7 @@ sms:
   provider: console # options are 'console' (default) or 'sns'
 
 oauth2:
-  issuer: "http://keycloak:9026/realms/e2e-testing"
+  issuer: "http://10.10.0.74:9026/realms/e2e-testing"
   base-paths: []
 
 kc:

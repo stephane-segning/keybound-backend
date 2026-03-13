@@ -5,7 +5,7 @@
 use crate::claims::Claims;
 use crate::oidc_state::OidcState;
 use backend_core::{Error, Result};
-use jsonwebtoken::{DecodingKey, Validation, decode};
+use jsonwebtoken::{decode, DecodingKey, Validation};
 use tracing::instrument;
 
 /// Wrapper around JWT claims with verification capabilities.
@@ -22,6 +22,16 @@ impl JwtToken {
 
     /// Returns the user ID from the token's subject claim.
     pub fn user_id(&self) -> &str {
+        if self.claims.sub.contains(&":".to_string()) {
+            return &self
+                .claims
+                .sub
+                .split(":")
+                .collect::<Vec<&str>>()
+                .last()
+                .unwrap();
+        }
+
         &self.claims.sub
     }
 
