@@ -16,6 +16,7 @@ impl BackendApi {
         claims: &JwtToken,
         path_params: &models::InternalGetKycStepPathParams,
     ) -> Result<InternalGetKycStepResponse, Error> {
+        // Parse step ID to extract session and step type, validate format
         let (session_id, step_type) = split_step_id(&path_params.step_id)
             .ok_or_else(|| Error::bad_request("INVALID_STEP_ID", "Step id format is invalid"))?;
 

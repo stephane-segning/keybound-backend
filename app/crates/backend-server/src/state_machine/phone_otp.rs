@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio::time::sleep;
+use tracing::warn;
 
 const OTP_MAX_TRIES: i32 = 5;
 const SMS_SEND_MAX_RETRIES: i32 = 2;
@@ -95,7 +96,15 @@ impl PhoneOtpEngine {
                 attempt_id: attempt.id,
             })
             .await
-            .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
+            .map_err(|err| {
+                tracing::warn!(
+                    instance_id = %instance_id,
+                    step_name = %STEP_PHONE_ISSUE_OTP,
+                    error = %err,
+                    "SM enqueue failed for phone OTP step"
+                );
+                Error::internal("SM_ENQUEUE_FAILED", err.to_string())
+            })?;
 
         Ok((otp_ref, expires_at, OTP_MAX_TRIES))
     }
@@ -124,6 +133,16 @@ impl PhoneOtpEngine {
             let finished = Utc::now();
             let transient = sms_error_is_transient(&err);
             let can_retry = transient && attempt.attempt_no <= SMS_SEND_MAX_RETRIES;
+
+            warn!(
+                attempt_id = %job.attempt_id,
+                step_name = %job.step_name,
+                msisdn = %msisdn,
+                transient = transient,
+                attempt_no = attempt.attempt_no,
+                max_retries = SMS_SEND_MAX_RETRIES,
+                "SMS send failed, will retry={}", can_retry
+            );
 
             let mut retry_at = None;
             if can_retry {

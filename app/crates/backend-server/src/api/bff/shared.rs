@@ -40,6 +40,11 @@ pub(super) fn split_step_id(id: &str) -> Option<(String, String)> {
 pub(super) fn ensure_user_match(claims: &JwtToken, expected_user_id: &str) -> Result<(), Error> {
     let authed = BackendApi::require_user_id(claims)?;
     if authed != normalize_user_id(expected_user_id) {
+        tracing::warn!(
+            authed_user_id = %authed,
+            expected_user_id = %normalize_user_id(expected_user_id),
+            "Authentication user mismatch"
+        );
         return Err(Error::unauthorized(
             "Authenticated user does not match request userId",
         ));
@@ -264,6 +269,7 @@ pub(super) fn ensure_step_registered(context: &Value, target_step_id: &str) -> R
         .map(|ids| ids.iter().any(|v| v.as_str() == Some(target_step_id)))
         .unwrap_or(false);
 
+    // Verify step has been created in session context before attempting operations
     if !registered {
         return Err(Error::bad_request(
             "STEP_NOT_CREATED",

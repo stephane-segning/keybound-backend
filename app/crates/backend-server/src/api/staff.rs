@@ -192,7 +192,16 @@ impl KycStateMachines<Error> for BackendApi {
                 attempt_id: attempt.id.clone(),
             })
             .await
-            .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
+            .map_err(|err| {
+                tracing::warn!(
+                    instance_id = %instance.id,
+                    step_name = %step_name,
+                    attempt_id = %attempt.id,
+                    error = %err,
+                    "SM enqueue failed during staff retry operation"
+                );
+                Error::internal("SM_ENQUEUE_FAILED", err.to_string())
+            })?;
 
         Ok(
             StaffKycInstancesInstanceIdRetryPostResponse::Status200_RetryAccepted(

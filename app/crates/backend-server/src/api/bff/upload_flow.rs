@@ -21,8 +21,10 @@ impl BackendApi {
         ensure_user_match(claims, &body.user_id)?;
         let user_id = normalized_user_id(&body.user_id);
 
+        // Parse and validate step ID format for upload presign request
         let (step_session_id, _step_type) = split_step_id(&body.step_id)
             .ok_or_else(|| Error::bad_request("INVALID_STEP_ID", "Step id format is invalid"))?;
+        // Ensure step belongs to the provided session
         if body.session_id != step_session_id {
             return Err(Error::bad_request(
                 "INVALID_STEP",
@@ -123,8 +125,10 @@ impl BackendApi {
     ) -> Result<InternalCompleteUploadResponse, Error> {
         let user_id = BackendApi::require_user_id(claims)?;
 
+        // Parse and validate step ID format for upload completion
         let (step_session_id, _step_type) = split_step_id(&body.step_id)
             .ok_or_else(|| Error::bad_request("INVALID_STEP_ID", "Step id format is invalid"))?;
+        // Ensure step belongs to the provided session
         if body.session_id != step_session_id {
             return Err(Error::bad_request(
                 "INVALID_STEP",

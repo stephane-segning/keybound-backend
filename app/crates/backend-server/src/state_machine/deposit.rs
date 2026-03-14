@@ -8,6 +8,7 @@ use backend_repository::{SmStepAttemptCreateInput, SmStepAttemptPatch, UserDataU
 use chrono::Utc;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use tracing::warn;
 
 pub struct DepositEngine {
     state: Arc<AppState>,
@@ -99,10 +100,19 @@ impl DepositEngine {
             .enqueue(StateMachineStepJob {
                 instance_id: instance_id.to_owned(),
                 step_name: STEP_DEPOSIT_REGISTER_CUSTOMER.to_owned(),
-                attempt_id,
+                attempt_id: attempt_id.clone(),
             })
             .await
-            .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
+            .map_err(|err| {
+                warn!(
+                    instance_id = %instance_id,
+                    step_name = %STEP_DEPOSIT_REGISTER_CUSTOMER,
+                    attempt_id = %attempt_id,
+                    error = %err,
+                    "SM enqueue failed for deposit register customer step"
+                );
+                Error::internal("SM_ENQUEUE_FAILED", err.to_string())
+            })?;
 
         Ok(())
     }
@@ -162,6 +172,12 @@ impl DepositEngine {
                     }),
                 )
                 .await?;
+                warn!(
+                    attempt_id = %job.attempt_id,
+                    user_id = %user_id,
+                    status = %response_error.status,
+                    "CUSS register customer failed with API error response"
+                );
                 return Err(Error::internal(
                     "CUS_REGISTER_FAILED",
                     format!("CUSS register failed: {}", response_error.status),
@@ -175,6 +191,12 @@ impl DepositEngine {
                     }),
                 )
                 .await?;
+                warn!(
+                    attempt_id = %job.attempt_id,
+                    user_id = %user_id,
+                    error = %error,
+                    "CUSS register customer call failed"
+                );
                 return Err(Error::internal(
                     "CUS_REGISTER_CALL_FAILED",
                     error.to_string(),
@@ -242,10 +264,19 @@ impl DepositEngine {
             .enqueue(StateMachineStepJob {
                 instance_id: instance.id.clone(),
                 step_name: STEP_DEPOSIT_APPROVE_AND_DEPOSIT.to_owned(),
-                attempt_id: next_attempt_id,
+                attempt_id: next_attempt_id.clone(),
             })
             .await
-            .map_err(|err| Error::internal("SM_ENQUEUE_FAILED", err.to_string()))?;
+            .map_err(|err| {
+                warn!(
+                    instance_id = %instance.id,
+                    step_name = %STEP_DEPOSIT_APPROVE_AND_DEPOSIT,
+                    attempt_id = %next_attempt_id,
+                    error = %err,
+                    "SM enqueue failed for deposit approve and deposit step"
+                );
+                Error::internal("SM_ENQUEUE_FAILED", err.to_string())
+            })?;
 
         Ok(())
     }
@@ -303,6 +334,12 @@ impl DepositEngine {
                     }),
                 )
                 .await?;
+                warn!(
+                    attempt_id = %job.attempt_id,
+                    savings_account_id = %savings_account_id,
+                    status = %response_error.status,
+                    "CUSS approve and deposit failed with API error response"
+                );
                 return Err(Error::internal(
                     "CUS_APPROVE_DEPOSIT_FAILED",
                     format!("CUSS approve-and-deposit failed: {}", response_error.status),
@@ -316,6 +353,12 @@ impl DepositEngine {
                     }),
                 )
                 .await?;
+                warn!(
+                    attempt_id = %job.attempt_id,
+                    savings_account_id = %savings_account_id,
+                    error = %error,
+                    "CUSS approve and deposit call failed"
+                );
                 return Err(Error::internal(
                     "CUS_APPROVE_DEPOSIT_CALL_FAILED",
                     error.to_string(),

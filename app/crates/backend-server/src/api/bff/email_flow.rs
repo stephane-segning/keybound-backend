@@ -92,12 +92,14 @@ impl BackendApi {
     ) -> Result<InternalIssueMagicEmailChallengeResponse, Error> {
         let (step_session_id, step_type) = split_step_id(&body.step_id)
             .ok_or_else(|| Error::bad_request("INVALID_STEP_ID", "Step id format is invalid"))?;
+        // Verify the step is an email magic type
         if step_type != MAGIC_STEP_TYPE {
             return Err(Error::bad_request(
                 "INVALID_STEP",
                 "Expected EMAIL_MAGIC step",
             ));
         }
+        // Ensure step ownership matches the session
         if body.session_id != step_session_id {
             return Err(Error::bad_request(
                 "INVALID_STEP",

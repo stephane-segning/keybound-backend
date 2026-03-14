@@ -41,6 +41,7 @@ impl BackendApi {
             .await?
             .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
 
+        // Validate session is a first deposit flow
         if instance.kind != KIND_KYC_FIRST_DEPOSIT {
             return Err(Error::bad_request(
                 "INVALID_SESSION_KIND",
