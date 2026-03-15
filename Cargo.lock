@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "backend"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "backend-core",
  "backend-flow-sdk",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "backend-auth"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -956,7 +956,7 @@ dependencies = [
 
 [[package]]
 name = "backend-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "backend-e2e"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "backend-flow-sdk"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1016,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "backend-id"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "backend-core",
  "cuid",
@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "backend-migrate"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "backend-core",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "backend-model"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "chrono",
  "diesel",
@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "backend-repository"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "backend-core",
@@ -1080,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "backend-server"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "apalis",
  "apalis-redis",
@@ -2525,36 +2525,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gen_oas_server_bff"
-version = "9.9.9"
-dependencies = [
- "ammonia",
- "async-trait",
- "axum",
- "axum-extra",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "frunk",
- "frunk-enum-core",
- "frunk-enum-derive",
- "frunk_core",
- "frunk_derives",
- "headers",
- "http 1.4.0",
- "lazy_static",
- "regex",
- "serde",
- "serde_html_form",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "validator",
-]
-
-[[package]]
 name = "gen_oas_server_kc"
 version = "9.9.9"
 dependencies = [
@@ -3852,6 +3822,36 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "openapi"
+version = "9.9.9"
+dependencies = [
+ "ammonia",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "frunk",
+ "frunk-enum-core",
+ "frunk-enum-derive",
+ "frunk_core",
+ "frunk_derives",
+ "headers",
+ "http 1.4.0",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde_html_form",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "validator",
+]
 
 [[package]]
 name = "openssl"
