@@ -27,6 +27,7 @@ pub struct AppState {
     pub config: Config,
     pub oidc_state: Arc<OidcState>,
     pub signature_state: Arc<SignatureState>,
+    pub replay_guard: Arc<dyn crate::auth_signature::ReplayGuard>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -50,6 +51,7 @@ impl AppState {
     pub async fn from_config(
         cfg: &Config,
         pool: Pool<AsyncPgConnection>,
+        imports: flow_registry::RegistryImports,
     ) -> backend_core::Result<Self> {
         info!("initializing application state and repositories");
 
@@ -140,7 +142,7 @@ impl AppState {
 
         let sm: Arc<dyn StateMachineRepo> = Arc::new(sm_repo);
         let flow: Arc<dyn FlowRepo> = Arc::new(FlowRepository::new(pool.clone()));
-        let flow_registry = Arc::new(flow_registry::build_registry());
+        let flow_registry = Arc::new(flow_registry::build_registry(imports).map_err(|e| backend_core::Error::Server(e.to_string()))?);
         let user: Arc<dyn UserRepo> = Arc::new(UserRepository::new(pool.clone()));
         let device: Arc<dyn DeviceRepo> = Arc::new(DeviceRepository::new(pool.clone()));
 
@@ -163,6 +165,8 @@ impl AppState {
         let sm_queue: Arc<dyn StateMachineQueue> =
             Arc::new(RedisStateMachineQueue::new(cfg.redis.url.clone()));
         let notification_queue = Arc::new(RedisNotificationQueue::new(cfg.redis.url.clone()));
+        
+        let replay_guard = Arc::new(crate::auth_signature::RedisReplayGuard::new(cfg.redis.url.clone()));
 
         Ok(Self {
             sm,
@@ -176,6 +180,7 @@ impl AppState {
             config: cfg.clone(),
             oidc_state,
             signature_state,
+            replay_guard,
         })
     }
 }
@@ -228,7 +233,7 @@ cuss:
         );
         let pool = Pool::builder(manager).build().unwrap();
 
-        let state = AppState::from_config(&cfg, pool).await.unwrap();
+        let state = AppState::from_config(&cfg, pool, flow_registry::RegistryImports::default()).await.unwrap();
 
         assert_eq!(state.config.server.port, 8080);
     }

@@ -1,6 +1,5 @@
 pub mod device;
 pub mod flow;
-pub mod state_machine;
 pub mod user;
 
 pub use device::DeviceRepository;

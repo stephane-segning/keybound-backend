@@ -1,5 +1,5 @@
 use backend_flow_sdk::flow::StepRef;
-use backend_flow_sdk::{Actor, Flow, FlowRegistry, SessionDefinition, StepTransition};
+use backend_flow_sdk::{Actor, Flow, FlowError, FlowRegistry, SessionDefinition, StepTransition};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,7 +9,13 @@ pub const SESSION_TYPE_KYC_FULL: &str = "KYC_FULL";
 pub const SESSION_TYPE_ACCOUNT_MANAGEMENT: &str = "ACCOUNT_MANAGEMENT";
 pub const SESSION_TYPE_ADMIN_OPERATIONS: &str = "ADMIN_OPERATIONS";
 
-pub fn build_registry() -> FlowRegistry {
+#[derive(Default, Clone)]
+pub struct RegistryImports {
+    pub flows: Vec<backend_flow_sdk::flow::FlowDefinition>,
+    pub sessions: Vec<backend_flow_sdk::SessionDefinition>,
+}
+
+pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowError> {
     let mut registry = FlowRegistry::new();
     let mut kyc_allowed_flows = Vec::new();
     let mut account_allowed_flows = Vec::new();
@@ -182,6 +188,7 @@ pub fn build_registry() -> FlowRegistry {
         human_id_prefix: "kyc".to_owned(),
         feature: None,
         allowed_flows: kyc_allowed_flows,
+        override_existing: None,
     });
 
     registry.register_session(SessionDefinition {
@@ -189,6 +196,7 @@ pub fn build_registry() -> FlowRegistry {
         human_id_prefix: "auth".to_owned(),
         feature: None,
         allowed_flows: account_allowed_flows,
+        override_existing: None,
     });
 
     registry.register_session(SessionDefinition {
@@ -196,9 +204,195 @@ pub fn build_registry() -> FlowRegistry {
         human_id_prefix: "admin".to_owned(),
         feature: None,
         allowed_flows: admin_allowed_flows,
+        override_existing: None,
     });
 
-    registry
+    for flow_def in imports.flows {
+        apply_flow_import(&mut registry, flow_def)?;
+    }
+
+    for session_def in imports.sessions {
+        apply_session_import(&mut registry, session_def)?;
+    }
+
+    Ok(registry)
+}
+
+pub fn apply_flow_import(
+    registry: &mut FlowRegistry,
+    definition: backend_flow_sdk::flow::FlowDefinition,
+) -> Result<(), FlowError> {
+    let flow_type = definition.metadata.flow_type.clone();
+
+    if registry.get_flow(&flow_type).is_some()
+        && !definition.metadata.override_existing.unwrap_or(false)
+    {
+        return Err(FlowError::InvalidDefinition(format!(
+            "Flow '{}' already exists in registry and override_existing is false or missing",
+            flow_type
+        )));
+    }
+
+    let mut proxy_steps = Vec::new();
+    let mut transitions = HashMap::new();
+
+    let initial_step = definition
+        .spec
+        .steps
+        .first()
+        .map(|s| s.step_type.clone())
+        .ok_or_else(|| {
+            FlowError::InvalidDefinition(format!("Flow '{}' has no steps", flow_type))
+        })?;
+
+    for step_def in definition.spec.steps {
+        let base_step = registry
+            .get_step(&step_def.step_type)
+            .ok_or_else(|| {
+                FlowError::InvalidDefinition(format!(
+                    "Flow '{}' references unknown step '{}'",
+                    flow_type, step_def.step_type
+                ))
+            })?;
+
+        // Extract a cloned Arc for the base step by relying on the fact that `FlowRegistry`
+        // allows cloning step implementations when accessed properly. Wait, `get_step` returns `&dyn Step`.
+        // If we can't get an Arc directly, we might need a workaround. But wait, we can just look up the steps
+        // from the definitions. Wait! `get_step` returns a reference. How do we get the Arc?
+        // We will need to change `FlowRegistry` to expose `get_step_arc`.
+        // Let's assume we'll add `get_step_arc` to `FlowRegistry` next.
+        let base_step_arc = registry.get_step_arc(&step_def.step_type).unwrap();
+
+        let proxy = Arc::new(ProxyStep {
+            step_type: step_def.step_type.clone(),
+            actor: step_def.actor.clone(),
+            human_id: step_def.human_id.clone(),
+            feature: step_def.feature.clone(),
+            inner: base_step_arc,
+        });
+        proxy_steps.push(proxy as StepRef);
+
+        if let Some(on_success) = step_def.on_success {
+            transitions.insert(
+                step_def.step_type.clone(),
+                StepTransition {
+                    on_success,
+                    on_failure: step_def.on_failure,
+                },
+            );
+        } else if step_def.on_failure.is_some() {
+            // on_failure without on_success doesn't make much sense in our model unless implicit COMPLETE
+            transitions.insert(
+                step_def.step_type.clone(),
+                StepTransition {
+                    on_success: "COMPLETE".to_owned(),
+                    on_failure: step_def.on_failure,
+                },
+            );
+        }
+    }
+
+    let dynamic_flow = Arc::new(DynamicFlow {
+        flow_type: flow_type.clone(),
+        human_id: definition.metadata.human_id_prefix.clone(),
+        feature: definition.metadata.feature.clone(),
+        steps: proxy_steps,
+        initial_step,
+        transitions,
+    });
+
+    registry.register_flow(dynamic_flow);
+
+    Ok(())
+}
+
+pub fn apply_session_import(
+    registry: &mut FlowRegistry,
+    definition: backend_flow_sdk::SessionDefinition,
+) -> Result<(), FlowError> {
+    if registry.get_session(&definition.session_type).is_some()
+        && !definition.override_existing.unwrap_or(false)
+    {
+        return Err(FlowError::InvalidDefinition(format!(
+            "Session '{}' already exists in registry and override_existing is false or missing",
+            definition.session_type
+        )));
+    }
+    registry.register_session(definition);
+    Ok(())
+}
+
+struct ProxyStep {
+    step_type: String,
+    actor: Actor,
+    human_id: String,
+    feature: Option<String>,
+    inner: StepRef,
+}
+
+#[async_trait::async_trait]
+impl backend_flow_sdk::Step for ProxyStep {
+    fn step_type(&self) -> &str {
+        &self.step_type
+    }
+
+    fn actor(&self) -> Actor {
+        self.actor.clone()
+    }
+
+    fn human_id(&self) -> &str {
+        &self.human_id
+    }
+
+    fn feature(&self) -> Option<&str> {
+        self.feature.as_deref()
+    }
+
+    async fn execute(
+        &self,
+        ctx: &backend_flow_sdk::StepContext,
+    ) -> Result<backend_flow_sdk::StepOutcome, FlowError> {
+        self.inner.execute(ctx).await
+    }
+
+    async fn validate_input(&self, input: &serde_json::Value) -> Result<(), FlowError> {
+        self.inner.validate_input(input).await
+    }
+}
+
+struct DynamicFlow {
+    flow_type: String,
+    human_id: String,
+    feature: Option<String>,
+    steps: Vec<StepRef>,
+    initial_step: String,
+    transitions: HashMap<String, StepTransition>,
+}
+
+impl Flow for DynamicFlow {
+    fn flow_type(&self) -> &str {
+        &self.flow_type
+    }
+
+    fn human_id(&self) -> &str {
+        &self.human_id
+    }
+
+    fn feature(&self) -> Option<&str> {
+        self.feature.as_deref()
+    }
+
+    fn steps(&self) -> &[StepRef] {
+        &self.steps
+    }
+
+    fn initial_step(&self) -> &str {
+        &self.initial_step
+    }
+
+    fn transitions(&self) -> &HashMap<String, StepTransition> {
+        &self.transitions
+    }
 }
 
 pub fn actor_label(actor: Actor) -> &'static str {
@@ -233,15 +427,15 @@ struct StaticFlow {
 }
 
 impl Flow for StaticFlow {
-    fn flow_type(&self) -> &'static str {
+    fn flow_type(&self) -> &str {
         self.flow_type
     }
 
-    fn human_id(&self) -> &'static str {
+    fn human_id(&self) -> &str {
         self.human_id
     }
 
-    fn feature(&self) -> Option<&'static str> {
+    fn feature(&self) -> Option<&str> {
         self.feature
     }
 
@@ -249,7 +443,7 @@ impl Flow for StaticFlow {
         &self.steps
     }
 
-    fn initial_step(&self) -> &'static str {
+    fn initial_step(&self) -> &str {
         self.initial_step
     }
 

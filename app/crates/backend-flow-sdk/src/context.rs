@@ -16,4 +16,12 @@ impl StepContext {
             .get("step_output")
             .and_then(|v| v.get(step_type))
     }
+
+    pub fn session_config(&self, key: &str) -> Option<&Value> {
+        self.session_context.get(key)
+    }
+
+    pub fn flow_config(&self, key: &str) -> Option<&Value> {
+        self.flow_context.get(key)
+    }
 }

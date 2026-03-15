@@ -32,7 +32,7 @@ impl Step for IssueMagicEmailStep {
     }
 
     async fn execute(&self, _ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        Ok(StepOutcome::Done)
+        Ok(StepOutcome::Done { output: None, updates: None })
     }
 }
 

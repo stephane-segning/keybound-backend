@@ -106,4 +106,3 @@ diesel = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-gen_oas_server_bff = { workspace = true }

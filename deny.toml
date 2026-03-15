@@ -25,7 +25,6 @@ ignore = [
 [bans]
 skip = [
     { name = "gen_oas_client_cuss" },
-    { name = "gen_oas_server_bff" },
     { name = "gen_oas_server_kc" },
     { name = "gen_oas_server_staff" },
 ]

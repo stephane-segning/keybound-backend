@@ -13,6 +13,7 @@ use backend_repository::{
     SigningKeyCreateInput,
 };
 use base64::Engine;
+use backend_auth::JwtToken;
 use chrono::Utc;
 use gen_oas_server_kc::types::Object;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
+use utoipa::{OpenApi, ToSchema};
 
 const HEADER_SIGNATURE: &str = "x-auth-signature";
 const HEADER_TIMESTAMP: &str = "x-auth-signature-timestamp";
@@ -28,6 +30,40 @@ const HEADER_DEVICE_ID: &str = "x-auth-device-id";
 const HEADER_PUBLIC_KEY: &str = "x-auth-public-key";
 const HEADER_NONCE: &str = "x-auth-nonce";
 const HEADER_USER_ID: &str = "x-auth-user-id";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        enroll,
+        bind_enroll,
+        list_devices,
+        revoke_device,
+        exchange_token,
+        jwks,
+        approve_step,
+        userinfo
+    ),
+    components(
+        schemas(
+            EnrollRequest,
+            EnrollResponse,
+            BindEnrollRequest,
+            BindEnrollResponse,
+            DeviceRecordResponse,
+            DevicesResponse,
+            TokenRequest,
+            TokenResponse,
+            JwksResponse,
+            ApproveStepRequest,
+            ApproveStepResponse,
+            UserInfoResponse,
+        )
+    ),
+    tags(
+        (name = "Auth", description = "Authentication APIs")
+    )
+)]
+pub struct AuthOpenApi;
 
 pub fn router(api: BackendApi) -> Router {
     Router::new()
@@ -38,10 +74,11 @@ pub fn router(api: BackendApi) -> Router {
         .route("/token", post(exchange_token))
         .route("/jwks", get(jwks))
         .route("/approve/{step_id}", post(approve_step))
+        .route("/userinfo", get(userinfo))
         .with_state(api)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct EnrollRequest {
     pub user_id: String,
     #[serde(default)]
@@ -50,6 +87,7 @@ struct EnrollRequest {
     pub client_id: Option<String>,
     pub device_id: String,
     pub jkt: String,
+    #[schema(value_type = Object)]
     pub public_jwk: Value,
     #[serde(default)]
     pub user_hint: Option<String>,
@@ -57,7 +95,7 @@ struct EnrollRequest {
     pub attributes: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct EnrollResponse {
     id: String,
     session_id: String,
@@ -66,13 +104,14 @@ struct EnrollResponse {
     status: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct BindEnrollRequest {
     pub user_id: String,
     pub realm: String,
     pub client_id: String,
     pub device_id: String,
     pub jkt: String,
+    #[schema(value_type = Object)]
     pub public_jwk: Value,
     #[serde(default)]
     pub user_hint: Option<String>,
@@ -80,35 +119,37 @@ struct BindEnrollRequest {
     pub attributes: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct BindEnrollResponse {
     id: String,
     device_record_id: String,
     status: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct DeviceRecordResponse {
     device_id: String,
     jkt: String,
     status: String,
     label: Option<String>,
+    #[schema(value_type = String)]
     created_at: chrono::DateTime<Utc>,
+    #[schema(value_type = Option<String>)]
     last_seen_at: Option<chrono::DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct DevicesResponse {
     items: Vec<DeviceRecordResponse>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct TokenRequest {
     #[serde(default)]
     scope: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct TokenResponse {
     access_token: String,
     token_type: String,
@@ -116,12 +157,13 @@ struct TokenResponse {
     scope: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct JwksResponse {
+    #[schema(value_type = Vec<Object>)]
     keys: Vec<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct ApproveStepRequest {
     #[serde(default)]
     decision: Option<String>,
@@ -129,7 +171,7 @@ struct ApproveStepRequest {
     message: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ApproveStepResponse {
     step_id: String,
     status: String,
@@ -146,6 +188,15 @@ struct TokenClaims {
     exp: i64,
 }
 
+#[utoipa::path(
+    post,
+    path = "/enroll",
+    request_body = EnrollRequest,
+    responses(
+        (status = 200, description = "Enrollment created", body = EnrollResponse)
+    ),
+    tag = "Auth"
+)]
 async fn enroll(
     State(api): State<BackendApi>,
     Json(body): Json<EnrollRequest>,
@@ -229,6 +280,18 @@ async fn enroll(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/enroll/{id}/bind",
+    params(
+        ("id" = String, Path, description = "Enrollment session ID")
+    ),
+    request_body = BindEnrollRequest,
+    responses(
+        (status = 200, description = "Device bound successfully", body = BindEnrollResponse)
+    ),
+    tag = "Auth"
+)]
 async fn bind_enroll(
     State(api): State<BackendApi>,
     Path(id): Path<String>,
@@ -259,7 +322,8 @@ async fn bind_enroll(
         &headers,
         &body_bytes,
         expected_jwk,
-    )?;
+    )
+    .await?;
 
     let bind_request = EnrollmentBindRequest {
         realm: body.realm,
@@ -318,6 +382,14 @@ async fn bind_enroll(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/devices",
+    responses(
+        (status = 200, description = "List of devices", body = DevicesResponse)
+    ),
+    tag = "Auth"
+)]
 async fn list_devices(
     State(api): State<BackendApi>,
     method: Method,
@@ -346,6 +418,17 @@ async fn list_devices(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/devices/{device_id}",
+    params(
+        ("device_id" = String, Path, description = "Device ID")
+    ),
+    responses(
+        (status = 204, description = "Device revoked")
+    ),
+    tag = "Auth"
+)]
 async fn revoke_device(
     State(api): State<BackendApi>,
     Path(device_id): Path<String>,
@@ -370,6 +453,15 @@ async fn revoke_device(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/token",
+    request_body = TokenRequest,
+    responses(
+        (status = 200, description = "Token issued", body = TokenResponse)
+    ),
+    tag = "Auth"
+)]
 async fn exchange_token(
     State(api): State<BackendApi>,
     method: Method,
@@ -428,6 +520,14 @@ async fn exchange_token(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/jwks",
+    responses(
+        (status = 200, description = "JWKS keys", body = JwksResponse)
+    ),
+    tag = "Auth"
+)]
 async fn jwks(State(api): State<BackendApi>) -> Result<Json<JwksResponse>, Error> {
     let keys = api.state.flow.list_active_signing_keys().await?;
     Ok(Json(JwksResponse {
@@ -435,19 +535,46 @@ async fn jwks(State(api): State<BackendApi>) -> Result<Json<JwksResponse>, Error
     }))
 }
 
+async fn extract_bearer_token(
+    headers: &HeaderMap,
+    api: &BackendApi,
+) -> Result<JwtToken, Error> {
+    let auth_header = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+        
+    let prefix = "Bearer ";
+    if !auth_header.to_ascii_lowercase().starts_with("bearer ") {
+        return Err(Error::unauthorized("Missing bearer token"));
+    }
+    
+    let token = &auth_header[prefix.len()..];
+    JwtToken::verify(token, &api.oidc_state).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/approve/{step_id}",
+    params(
+        ("step_id" = String, Path, description = "Step ID to approve or reject")
+    ),
+    request_body = ApproveStepRequest,
+    responses(
+        (status = 200, description = "Step approved or rejected", body = ApproveStepResponse)
+    ),
+    tag = "Auth",
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 async fn approve_step(
     State(api): State<BackendApi>,
     Path(step_id): Path<String>,
     headers: HeaderMap,
     Json(body): Json<ApproveStepRequest>,
 ) -> Result<Json<ApproveStepResponse>, Error> {
-    let auth_header = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    if !auth_header.to_ascii_lowercase().starts_with("bearer ") {
-        return Err(Error::unauthorized("Missing bearer token"));
-    }
+    let _token = extract_bearer_token(&headers, &api).await?;
 
     let decision = body
         .decision
@@ -477,6 +604,39 @@ async fn approve_step(
     Ok(Json(ApproveStepResponse {
         step_id,
         status: target_status.to_owned(),
+    }))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct UserInfoResponse {
+    sub: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_username: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/userinfo",
+    responses(
+        (status = 200, description = "User info", body = UserInfoResponse)
+    ),
+    tag = "Auth",
+    security(
+        ("bearerAuth" = [])
+    )
+)]
+async fn userinfo(
+    State(api): State<BackendApi>,
+    headers: HeaderMap,
+) -> Result<Json<UserInfoResponse>, Error> {
+    let token = extract_bearer_token(&headers, &api).await?;
+
+    Ok(Json(UserInfoResponse {
+        sub: token.claims.sub,
+        name: token.claims.name,
+        preferred_username: token.claims.preferred_username,
     }))
 }
 
@@ -512,7 +672,7 @@ async fn authenticate_device(
         return Err(Error::unauthorized("Device is not active"));
     }
 
-    verify_signature_with_jwk(api, method, path, headers, body, &device.public_jwk)?;
+    verify_signature_with_jwk(api, method, path, headers, body, &device.public_jwk).await?;
 
     Ok(AuthenticatedDevice {
         device_id: device.device_id,
@@ -520,7 +680,7 @@ async fn authenticate_device(
     })
 }
 
-fn verify_signature_with_jwk(
+async fn verify_signature_with_jwk(
     api: &BackendApi,
     method: &Method,
     path: &str,
@@ -538,43 +698,38 @@ fn verify_signature_with_jwk(
         .ok_or_else(|| Error::unauthorized("Missing x-auth-nonce"))?;
     let device_id = header_value(headers, HEADER_DEVICE_ID)
         .ok_or_else(|| Error::unauthorized("Missing x-auth-device-id"))?;
-    let user_id_hint = header_value(headers, HEADER_USER_ID).unwrap_or_default();
+    let user_id_hint = header_value(headers, HEADER_USER_ID);
 
     let timestamp = timestamp_str
         .parse::<i64>()
         .map_err(|_| Error::unauthorized("Invalid x-auth-signature-timestamp"))?;
-    let skew = (Utc::now().timestamp() - timestamp).abs();
-    if skew > api.state.config.auth.max_clock_skew_seconds {
-        return Err(Error::unauthorized("Timestamp out of skew"));
-    }
+    
+    crate::auth_signature::validate_timestamp(timestamp, api.state.config.auth.max_clock_skew_seconds)?;
 
-    let provided_public_key = canonicalize_jwk_str(&public_key_header)?;
-    let expected_public_key = canonicalize_jwk_str(public_jwk)?;
-    if provided_public_key != expected_public_key {
-        return Err(Error::unauthorized(
-            "x-auth-public-key does not match expected key",
-        ));
-    }
+    api.state.replay_guard.check_and_record(
+        &device_id,
+        &nonce,
+        timestamp,
+        api.state.config.auth.max_clock_skew_seconds,
+    ).await?;
+
+    crate::auth_signature::validate_public_key_match(&public_key_header, public_jwk)?;
 
     let body_str = std::str::from_utf8(body)
         .map_err(|_| Error::bad_request("INVALID_BODY", "Body must be utf-8"))?;
 
-    let canonical_payload = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+    let canonical_payload = crate::auth_signature::canonicalize_payload(
         timestamp,
-        nonce,
-        method.as_str().to_uppercase(),
+        &nonce,
+        method.as_str(),
         path,
         body_str,
-        provided_public_key,
-        device_id,
-        user_id_hint,
-    );
-    let digest = Sha256::digest(canonical_payload.as_bytes());
-    let expected = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
-    if signature != expected {
-        return Err(Error::unauthorized("Invalid signature"));
-    }
+        &public_key_header,
+        &device_id,
+        user_id_hint.as_deref(),
+    )?;
+
+    crate::auth_signature::verify_signature(&public_key_header, &canonical_payload, &signature)?;
 
     Ok(())
 }

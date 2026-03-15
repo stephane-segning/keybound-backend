@@ -6,11 +6,11 @@ use std::sync::Arc;
 pub type StepRef = Arc<dyn Step>;
 
 pub trait Flow: Send + Sync + 'static {
-    fn flow_type(&self) -> &'static str;
-    fn human_id(&self) -> &'static str;
-    fn feature(&self) -> Option<&'static str>;
+    fn flow_type(&self) -> &str;
+    fn human_id(&self) -> &str;
+    fn feature(&self) -> Option<&str>;
     fn steps(&self) -> &[StepRef];
-    fn initial_step(&self) -> &'static str;
+    fn initial_step(&self) -> &str;
     fn transitions(&self) -> &HashMap<String, StepTransition>;
 }
 
@@ -34,6 +34,8 @@ pub struct FlowMetadata {
     pub human_id_prefix: String,
     #[serde(default)]
     pub feature: Option<String>,
+    #[serde(default)]
+    pub override_existing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

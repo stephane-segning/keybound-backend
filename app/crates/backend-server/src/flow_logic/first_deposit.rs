@@ -68,6 +68,6 @@ impl Step for ApproveAndDepositStep {
     }
 
     async fn execute(&self, _ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        Ok(StepOutcome::Done)
+        Ok(StepOutcome::Done { output: None, updates: None })
     }
 }

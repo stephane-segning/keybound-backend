@@ -443,4 +443,45 @@ impl FlowRepo for FlowRepository {
             .await
             .map_err(Into::into)
     }
+
+    async fn claim_next_system_step(&self) -> RepoResult<Option<db::FlowStepRow>> {
+        use backend_model::schema::flow_step;
+
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+
+        // Find a step that is either RUNNING or WAITING+retry_due, and is a SYSTEM step.
+        // We update its status to RUNNING to claim it.
+        // diesel_async doesn't natively support UPDATE ... RETURNING with a complex WHERE
+        // easily without raw SQL or subqueries if we want to grab just 1 row atomically.
+        // Let's use a subquery approach with raw SQL.
+
+        let sql = diesel::sql_query(
+            r#"
+            UPDATE flow_step
+            SET status = 'RUNNING', updated_at = NOW()
+            WHERE id = (
+                SELECT id
+                FROM flow_step
+                WHERE actor = 'SYSTEM'
+                  AND (
+                      status = 'RUNNING' OR
+                      (status = 'WAITING' AND next_retry_at <= NOW())
+                  )
+                ORDER BY updated_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            RETURNING *;
+            "#,
+        );
+
+        let result = sql
+            .get_result::<db::FlowStepRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Into::into);
+
+        result
+    }
 }

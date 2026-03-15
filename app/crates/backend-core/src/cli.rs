@@ -52,9 +52,9 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
-    /// Import flow definitions from JSON/YAML.
+    /// Import flow definitions from JSON/YAML file or directory.
     Import {
-        file: PathBuf,
+        path: PathBuf,
         #[arg(long)]
         dry_run: bool,
     },

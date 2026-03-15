@@ -108,8 +108,9 @@ pub struct FlowInstanceRow {
 }
 
 /// Step execution row within a flow.
-#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[derive(Debug, Clone, Queryable, Selectable, Insertable, QueryableByName)]
 #[diesel(table_name = crate::schema::flow_step)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct FlowStepRow {
     pub id: String,
     pub human_id: String,

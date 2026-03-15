@@ -8,4 +8,6 @@ pub struct SessionDefinition {
     pub feature: Option<String>,
     #[serde(default)]
     pub allowed_flows: Vec<String>,
+    #[serde(default)]
+    pub override_existing: Option<bool>,
 }

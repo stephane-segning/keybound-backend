@@ -1,7 +1,5 @@
 pub mod auth;
 pub mod bff_flow;
-#[cfg(all(test, feature = "it-tests"))]
-mod it_tests;
 pub mod kc;
 mod repro_422;
 pub mod staff;

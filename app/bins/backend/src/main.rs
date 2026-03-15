@@ -7,7 +7,7 @@ use openssl_sys as _;
 use backend_core::{Cli, Commands, Result, RuntimeMode, init_tracing, load_from_path};
 use backend_flow_sdk::export::export_flow_definition;
 use backend_flow_sdk::flow::{FlowDefinition, FlowMetadata, FlowSpec, FlowStepDefinition};
-use backend_flow_sdk::{Actor, ExportFormat, ImportFormat, import_flow_definition};
+use backend_flow_sdk::{ExportFormat, ImportFormat, import_flow_definition};
 use backend_server::{run_worker, serve};
 use branding::banner::BANNER;
 use clap::Parser;
@@ -55,12 +55,15 @@ async fn main() -> Result<()> {
         }) => {
             run_export(target.as_deref(), all, output.as_deref())?;
         }
-        Some(Commands::Import { file, dry_run }) => {
-            import_definition_file(&file)?;
+        Some(Commands::Import { path, dry_run }) => {
+            let imports = load_imports(&path)?;
             if dry_run {
-                info!(file = %file.display(), "import dry-run validation succeeded");
+                info!(path = %path.display(), flows = imports.flows.len(), sessions = imports.sessions.len(), "import dry-run validation succeeded");
             } else {
-                info!(file = %file.display(), "flow definition import validated");
+                // If not dry-run, we should probably print that we can't persist them without DB, 
+                // but wait, imports are runtime only in this system right now!
+                // "Startup import becomes real runtime behavior" implies they're just loaded into the registry at boot!
+                info!(path = %path.display(), flows = imports.flows.len(), sessions = imports.sessions.len(), "flow definition import validated");
             }
         }
         Some(Commands::Migrate { config_path }) => {
@@ -85,30 +88,56 @@ async fn run_runtime(config_path: &str, mode: RuntimeMode, import: Option<&Path>
     config.runtime.mode = mode;
     init_tracing(&config.logging);
 
-    if let Some(path) = import {
-        import_definition_file(path)?;
-        info!(file = %path.display(), "validated startup import definition");
-    }
+    let imports = if let Some(path) = import {
+        let loaded = load_imports(path)?;
+        info!(path = %path.display(), flows = loaded.flows.len(), sessions = loaded.sessions.len(), "validated startup import definitions");
+        loaded
+    } else {
+        backend_server::flow_registry::RegistryImports::default()
+    };
 
     match config.runtime.mode {
         RuntimeMode::Server => {
             info!("starting in server mode");
-            serve(&config).await?;
+            serve(&config, imports).await?;
         }
         RuntimeMode::Worker => {
             info!("starting in worker mode");
-            run_worker(&config).await?;
+            run_worker(&config, imports).await?;
         }
         RuntimeMode::Shared => {
             info!("starting in shared mode");
-            tokio::try_join!(serve(&config), run_worker(&config))?;
+            tokio::try_join!(serve(&config, imports.clone()), run_worker(&config, imports))?;
         }
     }
 
     Ok(())
 }
 
-fn import_definition_file(path: &Path) -> Result<()> {
+fn load_imports(path: &Path) -> Result<backend_server::flow_registry::RegistryImports> {
+    let mut imports = backend_server::flow_registry::RegistryImports::default();
+
+    if path.is_dir() {
+        let entries = std::fs::read_dir(path)?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                    if ext.eq_ignore_ascii_case("json") || ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
+                        parse_import_file(&path, &mut imports)?;
+                    }
+                }
+            }
+        }
+    } else {
+        parse_import_file(path, &mut imports)?;
+    }
+
+    Ok(imports)
+}
+
+fn parse_import_file(path: &Path, imports: &mut backend_server::flow_registry::RegistryImports) -> Result<()> {
     let content = std::fs::read_to_string(path)?;
     let format = ImportFormat::from_path(path);
 
@@ -125,12 +154,17 @@ fn import_definition_file(path: &Path) -> Result<()> {
         .unwrap_or_default();
 
     if kind.eq_ignore_ascii_case("flow") {
-        import_flow_definition(&content, format)
+        let definition = import_flow_definition(&content, format)
             .map_err(|error| backend_core::Error::Server(error.to_string()))?;
+        imports.flows.push(definition);
+    } else if kind.eq_ignore_ascii_case("session") {
+        let definition = backend_flow_sdk::import_session_definition(&content, format)
+            .map_err(|error| backend_core::Error::Server(error.to_string()))?;
+        imports.sessions.push(definition);
     } else {
         return Err(backend_core::Error::bad_request(
             "UNSUPPORTED_IMPORT_KIND",
-            "Only Flow definitions are currently supported",
+            "Only Flow and Session definitions are supported",
         ));
     }
 
@@ -138,7 +172,45 @@ fn import_definition_file(path: &Path) -> Result<()> {
 }
 
 fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<()> {
-    let definitions = bundled_flow_definitions();
+    let imports = backend_server::flow_registry::RegistryImports::default();
+    let registry = backend_server::flow_registry::build_registry(imports).map_err(|e| backend_core::Error::Server(e.to_string()))?;
+    
+    let mut definitions = Vec::new();
+    for flow_type in registry.flow_types() {
+        if let Some(flow) = registry.get_flow(&flow_type) {
+            let mut steps = Vec::new();
+            for step in flow.steps() {
+                let mut on_success = None;
+                let mut on_failure = None;
+                if let Some(transition) = flow.transitions().get(step.step_type()) {
+                    on_success = Some(transition.on_success.clone());
+                    on_failure = transition.on_failure.clone();
+                }
+
+                steps.push(FlowStepDefinition {
+                    step_type: step.step_type().to_owned(),
+                    actor: step.actor().clone(),
+                    human_id: step.human_id().to_owned(),
+                    feature: step.feature().map(|f| f.to_owned()),
+                    config: Some(serde_json::json!({})),
+                    on_success,
+                    on_failure,
+                });
+            }
+
+            definitions.push(FlowDefinition {
+                api_version: "flow/v1".to_owned(),
+                kind: "Flow".to_owned(),
+                metadata: FlowMetadata {
+                    flow_type: flow.flow_type().to_owned(),
+                    human_id_prefix: flow.human_id().to_owned(),
+                    feature: flow.feature().map(|f| f.to_owned()),
+                    override_existing: None,
+                },
+                spec: FlowSpec { steps },
+            });
+        }
+    }
 
     let selected = if all || target.is_none() {
         definitions
@@ -193,100 +265,3 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
     Ok(())
 }
 
-fn bundled_flow_definitions() -> Vec<FlowDefinition> {
-    vec![
-        FlowDefinition {
-            api_version: "flow/v1".to_owned(),
-            kind: "Flow".to_owned(),
-            metadata: FlowMetadata {
-                flow_type: "PHONE_OTP".to_owned(),
-                human_id_prefix: "phone_otp".to_owned(),
-                feature: Some("flow-phone-otp".to_owned()),
-            },
-            spec: FlowSpec {
-                steps: vec![
-                    FlowStepDefinition {
-                        step_type: "SEND_OTP".to_owned(),
-                        actor: Actor::System,
-                        human_id: "send".to_owned(),
-                        feature: Some("flow-phone-otp".to_owned()),
-                        config: Some(serde_json::json!({"ttl_seconds": 300})),
-                        on_success: Some("VERIFY_OTP".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                    FlowStepDefinition {
-                        step_type: "VERIFY_OTP".to_owned(),
-                        actor: Actor::EndUser,
-                        human_id: "verify".to_owned(),
-                        feature: Some("flow-phone-otp".to_owned()),
-                        config: Some(serde_json::json!({"max_attempts": 5})),
-                        on_success: Some("COMPLETE".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                ],
-            },
-        },
-        FlowDefinition {
-            api_version: "flow/v1".to_owned(),
-            kind: "Flow".to_owned(),
-            metadata: FlowMetadata {
-                flow_type: "EMAIL_MAGIC".to_owned(),
-                human_id_prefix: "email_magic".to_owned(),
-                feature: Some("flow-email-magic".to_owned()),
-            },
-            spec: FlowSpec {
-                steps: vec![
-                    FlowStepDefinition {
-                        step_type: "ISSUE_MAGIC".to_owned(),
-                        actor: Actor::System,
-                        human_id: "issue".to_owned(),
-                        feature: Some("flow-email-magic".to_owned()),
-                        config: Some(serde_json::json!({"ttl_seconds": 900})),
-                        on_success: Some("VERIFY_MAGIC".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                    FlowStepDefinition {
-                        step_type: "VERIFY_MAGIC".to_owned(),
-                        actor: Actor::EndUser,
-                        human_id: "verify".to_owned(),
-                        feature: Some("flow-email-magic".to_owned()),
-                        config: Some(serde_json::json!({})),
-                        on_success: Some("COMPLETE".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                ],
-            },
-        },
-        FlowDefinition {
-            api_version: "flow/v1".to_owned(),
-            kind: "Flow".to_owned(),
-            metadata: FlowMetadata {
-                flow_type: "FIRST_DEPOSIT".to_owned(),
-                human_id_prefix: "first_deposit".to_owned(),
-                feature: Some("flow-first-deposit".to_owned()),
-            },
-            spec: FlowSpec {
-                steps: vec![
-                    FlowStepDefinition {
-                        step_type: "AWAIT_PAYMENT_CONFIRMATION".to_owned(),
-                        actor: Actor::Admin,
-                        human_id: "await_payment".to_owned(),
-                        feature: Some("flow-first-deposit".to_owned()),
-                        config: Some(serde_json::json!({})),
-                        on_success: Some("APPROVE_AND_DEPOSIT".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                    FlowStepDefinition {
-                        step_type: "APPROVE_AND_DEPOSIT".to_owned(),
-                        actor: Actor::System,
-                        human_id: "approve".to_owned(),
-                        feature: Some("flow-first-deposit".to_owned()),
-                        config: Some(serde_json::json!({})),
-                        on_success: Some("COMPLETE".to_owned()),
-                        on_failure: Some("FAILED".to_owned()),
-                    },
-                ],
-            },
-        },
-    ]
-}

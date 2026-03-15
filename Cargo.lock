@@ -1046,7 +1046,6 @@ version = "0.2.3"
 dependencies = [
  "chrono",
  "diesel",
- "gen_oas_server_bff",
  "gen_oas_server_kc",
  "gen_oas_server_staff",
  "hex",
@@ -1106,7 +1105,6 @@ dependencies = [
  "diesel",
  "diesel-async",
  "gen_oas_client_cuss",
- "gen_oas_server_bff",
  "gen_oas_server_kc",
  "gen_oas_server_staff",
  "headers",

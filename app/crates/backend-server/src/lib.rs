@@ -6,10 +6,11 @@
 //! It handles user storage, device binding, KYC flows, and integrations.
 
 pub(crate) mod api;
+pub(crate) mod auth_signature;
 pub(crate) mod bff_signature;
 pub(crate) mod file_storage;
 pub(crate) mod flow_logic;
-pub(crate) mod flow_registry;
+pub mod flow_registry;
 pub(crate) mod health;
 pub(crate) mod state;
 pub(crate) mod state_machine;
@@ -39,16 +40,17 @@ use tracing::info;
 ///
 /// # Arguments
 /// * `core_config` - Application configuration
+/// * `imports` - Flow definitions to import into the registry
 ///
 /// # Returns
 /// `Result<()>` indicating successful server shutdown or error
 ///
 /// # Errors
 /// Returns an error if initialization fails or the server cannot start
-pub async fn serve(core_config: &Config) -> Result<()> {
+pub async fn serve(core_config: &Config, imports: flow_registry::RegistryImports) -> Result<()> {
     let listen_addr = core_config.api_listen_addr()?;
     let pool = connect_postgres_and_migrate(&core_config.database.url).await?;
-    let state = Arc::new(state::AppState::from_config(core_config, pool).await?);
+    let state = Arc::new(state::AppState::from_config(core_config, pool, imports).await?);
 
     let api = api::BackendApi::new(
         state.clone(),
@@ -96,13 +98,14 @@ pub async fn serve(core_config: &Config) -> Result<()> {
 ///
 /// # Arguments
 /// * `core_config` - Application configuration
+/// * `imports` - Flow definitions to import into the registry
 ///
 /// # Returns
 /// `Result<()>` indicating successful worker shutdown or error
 ///
 /// # Errors
 /// Returns an error if Redis is unavailable or worker initialization fails
-pub async fn run_worker(core_config: &Config) -> Result<()> {
+pub async fn run_worker(core_config: &Config, imports: flow_registry::RegistryImports) -> Result<()> {
     let pool = connect_postgres_and_migrate(&core_config.database.url).await?;
     let _conn = pool
         .get()
@@ -111,7 +114,7 @@ pub async fn run_worker(core_config: &Config) -> Result<()> {
     worker::ensure_redis_ready(&core_config.redis.url).await?;
     let worker_lock = worker::acquire_worker_consumer_lock(&core_config.redis.url).await?;
 
-    let state = Arc::new(state::AppState::from_config(core_config, pool).await?);
+    let state = Arc::new(state::AppState::from_config(core_config, pool, imports).await?);
 
     let health_server = if core_config.runtime.mode == backend_core::RuntimeMode::Worker {
         let listen_addr = core_config.api_listen_addr()?;

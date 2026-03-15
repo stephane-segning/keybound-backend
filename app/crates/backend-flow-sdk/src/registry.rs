@@ -30,6 +30,10 @@ impl FlowRegistry {
         self.steps.get(step_type).map(Arc::as_ref)
     }
 
+    pub fn get_step_arc(&self, step_type: &str) -> Option<Arc<dyn Step>> {
+        self.steps.get(step_type).cloned()
+    }
+
     pub fn get_flow(&self, flow_type: &str) -> Option<&dyn Flow> {
         self.flows.get(flow_type).map(Arc::as_ref)
     }

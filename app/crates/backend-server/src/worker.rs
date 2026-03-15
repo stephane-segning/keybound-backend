@@ -256,36 +256,32 @@ impl NotificationQueue for RedisNotificationQueue {
 }
 
 pub async fn run(state: Arc<AppState>) -> backend_core::Result<()> {
-    let redis_url = state.config.redis.url.clone();
+    info!("starting flow sdk system worker");
 
-    let conn = apalis_redis::connect(redis_url.clone())
-        .await
-        .map_err(|error| backend_core::Error::Server(error.to_string()))?;
-    let sm_storage = RedisStorage::new_with_config(conn, RedisConfig::new(sm_queue_namespace()));
-
-    let sm_worker = WorkerBuilder::new("state-machine-worker")
-        .backend(sm_storage)
-        .build(move |job: StateMachineStepJob| {
-            let state = state.clone();
-            async move {
-                let engine = Engine::new(state);
-                engine
-                    .process_step_job(job)
-                    .await
-                    .map_err(|e| Box::new(e) as BoxDynError)
+    loop {
+        let state_clone = state.clone();
+        
+        // Wait for next eligible step
+        let maybe_step = match state_clone.flow.claim_next_system_step().await {
+            Ok(step) => step,
+            Err(e) => {
+                warn!("failed to claim next system step: {}", e);
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                continue;
             }
-        });
+        };
 
-    info!("starting workers");
-
-    tokio::select! {
-        run_result = sm_worker.run() => {
-            run_result.map_err(|error| backend_core::Error::Server(error.to_string()))?;
-        }
-        _ = tokio::signal::ctrl_c() => {
-            info!("ctrl+c received, stopping workers");
+        match maybe_step {
+            Some(step) => {
+                let engine = Engine::new(state_clone);
+                if let Err(e) = engine.process_flow_step(step).await {
+                    warn!("failed to process system flow step: {}", e);
+                }
+            }
+            None => {
+                // No eligible step found, sleep for a short duration
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
         }
     }
-
-    Ok(())
 }

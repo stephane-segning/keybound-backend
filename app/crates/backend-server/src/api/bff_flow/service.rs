@@ -486,7 +486,9 @@ async fn create_step_chain(
             .await
             .map_err(flow_error_to_http)?
         {
-            StepOutcome::Done => {
+            StepOutcome::Done { output, updates } => {
+                let actual_output = output.unwrap_or_else(|| json!({"result": "done"}));
+                
                 api.state
                     .flow
                     .patch_step(
@@ -494,13 +496,31 @@ async fn create_step_chain(
                         FlowStepPatch::new()
                             .status(FLOW_STATUS_COMPLETED)
                             .input(input_value.clone())
-                            .output(json!({"result": "done"}))
+                            .output(actual_output.clone())
                             .clear_error()
                             .finished_at(Utc::now()),
                     )
                     .await?;
 
-                let context = store_step_output(flow.context.clone(), &step_type, &input_value);
+                let mut context = store_step_output(flow.context.clone(), &step_type, &actual_output);
+                
+                if let Some(updates) = updates {
+                    if let Some(flow_patch) = updates.flow_context_patch {
+                        context = merge_json(context, flow_patch);
+                    }
+                    if let Some(session_patch) = updates.session_context_patch {
+                        let current_session = api.state.flow.get_session(&flow.session_id).await?
+                            .ok_or_else(|| Error::internal("SESSION_NOT_FOUND", "Session not found"))?;
+                        let new_session_context = merge_json(current_session.context.clone(), session_patch);
+                        api.state.flow.update_session_context(&flow.session_id, new_session_context).await?;
+                    }
+                    if let Some(metadata_patch) = updates.user_metadata_patch {
+                        if let Some(user_id) = session.user_id.as_deref() {
+                            api.state.user.update_metadata(user_id, metadata_patch).await?;
+                        }
+                    }
+                }
+                
                 flow = api
                     .state
                     .flow
@@ -694,6 +714,21 @@ fn store_step_output(mut context: Value, step_type: &str, input: &Value) -> Valu
     }
 
     context
+}
+
+fn merge_json(mut base: Value, patch: Value) -> Value {
+    if let (Some(base_obj), Some(patch_obj)) = (base.as_object_mut(), patch.as_object()) {
+        for (k, v) in patch_obj {
+            if v.is_null() {
+                base_obj.remove(k);
+            } else {
+                base_obj.insert(k.clone(), v.clone());
+            }
+        }
+    } else if !patch.is_null() {
+        return patch;
+    }
+    base
 }
 
 fn normalize_or_default_human_id(value: Option<String>, fallback: String) -> Result<String, Error> {

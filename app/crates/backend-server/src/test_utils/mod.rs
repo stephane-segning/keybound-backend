@@ -253,6 +253,9 @@ mock! {
         async fn list_active_signing_keys(
             &self,
         ) -> RepoResult<Vec<backend_model::db::SigningKeyRow>>;
+        async fn claim_next_system_step(
+            &self,
+        ) -> RepoResult<Option<backend_model::db::FlowStepRow>>;
     }
 }
 
@@ -297,6 +300,8 @@ mock! {
             user_id: &str,
             eager_fetch_only: bool,
         ) -> RepoResult<Vec<backend_model::db::UserDataRow>>;
+
+        async fn update_metadata(&self, user_id: &str, metadata_patch: serde_json::Value) -> RepoResult<()>;
     }
 }
 
@@ -447,7 +452,7 @@ cuss:
                 .sm
                 .unwrap_or_else(|| Arc::new(MockStateMachineRepo::new())),
             flow: self.flow.unwrap_or_else(|| Arc::new(MockFlowRepo::new())),
-            flow_registry: Arc::new(flow_registry::build_registry()),
+            flow_registry: Arc::new(flow_registry::build_registry(flow_registry::RegistryImports::default()).unwrap()),
             user: self.user.unwrap_or_else(|| Arc::new(MockUserRepo::new())),
             device: self
                 .device
@@ -464,6 +469,7 @@ cuss:
             config,
             oidc_state,
             signature_state,
+            replay_guard: Arc::new(crate::auth_signature::InMemoryReplayGuard::new()),
         }
     }
 }

@@ -10,9 +10,6 @@
 //! - flow_instance: Flow executions within a session
 //! - flow_step: Step executions within a flow
 //! - signing_key: Backend RSA keys for token issuance
-//! - sm_instance: State machine instances for KYC flows
-//! - sm_event: Event history for state machines
-//! - sm_step_attempt: Individual step execution records with retry support
 
 diesel::table! {
     /// Static deposit recipients synced from configuration
@@ -138,62 +135,12 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    /// State machine instances for KYC processes
-    sm_instance (id) {
-        id -> Text,
-        kind -> Text,
-        user_id -> Nullable<Text>,
-        idempotency_key -> Text,
-        status -> Text,
-        context -> Jsonb,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
-        completed_at -> Nullable<Timestamptz>,
-    }
-}
-
-diesel::table! {
-    /// State machine event history
-    sm_event (id) {
-        id -> Text,
-        instance_id -> Text,
-        kind -> Text,
-        actor_type -> Text,
-        actor_id -> Nullable<Text>,
-        payload -> Jsonb,
-        created_at -> Timestamptz,
-    }
-}
-
-diesel::table! {
-    /// State machine step execution attempts
-    sm_step_attempt (id) {
-        id -> Text,
-        instance_id -> Text,
-        step_name -> Text,
-        attempt_no -> Int4,
-        status -> Text,
-        external_ref -> Nullable<Text>,
-        input -> Jsonb,
-        output -> Nullable<Jsonb>,
-        error -> Nullable<Jsonb>,
-        queued_at -> Nullable<Timestamptz>,
-        started_at -> Nullable<Timestamptz>,
-        finished_at -> Nullable<Timestamptz>,
-        next_retry_at -> Nullable<Timestamptz>,
-    }
-}
-
 // Foreign key relationships
 diesel::joinable!(app_user_data -> app_user (user_id));
 diesel::joinable!(device -> app_user (user_id));
 diesel::joinable!(flow_instance -> flow_session (session_id));
 diesel::joinable!(flow_session -> app_user (user_id));
 diesel::joinable!(flow_step -> flow_instance (flow_id));
-diesel::joinable!(sm_instance -> app_user (user_id));
-diesel::joinable!(sm_event -> sm_instance (instance_id));
-diesel::joinable!(sm_step_attempt -> sm_instance (instance_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     app_deposit_recipients,
@@ -204,7 +151,4 @@ diesel::allow_tables_to_appear_in_same_query!(
     flow_session,
     flow_step,
     signing_key,
-    sm_instance,
-    sm_event,
-    sm_step_attempt,
 );
