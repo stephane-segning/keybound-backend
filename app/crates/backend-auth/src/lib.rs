@@ -1,4 +1,5 @@
 //! Authentication and authorization library for the tokenization backend.
+#![allow(clippy::result_large_err)]
 //!
 //! This crate provides JWT token validation, OIDC discovery integration,
 //! Keycloak signature verification, and HTTP middleware for request authentication.

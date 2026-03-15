@@ -10,26 +10,37 @@ authors.workspace = true
 test-utils = ["dep:mockall"]
 it-tests = []
 
-flow-deposit = []
-flow-email = []
-flow-phone = []
-flow-session = []
-flow-step = []
-flow-upload = []
-flow-user = []
-all-flows = [
-    "flow-deposit",
-    "flow-email",
-    "flow-phone",
-    "flow-session",
-    "flow-step",
-    "flow-upload",
-    "flow-user",
-]
+default = ["flow-phone-otp"]
+
+flow-sdk = ["dep:backend-flow-sdk"]
+flow-phone-otp = ["flow-sdk"]
+flow-email-magic = ["flow-sdk"]
+flow-first-deposit = ["flow-sdk"]
+flow-id-document = ["flow-sdk"]
+flow-address-proof = ["flow-sdk"]
+flow-external-kyc = ["flow-sdk", "step-webhook-http"]
+flow-device-enroll = ["flow-sdk"]
+flow-account-update = ["flow-sdk"]
+flow-admin-user-management = ["flow-sdk"]
+
+step-webhook-http = ["dep:jsonpath_lib"]
+auth-token-exchange = []
+auth-jwks = []
+
+# Legacy aliases kept for backward compatibility.
+flow-deposit = ["flow-first-deposit"]
+flow-email = ["flow-email-magic"]
+flow-phone = ["flow-phone-otp"]
+flow-session = ["flow-sdk"]
+flow-step = ["flow-sdk"]
+flow-upload = ["flow-sdk"]
+flow-user = ["flow-sdk"]
+all-flows = ["flow-phone-otp", "flow-email-magic", "flow-first-deposit"]
 
 [dependencies]
 backend-auth = { workspace = true }
 backend-core = { workspace = true, features = ["axum"] }
+backend-flow-sdk = { workspace = true, optional = true }
 backend-id = { workspace = true }
 backend-repository = { workspace = true }
 backend-model = { workspace = true }
@@ -55,6 +66,9 @@ serde_json = { workspace = true }
 json-patch = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
+jsonpath_lib = { workspace = true, optional = true }
+base64 = { workspace = true }
+jsonwebtoken = { workspace = true }
 redis = { workspace = true }
 apalis = { workspace = true }
 apalis-redis = { workspace = true }

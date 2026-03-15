@@ -1,4 +1,5 @@
 //! ID generation utilities following application conventions.
+#![allow(clippy::result_large_err)]
 //!
 //! Provides functions to generate strongly-typed, globally unique identifiers
 //! for various domain entities. All IDs use a prefix CUID pattern for
@@ -44,4 +45,20 @@ pub fn sm_event_id() -> Result<String> {
 
 pub fn sm_attempt_id() -> Result<String> {
     prefixed("sma")
+}
+
+pub fn flow_session_id() -> Result<String> {
+    prefixed("ses")
+}
+
+pub fn flow_instance_id() -> Result<String> {
+    prefixed("flw")
+}
+
+pub fn flow_step_id() -> Result<String> {
+    prefixed("stp")
+}
+
+pub fn signing_key_id() -> Result<String> {
+    prefixed("kid")
 }

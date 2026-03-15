@@ -1,4 +1,5 @@
 //! Main backend server library for the tokenization backend.
+#![allow(clippy::result_large_err)]
 //!
 //! This crate provides the HTTP server, API surfaces (KC, BFF, Staff),
 //! state machine engine, background workers, and all application logic.
@@ -194,6 +195,8 @@ fn build_router(
     let bff_base = config.bff.base_path.trim();
     if !bff_base.is_empty() && bff_base != "/" {
         let bff_router = gen_oas_server_bff::server::new(api.clone());
+        let bff_revamp_router = api::bff_revamp::router(api.clone());
+        let bff_router = bff_router.merge(bff_revamp_router);
         router = router.nest(bff_base, bff_router);
     }
 
@@ -202,6 +205,13 @@ fn build_router(
     if !staff_base.is_empty() && staff_base != "/" {
         let staff_router = gen_oas_server_staff::server::new(api.clone());
         router = router.nest(staff_base, staff_router);
+    }
+
+    // Mount Auth router if base path is provided
+    let auth_base = config.auth.base_path.trim();
+    if config.auth.enabled && !auth_base.is_empty() && auth_base != "/" {
+        let auth_router = api::auth::router(api.clone());
+        router = router.nest(auth_base, auth_router);
     }
 
     // 404 fallback for unmatched routes

@@ -12,8 +12,8 @@ use tokio::time::sleep;
 use tracing::warn;
 
 const OTP_MAX_TRIES: i32 = 5;
-const SMS_SEND_MAX_RETRIES: i32 = 2;
-const SMS_SEND_INITIAL_BACKOFF_SECONDS: i64 = 1;
+const OTP_ENQUEUE_MAX_RETRIES: i32 = 2;
+const OTP_ENQUEUE_INITIAL_BACKOFF_SECONDS: i64 = 1;
 
 pub enum PhoneIssueOtpOutcome {
     Succeeded,
@@ -127,30 +127,31 @@ impl PhoneOtpEngine {
             obj.insert("otp_hash".to_owned(), Value::String(otp_hash));
         }
 
-        // Enqueue notification to be sent by sms-sink
-        let notification_job = NotificationJob::Otp {
-            step_id: job.attempt_id.clone(),
-            msisdn: msisdn.to_string(),
-            otp: otp.clone(),
-        };
-
-        if let Err(err) = self.state.notification_queue.enqueue(notification_job).await {
-            let err: backend_core::Error = err;
-            // If we can't enqueue the notification, treat this as a retryable error
+        if let Err(error) = self
+            .state
+            .notification_queue
+            .enqueue(NotificationJob::Otp {
+                step_id: job.attempt_id.clone(),
+                msisdn: msisdn.to_owned(),
+                otp,
+            })
+            .await
+        {
+            let message = error.to_string();
             warn!(
                 attempt_id = %job.attempt_id,
                 step_name = %job.step_name,
                 msisdn = %msisdn,
-                error = %err,
-                "Failed to enqueue SMS notification"
+                error = %message,
+                "failed to enqueue OTP notification"
             );
 
             let finished = Utc::now();
-            let can_retry = attempt.attempt_no <= SMS_SEND_MAX_RETRIES;
+            let can_retry = attempt.attempt_no <= OTP_ENQUEUE_MAX_RETRIES;
             let mut retry_at = None;
 
             if can_retry {
-                let backoff_seconds = sms_retry_backoff_seconds(attempt.attempt_no);
+                let backoff_seconds = otp_retry_backoff_seconds(attempt.attempt_no);
                 retry_at = Some(finished + Duration::seconds(backoff_seconds));
 
                 let retry_attempt = self
@@ -173,10 +174,11 @@ impl PhoneOtpEngine {
                     SmStepAttemptPatch::new()
                         .status(ATTEMPT_STATUS_FAILED)
                         .error(json!({
-                            "error": err.to_string(),
-                            "transient": can_retry,
+                            "error": message,
+                            "transient": true,
                             "will_retry": can_retry,
                         }))
+                        .output(output)
                         .finished_at(finished)
                         .next_retry_at_opt(retry_at),
                 )
@@ -188,7 +190,7 @@ impl PhoneOtpEngine {
             return Ok(PhoneIssueOtpOutcome::FailedTerminal);
         }
 
-        // Successfully enqueued notification
+        // OTP delivery succeeded.
         let finished = Utc::now();
         let _ = self
             .state
@@ -262,11 +264,10 @@ impl PhoneOtpEngine {
     }
 }
 
-fn sms_retry_backoff_seconds(attempt_no: i32) -> i64 {
+fn otp_retry_backoff_seconds(attempt_no: i32) -> i64 {
     let exponent = attempt_no.saturating_sub(1).max(0) as u32;
     let factor = 2_i64.saturating_pow(exponent);
-    SMS_SEND_INITIAL_BACKOFF_SECONDS
+    OTP_ENQUEUE_INITIAL_BACKOFF_SECONDS
         .saturating_mul(factor)
         .max(1)
 }
-

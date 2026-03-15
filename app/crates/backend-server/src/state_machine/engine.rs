@@ -116,10 +116,7 @@ impl Engine {
             .await
     }
 
-    pub async fn process_step_job(
-        &self,
-        job: StateMachineStepJob,
-    ) -> Result<(), Error> {
+    pub async fn process_step_job(&self, job: StateMachineStepJob) -> Result<(), Error> {
         let Some(claimed_attempt) = self.state.sm.claim_step_attempt(&job.attempt_id).await? else {
             return Ok(());
         };

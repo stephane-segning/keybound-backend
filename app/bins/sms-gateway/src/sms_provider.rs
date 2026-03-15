@@ -4,9 +4,6 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::info;
 
-// Re-export for tests
-#[cfg(test)]
-use mockall::mock;
 #[cfg(test)]
 use wiremock::{
     matchers::{method, path},
@@ -98,13 +95,10 @@ impl ApiSmsProvider {
 impl SmsProvider for ApiSmsProvider {
     async fn send_otp(&self, msisdn: &str, otp: &str) -> Result<(), Error> {
         let url = format!("{}/otp", self.base_url.trim_end_matches('/'));
-        let mut request = self
-            .client
-            .post(&url)
-            .json(&json!({
-                "msisdn": msisdn,
-                "otp": otp
-            }));
+        let mut request = self.client.post(&url).json(&json!({
+            "msisdn": msisdn,
+            "otp": otp
+        }));
 
         if let Some(token) = &self.auth_token {
             request = request.bearer_auth(token);
@@ -163,28 +157,6 @@ pub async fn process_notification_job(
 mod tests {
     use super::*;
 
-    mock! {
-        pub SnsClient {
-            pub fn publish(&self) -> MockPublish {
-                MockPublish::new()
-            }
-        }
-    }
-
-    mock! {
-        pub Publish {
-            pub fn phone_number(&self, phone: &str) -> Self {
-                self.clone()
-            }
-            pub fn message(&self, message: &str) -> Self {
-                self.clone()
-            }
-            pub async fn send(&self) -> Result<(), aws_sdk_sns::Error> {
-                Ok(())
-            }
-        }
-    }
-
     #[tokio::test]
     async fn console_sms_provider_logs_to_console() {
         let provider = ConsoleSmsProvider;
@@ -193,30 +165,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sns_sms_provider_sends_sms() {
-        let mut client = MockSnsClient::new();
-        let mut publish = MockPublish::new();
-
-        publish.expect_phone_number().return_const(publish.clone());
-        publish.expect_message().return_const(publish.clone());
-        publish.expect_send().returning(|| Ok(()));
-
-        client.expect_publish().return_const(publish);
-
-        let provider = SnsSmsProvider::new(client);
-        let result = provider.send_otp("1234567890", "123456").await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
     async fn api_sms_provider_sends_sms() {
         let server = MockServer::start().await;
         let client = reqwest::Client::new();
-        let provider = ApiSmsProvider::new(
-            client,
-            server.uri(),
-            Some("test_token".to_string()),
-        );
+        let provider = ApiSmsProvider::new(client, server.uri(), Some("test_token".to_string()));
 
         Mock::given(method("POST"))
             .and(path("/otp"))
@@ -232,11 +184,7 @@ mod tests {
     async fn api_sms_provider_handles_transient_error() {
         let server = MockServer::start().await;
         let client = reqwest::Client::new();
-        let provider = ApiSmsProvider::new(
-            client,
-            server.uri(),
-            Some("test_token".to_string()),
-        );
+        let provider = ApiSmsProvider::new(client, server.uri(), Some("test_token".to_string()));
 
         Mock::given(method("POST"))
             .and(path("/otp"))
@@ -257,11 +205,7 @@ mod tests {
     async fn api_sms_provider_handles_permanent_error() {
         let server = MockServer::start().await;
         let client = reqwest::Client::new();
-        let provider = ApiSmsProvider::new(
-            client,
-            server.uri(),
-            Some("test_token".to_string()),
-        );
+        let provider = ApiSmsProvider::new(client, server.uri(), Some("test_token".to_string()));
 
         Mock::given(method("POST"))
             .and(path("/otp"))

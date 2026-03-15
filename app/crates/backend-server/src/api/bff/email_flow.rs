@@ -6,9 +6,9 @@ use super::shared::{
 };
 use crate::state_machine::secrets::{hash_secret, verify_secret};
 use crate::state_machine::types::{ActorType, INSTANCE_STATUS_COMPLETED, KIND_KYC_EMAIL_MAGIC};
-use backend_core::NotificationJob;
 use backend_auth::JwtToken;
 use backend_core::Error;
+use backend_core::NotificationJob;
 use backend_repository::SmStepAttemptCreateInput;
 use chrono::{Duration, Utc};
 use gen_oas_server_bff::apis::email_magic::{
@@ -38,7 +38,7 @@ impl BackendApi {
             .await?
             .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
 
-        if session.kind != KIND_KYC_EMAIL_MAGIC {
+        if !supports_email_magic_session_kind(&session.kind) {
             return Err(Error::bad_request(
                 "INVALID_SESSION_KIND",
                 "Unsupported session kind for email magic",
@@ -114,7 +114,7 @@ impl BackendApi {
             .get_instance(&body.session_id)
             .await?
             .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
-        if session.kind != KIND_KYC_EMAIL_MAGIC {
+        if !supports_email_magic_session_kind(&session.kind) {
             return Err(Error::bad_request(
                 "INVALID_SESSION_KIND",
                 "Unsupported session kind for email magic",
@@ -221,7 +221,7 @@ impl BackendApi {
             .get_instance(&body.session_id)
             .await?
             .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
-        if session.kind != KIND_KYC_EMAIL_MAGIC {
+        if !supports_email_magic_session_kind(&session.kind) {
             return Err(Error::bad_request(
                 "INVALID_SESSION_KIND",
                 "Unsupported session kind for email magic",
@@ -335,4 +335,8 @@ impl BackendApi {
             ),
         )
     }
+}
+
+fn supports_email_magic_session_kind(kind: &str) -> bool {
+    kind == KIND_KYC_EMAIL_MAGIC
 }

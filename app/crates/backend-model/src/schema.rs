@@ -6,6 +6,10 @@
 //! Key tables:
 //! - app_user: User accounts and profile data
 //! - device: Device bindings with public keys
+//! - flow_session: Top-level container for KYC/account sessions
+//! - flow_instance: Flow executions within a session
+//! - flow_step: Step executions within a flow
+//! - signing_key: Backend RSA keys for token issuance
 //! - sm_instance: State machine instances for KYC flows
 //! - sm_event: Event history for state machines
 //! - sm_step_attempt: Individual step execution records with retry support
@@ -36,6 +40,7 @@ diesel::table! {
         fineract_customer_id -> Nullable<Text>,
         disabled -> Bool,
         attributes -> Nullable<Jsonb>,
+        metadata -> Jsonb,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
     }
@@ -66,6 +71,70 @@ diesel::table! {
         label -> Nullable<Text>,
         created_at -> Timestamptz,
         last_seen_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    /// Flow instances scoped to a session
+    flow_instance (id) {
+        id -> Text,
+        human_id -> Text,
+        session_id -> Text,
+        flow_type -> Text,
+        status -> Text,
+        current_step -> Nullable<Text>,
+        step_ids -> Jsonb,
+        context -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    /// Session-level flow container
+    flow_session (id) {
+        id -> Text,
+        human_id -> Text,
+        user_id -> Nullable<Text>,
+        session_type -> Text,
+        status -> Text,
+        context -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        completed_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    /// Atomic flow step state
+    flow_step (id) {
+        id -> Text,
+        human_id -> Text,
+        flow_id -> Text,
+        step_type -> Text,
+        actor -> Text,
+        status -> Text,
+        attempt_no -> Int4,
+        input -> Nullable<Jsonb>,
+        output -> Nullable<Jsonb>,
+        error -> Nullable<Jsonb>,
+        next_retry_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        finished_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    /// JWT signing keys
+    signing_key (kid) {
+        kid -> Text,
+        private_key_pem -> Text,
+        public_key_jwk -> Jsonb,
+        algorithm -> Text,
+        created_at -> Timestamptz,
+        expires_at -> Nullable<Timestamptz>,
+        is_active -> Bool,
     }
 }
 
@@ -119,6 +188,9 @@ diesel::table! {
 // Foreign key relationships
 diesel::joinable!(app_user_data -> app_user (user_id));
 diesel::joinable!(device -> app_user (user_id));
+diesel::joinable!(flow_instance -> flow_session (session_id));
+diesel::joinable!(flow_session -> app_user (user_id));
+diesel::joinable!(flow_step -> flow_instance (flow_id));
 diesel::joinable!(sm_instance -> app_user (user_id));
 diesel::joinable!(sm_event -> sm_instance (instance_id));
 diesel::joinable!(sm_step_attempt -> sm_instance (instance_id));
@@ -128,6 +200,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_user,
     app_user_data,
     device,
+    flow_instance,
+    flow_session,
+    flow_step,
+    signing_key,
     sm_instance,
     sm_event,
     sm_step_attempt,

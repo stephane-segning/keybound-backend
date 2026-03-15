@@ -3,22 +3,23 @@ info:
   title: KYC Backend Internal API (BFF)
   version: 0.2.1
   description: >
-    Internal BFF-facing API for KYC orchestration. The API keeps a generic
-    session model and exposes case-specific paths for phone OTP, email magic,
-    deposits, and uploads.
+    Internal BFF-facing API for KYC orchestration. The API keeps a generic session model and exposes case-specific paths for phone OTP, email magic, deposits, and uploads.
 servers:
-  - url: https://kyc-internal.example.local
+- url: https://kyc-internal.example.local
 tags:
-  - name: sessions
-  - name: steps
-  - name: phone-otp
-  - name: email-magic
-  - name: deposits
-  - name: uploads
-  - name: users
+- name: sessions
+- name: sessions-v2
+- name: flows-v2
+- name: steps-v2
+- name: steps
+- name: phone-otp
+- name: email-magic
+- name: deposits
+- name: uploads
+- name: users
 
 security:
-  - BearerAuth: [ ]
+- BearerAuth: []
 
 paths:
   /internal/kyc/sessions:
@@ -26,28 +27,27 @@ paths:
       tags: [ sessions ]
       summary: List KYC sessions
       description: >
-        Lists sessions for a user and/or flow. By default, only active sessions
-        are returned so callers can reuse an in-progress session.
+        Lists sessions for a user and/or flow. By default, only active sessions are returned so callers can reuse an in-progress session.
       operationId: internalListKycSessions
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - name: userId
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: flow
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/KycFlowType"
-        - name: activeOnly
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: true
+      - name: userId
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: flow
+        in: query
+        required: false
+        schema:
+          $ref: "#/components/schemas/KycFlowType"
+      - name: activeOnly
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
       responses:
         "200":
           description: Sessions list
@@ -61,7 +61,7 @@ paths:
       description: Creates or resumes a session for a user and flow.
       operationId: internalCreateKycSession
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -82,9 +82,9 @@ paths:
       summary: Get KYC session
       operationId: internalGetKycSession
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/SessionId"
       responses:
         "200":
           description: Session
@@ -100,9 +100,9 @@ paths:
       description: Returns the persisted `app_user` Diesel row shape.
       operationId: internalGetUserById
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/UserId"
+      - $ref: "#/components/parameters/UserId"
       responses:
         "200":
           description: User row
@@ -117,9 +117,9 @@ paths:
       summary: Get user KYC level
       operationId: internalGetUserKycLevel
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/UserId"
+      - $ref: "#/components/parameters/UserId"
       responses:
         "200":
           description: KYC level
@@ -134,9 +134,9 @@ paths:
       summary: Get user KYC summary
       operationId: internalGetUserKycSummary
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/UserId"
+      - $ref: "#/components/parameters/UserId"
       responses:
         "200":
           description: KYC summary
@@ -151,7 +151,7 @@ paths:
       summary: Create or ensure phone OTP step
       operationId: internalCreatePhoneOtpStep
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -172,7 +172,7 @@ paths:
       summary: Create or ensure email magic step
       operationId: internalCreateEmailMagicStep
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -193,9 +193,9 @@ paths:
       summary: Get KYC step
       operationId: internalGetKycStep
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/StepId"
+      - $ref: "#/components/parameters/StepId"
       responses:
         "200":
           description: Step
@@ -210,7 +210,7 @@ paths:
       summary: Issue phone OTP challenge
       operationId: internalIssuePhoneOtpChallenge
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -231,7 +231,7 @@ paths:
       summary: Verify phone OTP challenge
       operationId: internalVerifyPhoneOtpChallenge
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -252,7 +252,7 @@ paths:
       summary: Issue magic-email challenge
       operationId: internalIssueMagicEmailChallenge
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -273,7 +273,7 @@ paths:
       summary: Verify magic-email challenge
       operationId: internalVerifyMagicEmailChallenge
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -293,13 +293,10 @@ paths:
       tags: [ deposits ]
       summary: Create phone deposit request
       description: >
-        Creates a mobile-money deposit request for the provided session.
-        The backend resolves the deposit provider from the authenticated
-        user phone number using configured prefix regex rules and returns
-        the selected recipient contact details.
+        Creates a mobile-money deposit request for the provided session. The backend resolves the deposit provider from the authenticated user phone number using configured prefix regex rules and returns the selected recipient contact details.
       operationId: internalCreatePhoneDepositRequest
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -320,9 +317,9 @@ paths:
       summary: Get phone deposit request
       operationId: internalGetPhoneDepositRequest
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/DepositRequestId"
+      - $ref: "#/components/parameters/DepositRequestId"
       responses:
         "200":
           description: Deposit request
@@ -338,7 +335,7 @@ paths:
       description: Returns upload target and metadata for a KYC step.
       operationId: internalPresignUpload
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -359,7 +356,7 @@ paths:
       summary: Complete upload and register evidence
       operationId: internalCompleteUpload
       security:
-        - BearerAuth: [ ]
+      - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -373,6 +370,181 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EvidenceRef"
+
+  /sessions:
+    get:
+      tags: [ sessions-v2 ]
+      summary: List flow sessions for the caller
+      operationId: listFlowSessions
+      security:
+      - BearerAuth: []
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlowSession"
+    post:
+      tags: [ sessions-v2 ]
+      summary: Create a top-level flow session
+      operationId: createFlowSession
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFlowSessionRequest"
+      responses:
+        "200":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowSession"
+
+  /sessions/{sessionId}:
+    get:
+      tags: [ sessions-v2 ]
+      summary: Get session with nested flows
+      operationId: getFlowSession
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowSessionDetail"
+
+  /sessions/{sessionId}/flows:
+    get:
+      tags: [ flows-v2 ]
+      summary: List flows for a session
+      operationId: listSessionFlows
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session flows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlowInstance"
+    post:
+      tags: [ flows-v2 ]
+      summary: Add a flow to a session
+      operationId: addFlowToSession
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFlowRequest"
+      responses:
+        "200":
+          description: Flow created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowInstance"
+
+  /flows/{flowId}:
+    get:
+      tags: [ flows-v2 ]
+      summary: Get flow with its steps
+      operationId: getFlow
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: flowId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Flow detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowDetail"
+
+  /flows/{flowId}/steps:
+    get:
+      tags: [ steps-v2 ]
+      summary: List steps for a flow
+      operationId: listFlowSteps
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: flowId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Flow steps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlowStep"
+
+  /steps/{stepId}:
+    get:
+      tags: [ steps-v2 ]
+      summary: Get flow step details
+      operationId: getFlowStep
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: "#/components/parameters/StepId"
+      responses:
+        "200":
+          description: Step detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowStep"
+    post:
+      tags: [ steps-v2 ]
+      summary: Submit user input for waiting step
+      operationId: submitFlowStep
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: "#/components/parameters/StepId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitFlowStepRequest"
+      responses:
+        "200":
+          description: Step updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowStep"
 
 components:
   securitySchemes:
@@ -415,42 +587,42 @@ components:
     KycFlowType:
       type: string
       enum:
-        - PHONE_OTP
-        - EMAIL_MAGIC
-        - FIRST_DEPOSIT
-        - ID_DOCUMENT
-        - ADDRESS_PROOF
+      - PHONE_OTP
+      - EMAIL_MAGIC
+      - FIRST_DEPOSIT
+      - ID_DOCUMENT
+      - ADDRESS_PROOF
 
     KycSessionStatus:
       type: string
       enum:
-        - OPEN
-        - RUNNING
-        - COMPLETED
-        - LOCKED
-        - CANCELLED
-        - FAILED
+      - OPEN
+      - RUNNING
+      - COMPLETED
+      - LOCKED
+      - CANCELLED
+      - FAILED
 
     KycStatus:
       type: string
       enum:
-        - NOT_STARTED
-        - IN_PROGRESS
-        - CAPTURED
-        - PENDING_REVIEW
-        - VERIFIED
-        - REJECTED
-        - FAILED
+      - NOT_STARTED
+      - IN_PROGRESS
+      - CAPTURED
+      - PENDING_REVIEW
+      - VERIFIED
+      - REJECTED
+      - FAILED
 
     StepType:
       type: string
       enum:
-        - PHONE_OTP
-        - EMAIL_MAGIC
-        - ADDRESS
-        - IDENTITY
-        - DOCUMENT_UPLOAD
-        - PHONE_DEPOSIT
+      - PHONE_OTP
+      - EMAIL_MAGIC
+      - ADDRESS
+      - IDENTITY
+      - DOCUMENT_UPLOAD
+      - PHONE_DEPOSIT
 
     StepIdValue:
       type: string
@@ -504,20 +676,20 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required:
-        - userId
-        - realm
-        - username
-        - emailVerified
-        - disabled
-        - createdAt
-        - updatedAt
+      - userId
+      - realm
+      - username
+      - emailVerified
+      - disabled
+      - createdAt
+      - updatedAt
 
     UserKycLevel:
       type: string
       enum:
-        - NONE
-        - PHONE_OTP_VERIFIED
-        - FIRST_DEPOSIT_VERIFIED
+      - NONE
+      - PHONE_OTP_VERIFIED
+      - FIRST_DEPOSIT_VERIFIED
 
     UserKycLevelResponse:
       type: object
@@ -543,11 +715,11 @@ components:
             $ref: "#/components/schemas/UserKycLevel"
         phoneOtpStatus:
           allOf:
-            - $ref: "#/components/schemas/KycSessionStatus"
+          - $ref: "#/components/schemas/KycSessionStatus"
           nullable: true
         firstDepositStatus:
           allOf:
-            - $ref: "#/components/schemas/KycSessionStatus"
+          - $ref: "#/components/schemas/KycSessionStatus"
           nullable: true
         latestSessionUpdatedAt: { type: string, format: date-time, nullable: true }
       required: [ userId, level ]
@@ -599,8 +771,8 @@ components:
     IssueOtpRequestChannel:
       type: string
       enum:
-        - SMS
-        - VOICE
+      - SMS
+      - VOICE
 
     IssuePhoneOtpRequest:
       type: object
@@ -666,11 +838,11 @@ components:
     VerifyOutcomeReason:
       type: string
       enum:
-        - VERIFIED
-        - INVALID
-        - EXPIRED
-        - LOCKED
-        - RATE_LIMITED
+      - VERIFIED
+      - INVALID
+      - EXPIRED
+      - LOCKED
+      - RATE_LIMITED
 
     VerifyOutcome:
       type: object
@@ -684,17 +856,17 @@ components:
     DepositProvider:
       type: string
       enum:
-        - MTN_CM
-        - ORANGE_CM
+      - MTN_CM
+      - ORANGE_CM
 
     DepositStatus:
       type: string
       enum:
-        - CREATED
-        - CONTACT_PROVIDED
-        - PAID
-        - CANCELLED
-        - EXPIRED
+      - CREATED
+      - CONTACT_PROVIDED
+      - PAID
+      - CANCELLED
+      - EXPIRED
 
     CreatePhoneDepositRequest:
       type: object
@@ -746,40 +918,40 @@ components:
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
       required:
-        - depositRequestId
-        - sessionId
-        - status
-        - amount
-        - currency
-        - contact
-        - createdAt
+      - depositRequestId
+      - sessionId
+      - status
+      - amount
+      - currency
+      - contact
+      - createdAt
 
     InternalUploadPurpose:
       type: string
       enum:
-        - KYC_IDENTITY
-        - KYC_ADDRESS
+      - KYC_IDENTITY
+      - KYC_ADDRESS
 
     IdentityAssetType:
       type: string
       enum:
-        - SELFIE_CLOSEUP
-        - SELFIE_WITH_ID
-        - ID_FRONT
-        - ID_BACK
-        - PROOF_OF_ADDRESS
+      - SELFIE_CLOSEUP
+      - SELFIE_WITH_ID
+      - ID_FRONT
+      - ID_BACK
+      - PROOF_OF_ADDRESS
 
     SseMode:
       type: string
       enum:
-        - SSE_S3
-        - SSE_KMS
-        - SSE_C
+      - SSE_S3
+      - SSE_KMS
+      - SSE_C
 
     UploadMethod:
       type: string
       enum:
-        - PUT
+      - PUT
 
     InternalPresignRequest:
       type: object
@@ -864,3 +1036,167 @@ components:
         sha256: { type: string }
         createdAt: { type: string, format: date-time }
       required: [ evidenceId, sessionId, stepId, assetType, createdAt ]
+
+    CreateFlowSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [ sessionType ]
+      properties:
+        sessionType:
+          type: string
+        humanId:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+
+    AddFlowRequest:
+      type: object
+      additionalProperties: false
+      required: [ flowType ]
+      properties:
+        flowType:
+          type: string
+        humanId:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+        initialStep:
+          type: string
+
+    SubmitFlowStepRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+
+    FlowSession:
+      type: object
+      additionalProperties: false
+      required: [ id, humanId, sessionType, status, context, createdAt, updatedAt ]
+      properties:
+        id:
+          type: string
+        humanId:
+          type: string
+        sessionType:
+          type: string
+        status:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        context:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FlowInstance:
+      type: object
+      additionalProperties: false
+      required: [ id, humanId, sessionId, flowType, status, stepIds, context, createdAt, updatedAt ]
+      properties:
+        id:
+          type: string
+        humanId:
+          type: string
+        sessionId:
+          type: string
+        flowType:
+          type: string
+        status:
+          type: string
+        currentStep:
+          type: string
+          nullable: true
+        stepIds:
+          type: array
+          items:
+            type: string
+        context:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FlowStep:
+      type: object
+      additionalProperties: false
+      required: [ id, humanId, flowId, stepType, actor, status, attemptNo, createdAt, updatedAt ]
+      properties:
+        id:
+          type: string
+        humanId:
+          type: string
+        flowId:
+          type: string
+        stepType:
+          type: string
+        actor:
+          type: string
+        status:
+          type: string
+        attemptNo:
+          type: integer
+        input:
+          type: object
+          additionalProperties: true
+          nullable: true
+        output:
+          type: object
+          additionalProperties: true
+          nullable: true
+        error:
+          type: object
+          additionalProperties: true
+          nullable: true
+        nextRetryAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FlowSessionDetail:
+      type: object
+      additionalProperties: false
+      required: [ session, flows ]
+      properties:
+        session:
+          $ref: "#/components/schemas/FlowSession"
+        flows:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowInstance"
+
+    FlowDetail:
+      type: object
+      additionalProperties: false
+      required: [ flow, steps ]
+      properties:
+        flow:
+          $ref: "#/components/schemas/FlowInstance"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowStep"

@@ -1,4 +1,5 @@
 //! Core library for the tokenization backend system.
+#![allow(clippy::result_large_err)]
 //!
 //! This crate provides foundational types and abstractions used across all other crates
 //! in the workspace, including:

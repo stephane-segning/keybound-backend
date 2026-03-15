@@ -4,8 +4,8 @@ use crate::worker::{NotificationQueue, RedisNotificationQueue};
 use backend_auth::{HttpClient, OidcState, SignatureState};
 use backend_core::Config;
 use backend_repository::{
-    DepositRecipientUpsertInput, DeviceRepo, DeviceRepository, StateMachineRepo,
-    StateMachineRepository, UserRepo, UserRepository,
+    DepositRecipientUpsertInput, DeviceRepo, DeviceRepository, FlowRepo, FlowRepository,
+    StateMachineRepo, StateMachineRepository, UserRepo, UserRepository,
 };
 use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::deadpool::Pool;
@@ -16,6 +16,7 @@ use tracing::info;
 #[derive(Clone)]
 pub struct AppState {
     pub sm: Arc<dyn StateMachineRepo>,
+    pub flow: Arc<dyn FlowRepo>,
     pub user: Arc<dyn UserRepo>,
     pub device: Arc<dyn DeviceRepo>,
     pub sm_queue: Arc<dyn StateMachineQueue>,
@@ -30,6 +31,7 @@ impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
             .field("sm", &"<StateMachineRepository>")
+            .field("flow", &"<FlowRepository>")
             .field("user", &"<UserRepository>")
             .field("device", &"<DeviceRepository>")
             .field("sm_queue", &"<StateMachineQueue>")
@@ -134,6 +136,7 @@ impl AppState {
         }
 
         let sm: Arc<dyn StateMachineRepo> = Arc::new(sm_repo);
+        let flow: Arc<dyn FlowRepo> = Arc::new(FlowRepository::new(pool.clone()));
         let user: Arc<dyn UserRepo> = Arc::new(UserRepository::new(pool.clone()));
         let device: Arc<dyn DeviceRepo> = Arc::new(DeviceRepository::new(pool.clone()));
 
@@ -159,6 +162,7 @@ impl AppState {
 
         Ok(Self {
             sm,
+            flow,
             user,
             device,
             sm_queue,

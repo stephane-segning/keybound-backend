@@ -4,13 +4,14 @@ use crate::state_machine::jobs::StateMachineStepJob;
 use crate::state_machine::queue::StateMachineQueue;
 use crate::worker::NotificationQueue;
 use backend_auth::{OidcState, SignatureState};
-use backend_core::async_trait;
 use backend_core::NotificationJob;
+use backend_core::async_trait;
 use backend_core::{Config, Error};
 use backend_repository::{
-    DepositRecipientContact, DepositRecipientUpsertInput, DeviceRepo, RepoResult,
-    SmEventCreateInput, SmInstanceCreateInput, SmInstanceFilter, SmStepAttemptCreateInput,
-    SmStepAttemptPatch, StateMachineRepo, UserDataUpsertInput, UserRepo,
+    DepositRecipientContact, DepositRecipientUpsertInput, DeviceRepo, FlowInstanceCreateInput,
+    FlowRepo, FlowSessionCreateInput, FlowSessionFilter, FlowStepCreateInput, FlowStepPatch,
+    RepoResult, SigningKeyCreateInput, SmEventCreateInput, SmInstanceCreateInput, SmInstanceFilter,
+    SmStepAttemptCreateInput, SmStepAttemptPatch, StateMachineRepo, UserDataUpsertInput, UserRepo,
 };
 use bytes::Bytes;
 use mockall::mock;
@@ -177,6 +178,84 @@ mock! {
 }
 
 mock! {
+    pub FlowRepo {}
+    #[async_trait]
+    impl FlowRepo for FlowRepo {
+        async fn create_session(
+            &self,
+            input: FlowSessionCreateInput,
+        ) -> RepoResult<backend_model::db::FlowSessionRow>;
+        async fn get_session(
+            &self,
+            session_id: &str,
+        ) -> RepoResult<Option<backend_model::db::FlowSessionRow>>;
+        async fn list_sessions(
+            &self,
+            filter: FlowSessionFilter,
+        ) -> RepoResult<(Vec<backend_model::db::FlowSessionRow>, i64)>;
+        async fn update_session_status(
+            &self,
+            session_id: &str,
+            status: &str,
+            completed_at: Option<chrono::DateTime<chrono::Utc>>,
+        ) -> RepoResult<()>;
+        async fn update_session_context(
+            &self,
+            session_id: &str,
+            context: serde_json::Value,
+        ) -> RepoResult<()>;
+        async fn create_flow(
+            &self,
+            input: FlowInstanceCreateInput,
+        ) -> RepoResult<backend_model::db::FlowInstanceRow>;
+        async fn get_flow(
+            &self,
+            flow_id: &str,
+        ) -> RepoResult<Option<backend_model::db::FlowInstanceRow>>;
+        async fn list_flows_for_session(
+            &self,
+            session_id: &str,
+        ) -> RepoResult<Vec<backend_model::db::FlowInstanceRow>>;
+        async fn update_flow(
+            &self,
+            flow_id: &str,
+            status: Option<String>,
+            current_step: Option<Option<String>>,
+            step_ids: Option<serde_json::Value>,
+            context: Option<serde_json::Value>,
+        ) -> RepoResult<backend_model::db::FlowInstanceRow>;
+        async fn create_step(
+            &self,
+            input: FlowStepCreateInput,
+        ) -> RepoResult<backend_model::db::FlowStepRow>;
+        async fn get_step(
+            &self,
+            step_id: &str,
+        ) -> RepoResult<Option<backend_model::db::FlowStepRow>>;
+        async fn list_steps_for_flow(
+            &self,
+            flow_id: &str,
+        ) -> RepoResult<Vec<backend_model::db::FlowStepRow>>;
+        async fn patch_step(
+            &self,
+            step_id: &str,
+            patch: FlowStepPatch,
+        ) -> RepoResult<backend_model::db::FlowStepRow>;
+        async fn deactivate_signing_keys(&self) -> RepoResult<usize>;
+        async fn create_signing_key(
+            &self,
+            input: SigningKeyCreateInput,
+        ) -> RepoResult<backend_model::db::SigningKeyRow>;
+        async fn get_active_signing_key(
+            &self,
+        ) -> RepoResult<Option<backend_model::db::SigningKeyRow>>;
+        async fn list_active_signing_keys(
+            &self,
+        ) -> RepoResult<Vec<backend_model::db::SigningKeyRow>>;
+    }
+}
+
+mock! {
     pub UserRepo {}
     #[async_trait]
     impl UserRepo for UserRepo {
@@ -259,6 +338,7 @@ mock! {
 #[derive(Default)]
 pub struct TestAppStateBuilder {
     pub sm: Option<Arc<dyn StateMachineRepo>>,
+    pub flow: Option<Arc<dyn FlowRepo>>,
     pub user: Option<Arc<dyn UserRepo>>,
     pub device: Option<Arc<dyn DeviceRepo>>,
     pub sm_queue: Option<Arc<dyn StateMachineQueue>>,
@@ -274,6 +354,11 @@ impl TestAppStateBuilder {
 
     pub fn with_sm(mut self, sm: Arc<dyn StateMachineRepo>) -> Self {
         self.sm = Some(sm);
+        self
+    }
+
+    pub fn with_flow(mut self, flow: Arc<dyn FlowRepo>) -> Self {
+        self.flow = Some(flow);
         self
     }
 
@@ -360,6 +445,7 @@ cuss:
             sm: self
                 .sm
                 .unwrap_or_else(|| Arc::new(MockStateMachineRepo::new())),
+            flow: self.flow.unwrap_or_else(|| Arc::new(MockFlowRepo::new())),
             user: self.user.unwrap_or_else(|| Arc::new(MockUserRepo::new())),
             device: self
                 .device

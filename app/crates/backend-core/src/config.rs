@@ -186,6 +186,8 @@ pub struct Config {
     pub kc: KcAuth,
     pub bff: BffAuth,
     pub staff: StaffAuth,
+    #[serde(default)]
+    pub auth: AuthApi,
     pub deposit_flow: Option<DepositFlow>,
     pub cuss: Cuss,
 }
@@ -224,6 +226,36 @@ pub struct StaffAuth {
     pub base_path: String,
 }
 
+/// Auth API surface configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthApi {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_auth_base_path", alias = "base-path")]
+    pub base_path: String,
+    #[serde(default)]
+    pub token_issuer: Option<String>,
+    #[serde(default)]
+    pub token_audience: Option<String>,
+    #[serde(default = "default_token_ttl_seconds")]
+    pub token_ttl_seconds: i64,
+    #[serde(default = "default_auth_max_clock_skew_seconds")]
+    pub max_clock_skew_seconds: i64,
+}
+
+impl Default for AuthApi {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            base_path: default_auth_base_path(),
+            token_issuer: None,
+            token_audience: None,
+            token_ttl_seconds: default_token_ttl_seconds(),
+            max_clock_skew_seconds: default_auth_max_clock_skew_seconds(),
+        }
+    }
+}
+
 /// Deposit flow routing configuration for provider-specific recipients.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct DepositFlow {
@@ -253,6 +285,22 @@ pub struct DepositRecipient {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cuss {
     pub api_url: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_auth_base_path() -> String {
+    "/auth".to_owned()
+}
+
+fn default_token_ttl_seconds() -> i64 {
+    3600
+}
+
+fn default_auth_max_clock_skew_seconds() -> i64 {
+    60
 }
 
 /// Load configuration from a YAML file with environment variable expansion.

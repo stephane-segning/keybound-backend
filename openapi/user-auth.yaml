@@ -1,0 +1,288 @@
+openapi: 3.1.0
+info:
+  title: User Auth API
+  version: 0.1.0
+  description: Device enrollment, device management, token exchange and JWKS.
+servers:
+  - url: https://auth.example.local
+tags:
+  - name: enroll
+  - name: devices
+  - name: token
+  - name: jwks
+  - name: approvals
+
+paths:
+  /auth/enroll:
+    post:
+      tags: [enroll]
+      summary: Start enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+      responses:
+        '200':
+          description: Enrollment started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollResponse'
+
+  /auth/enroll/{id}/bind:
+    post:
+      tags: [enroll]
+      summary: Bind enrolled device
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindEnrollRequest'
+      responses:
+        '200':
+          description: Device bound
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindEnrollResponse'
+
+  /auth/devices:
+    get:
+      tags: [devices]
+      summary: List devices for caller
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesResponse'
+
+  /auth/devices/{id}:
+    delete:
+      tags: [devices]
+      summary: Revoke a device
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Revoked
+
+  /auth/token:
+    post:
+      tags: [token]
+      summary: Exchange signature for JWT access token
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  /auth/jwks:
+    get:
+      tags: [jwks]
+      summary: Get active JWKS set
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+
+  /auth/approve/{stepId}:
+    post:
+      tags: [approvals]
+      summary: Approve/deny waiting step
+      parameters:
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveStepRequest'
+      responses:
+        '200':
+          description: Step updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApproveStepResponse'
+
+components:
+  schemas:
+    EnrollRequest:
+      type: object
+      required: [user_id, device_id, jkt, public_jwk]
+      properties:
+        user_id:
+          type: string
+        realm:
+          type: string
+        client_id:
+          type: string
+        device_id:
+          type: string
+        jkt:
+          type: string
+        public_jwk:
+          type: object
+          additionalProperties: true
+        user_hint:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+
+    EnrollResponse:
+      type: object
+      required: [id, session_id, flow_id, step_id, status]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        flow_id:
+          type: string
+        step_id:
+          type: string
+        status:
+          type: string
+
+    BindEnrollRequest:
+      type: object
+      required: [user_id, realm, client_id, device_id, jkt, public_jwk]
+      properties:
+        user_id:
+          type: string
+        realm:
+          type: string
+        client_id:
+          type: string
+        device_id:
+          type: string
+        jkt:
+          type: string
+        public_jwk:
+          type: object
+          additionalProperties: true
+        user_hint:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+
+    BindEnrollResponse:
+      type: object
+      required: [id, device_record_id, status]
+      properties:
+        id:
+          type: string
+        device_record_id:
+          type: string
+        status:
+          type: string
+
+    DeviceRecord:
+      type: object
+      required: [device_id, jkt, status, created_at]
+      properties:
+        device_id:
+          type: string
+        jkt:
+          type: string
+        status:
+          type: string
+        label:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DevicesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceRecord'
+
+    TokenRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+        scope:
+          type: string
+
+    JwksResponse:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ApproveStepRequest:
+      type: object
+      properties:
+        decision:
+          type: string
+        message:
+          type: string
+
+    ApproveStepResponse:
+      type: object
+      required: [step_id, status]
+      properties:
+        step_id:
+          type: string
+        status:
+          type: string

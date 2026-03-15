@@ -77,6 +77,7 @@ impl UserRepo for UserRepository {
             fineract_customer_id: None,
             disabled: !req.enabled.unwrap_or(true),
             attributes: attributes_json,
+            metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -314,6 +315,7 @@ impl UserRepo for UserRepository {
             fineract_customer_id: None,
             disabled: false,
             attributes: Some(attributes_json),
+            metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };

@@ -40,13 +40,14 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     // Create SMS provider based on configuration
-    let provider = create_sms_provider(&sms_config).await?;
+    let provider = create_sms_provider(sms_config).await?;
     let provider = Arc::new(provider);
 
     // Connect to Redis
     info!("Connecting to Redis at: {}", config.redis.url);
     let redis_conn = apalis_redis::connect(config.redis.url.clone()).await?;
-    let storage = RedisStorage::new_with_config(redis_conn, RedisConfig::new(NOTIFICATION_QUEUE_NAMESPACE));
+    let storage =
+        RedisStorage::new_with_config(redis_conn, RedisConfig::new(NOTIFICATION_QUEUE_NAMESPACE));
 
     // Verify Redis connectivity
     verify_redis_connection(&config.redis.url).await?;
@@ -128,8 +129,8 @@ async fn verify_redis_connection(redis_url: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use apalis::{prelude::WorkerBuilder, redis::RedisStorage};
-    use redis::AsyncCommands;
+    use apalis::prelude::{TaskSink, WorkerBuilder};
+    use apalis_redis::RedisStorage;
 
     async fn setup_redis(redis_url: &str) -> redis::Client {
         let client = redis::Client::open(redis_url).unwrap();
@@ -154,9 +155,9 @@ mod tests {
     async fn test_worker_consumes_job() {
         let redis_url = "redis://127.0.0.1:6379";
         let client = setup_redis(redis_url).await;
-        let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+        let conn = client.get_multiplexed_async_connection().await.unwrap();
 
-        let storage = RedisStorage::new(conn);
+        let mut storage = RedisStorage::new(conn);
         let job = NotificationJob::Otp {
             step_id: "test_step".to_string(),
             msisdn: "1234567890".to_string(),
@@ -166,12 +167,12 @@ mod tests {
 
         let provider = Arc::new(ConsoleSmsProvider);
         let provider_for_worker = provider.clone();
-        let worker = WorkerBuilder::new("test-worker")
-            .backend(storage)
-            .build(move |job: NotificationJob| {
+        let worker = WorkerBuilder::new("test-worker").backend(storage).build(
+            move |job: NotificationJob| {
                 let provider = provider_for_worker.clone();
                 async move { process_notification_job(provider, job).await }
-            });
+            },
+        );
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {

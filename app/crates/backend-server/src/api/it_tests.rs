@@ -167,6 +167,7 @@ fn user_row(user_id: &str) -> backend_model::db::UserRow {
         fineract_customer_id: Some("fin_001".to_owned()),
         disabled: false,
         attributes: Some(json!({"tier":"gold"})),
+        metadata: json!({}),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

@@ -289,5 +289,3 @@ pub async fn run(state: Arc<AppState>) -> backend_core::Result<()> {
 
     Ok(())
 }
-
-

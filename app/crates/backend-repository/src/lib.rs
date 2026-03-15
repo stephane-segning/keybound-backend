@@ -1,4 +1,5 @@
 //! Repository layer for database operations using Diesel-async.
+#![allow(clippy::result_large_err)]
 //!
 //! This crate provides:
 //! - Repository traits defining database operations

@@ -50,6 +50,8 @@ services:
         condition: service_healthy
       sms-sink:
         condition: service_healthy
+      sms-gateway:
+        condition: service_started
 
   user-storage-server-blank-base:
     image: user-storage-app
@@ -91,6 +93,8 @@ services:
         condition: service_healthy
       sms-sink:
         condition: service_healthy
+      sms-gateway:
+        condition: service_started
 
   user-storage-server-auth-disabled:
     image: user-storage-app
@@ -132,6 +136,8 @@ services:
         condition: service_healthy
       sms-sink:
         condition: service_healthy
+      sms-gateway:
+        condition: service_started
 
   user-storage-worker:
     image: user-storage-app
@@ -173,6 +179,8 @@ services:
         condition: service_healthy
       sms-sink:
         condition: service_healthy
+      sms-gateway:
+        condition: service_started
 
   user-storage-worker-secondary:
     image: user-storage-app
@@ -211,6 +219,38 @@ services:
       minio-create-bucket:
         condition: service_completed_successfully
       cuss-stub:
+        condition: service_healthy
+      sms-sink:
+        condition: service_healthy
+      sms-gateway:
+        condition: service_started
+
+  sms-gateway:
+    image: user-storage-app
+    build:
+      context: ../..
+      dockerfile: deploy/docker/user-storage/Dockerfile
+    entrypoint:
+      - /app/sms-gateway
+    command:
+      - --config
+      - config/e2e.yaml
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/user-storage"
+      REDIS_URL: "redis://redis:6379"
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_REGION: "us-east-1"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-minioadmin}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-user-storage-e2e}"
+      SMS_SINK_URL: "http://sms-sink:8081"
+      CUSS_URL: "http://cuss-stub:8080"
+      MINIO_FORCE_PATH_STYLE: "true"
+      RUST_LOG: info
+    volumes:
+      - ../../config:/app/config
+    depends_on:
+      redis:
         condition: service_healthy
       sms-sink:
         condition: service_healthy

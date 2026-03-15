@@ -236,6 +236,7 @@ mod tests {
             fineract_customer_id: Some("fin_001".to_owned()),
             disabled: false,
             attributes: Some(serde_json::json!({ "tier": "gold" })),
+            metadata: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

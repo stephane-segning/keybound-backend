@@ -47,10 +47,7 @@ impl InstanceManager {
         Ok(created)
     }
 
-    pub async fn finish_instance_success(
-        &self,
-        instance_id: &str,
-    ) -> Result<(), Error> {
+    pub async fn finish_instance_success(&self, instance_id: &str) -> Result<(), Error> {
         let now = chrono::Utc::now();
         let mark_complete_attempt = self
             .state

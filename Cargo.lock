@@ -914,6 +914,7 @@ name = "backend"
 version = "0.2.3"
 dependencies = [
  "backend-core",
+ "backend-flow-sdk",
  "backend-migrate",
  "backend-server",
  "clap",
@@ -921,6 +922,8 @@ dependencies = [
  "mimalloc",
  "openssl",
  "openssl-sys",
+ "serde_json",
+ "serde_yaml",
  "tokio",
  "tracing",
 ]
@@ -997,6 +1000,18 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-postgres",
+]
+
+[[package]]
+name = "backend-flow-sdk"
+version = "0.2.3"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1080,10 +1095,12 @@ dependencies = [
  "axum-server",
  "backend-auth",
  "backend-core",
+ "backend-flow-sdk",
  "backend-id",
  "backend-migrate",
  "backend-model",
  "backend-repository",
+ "base64 0.22.1",
  "bytes",
  "chrono",
  "diesel",
@@ -1096,6 +1113,8 @@ dependencies = [
  "http 1.4.0",
  "hyper 1.8.1",
  "json-patch",
+ "jsonpath_lib",
+ "jsonwebtoken",
  "mockall",
  "openssl",
  "openssl-sys",
@@ -3297,6 +3316,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonpath_lib"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaa63191d68230cccb81c5aa23abd53ed64d83337cacbb25a7b8c7979523774f"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jsonptr"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5038,6 +5068,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap 2.13.0",
  "itoa",
  "memchr",
  "serde",
@@ -5301,6 +5332,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

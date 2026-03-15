@@ -36,6 +36,7 @@ pub struct UserRow {
     pub fineract_customer_id: Option<String>,
     pub disabled: bool,
     pub attributes: Option<Value>,
+    pub metadata: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -73,6 +74,70 @@ pub struct DeviceRow {
     pub created_at: DateTime<Utc>,
     /// Updated on every lookup for usage tracking
     pub last_seen_at: Option<DateTime<Utc>>,
+}
+
+/// Top-level flow session row.
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::flow_session)]
+pub struct FlowSessionRow {
+    pub id: String,
+    pub human_id: String,
+    pub user_id: Option<String>,
+    pub session_type: String,
+    pub status: String,
+    pub context: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Flow execution row within a session.
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::flow_instance)]
+pub struct FlowInstanceRow {
+    pub id: String,
+    pub human_id: String,
+    pub session_id: String,
+    pub flow_type: String,
+    pub status: String,
+    pub current_step: Option<String>,
+    pub step_ids: Value,
+    pub context: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Step execution row within a flow.
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::flow_step)]
+pub struct FlowStepRow {
+    pub id: String,
+    pub human_id: String,
+    pub flow_id: String,
+    pub step_type: String,
+    pub actor: String,
+    pub status: String,
+    pub attempt_no: i32,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub error: Option<Value>,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+/// JWT signing key row.
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::signing_key)]
+pub struct SigningKeyRow {
+    pub kid: String,
+    pub private_key_pem: String,
+    pub public_key_jwk: Value,
+    pub algorithm: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub is_active: bool,
 }
 
 /// State machine instance - represents a single KYC flow execution.
@@ -168,6 +233,38 @@ impl diesel::associations::HasTable for DeviceRow {
     }
 }
 
+impl diesel::associations::HasTable for FlowSessionRow {
+    type Table = crate::schema::flow_session::table;
+
+    fn table() -> Self::Table {
+        crate::schema::flow_session::table
+    }
+}
+
+impl diesel::associations::HasTable for FlowInstanceRow {
+    type Table = crate::schema::flow_instance::table;
+
+    fn table() -> Self::Table {
+        crate::schema::flow_instance::table
+    }
+}
+
+impl diesel::associations::HasTable for FlowStepRow {
+    type Table = crate::schema::flow_step::table;
+
+    fn table() -> Self::Table {
+        crate::schema::flow_step::table
+    }
+}
+
+impl diesel::associations::HasTable for SigningKeyRow {
+    type Table = crate::schema::signing_key::table;
+
+    fn table() -> Self::Table {
+        crate::schema::signing_key::table
+    }
+}
+
 impl diesel::associations::HasTable for SmInstanceRow {
     type Table = crate::schema::sm_instance::table;
 
@@ -225,6 +322,38 @@ impl<'a> diesel::Identifiable for &'a DeviceRow {
 
     fn id(self) -> Self::Id {
         (self.device_id.as_str(), self.public_jwk.as_str())
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a FlowSessionRow {
+    type Id = &'a str;
+
+    fn id(self) -> Self::Id {
+        self.id.as_str()
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a FlowInstanceRow {
+    type Id = &'a str;
+
+    fn id(self) -> Self::Id {
+        self.id.as_str()
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a FlowStepRow {
+    type Id = &'a str;
+
+    fn id(self) -> Self::Id {
+        self.id.as_str()
+    }
+}
+
+impl<'a> diesel::Identifiable for &'a SigningKeyRow {
+    type Id = &'a str;
+
+    fn id(self) -> Self::Id {
+        self.kid.as_str()
     }
 }
 

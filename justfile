@@ -113,9 +113,9 @@ test-e2e-smoke:
 	  trap cleanup EXIT; \
 	  export POSTGRES_PORT=15432 REDIS_PORT=16379 MINIO_API_PORT=19000 MINIO_CONSOLE_PORT=19001; \
 	  docker compose -p {{project_e2e}} -f {{compose_e2e}} down -v || true; \
-	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker cuss-stub sms-sink; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker sms-gateway cuss-stub sms-sink; \
 	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d \
-	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink user-storage-server; \
+	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink sms-gateway user-storage-server; \
 	  for i in $(seq 1 90); do \
 	    if curl -fsS http://127.0.0.1:3002/health >/dev/null 2>&1; then break; fi; \
 	    sleep 2; \
@@ -144,9 +144,9 @@ test-e2e-full:
 	  trap cleanup EXIT; \
 	  export POSTGRES_PORT=15432 REDIS_PORT=16379 MINIO_API_PORT=19000 MINIO_CONSOLE_PORT=19001; \
 	  docker compose -p {{project_e2e}} -f {{compose_e2e}} down -v || true; \
-	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker cuss-stub sms-sink; \
+	  docker compose -p {{project_e2e}} -f {{compose_e2e}} build user-storage-server user-storage-worker sms-gateway cuss-stub sms-sink; \
 	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d \
-	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink user-storage-server; \
+	    postgres redis minio minio-create-bucket keycloak cuss-stub sms-sink sms-gateway user-storage-server; \
 	  for i in $(seq 1 90); do \
 	    if curl -fsS http://127.0.0.1:3002/health >/dev/null 2>&1; then break; fi; \
 	    sleep 2; \

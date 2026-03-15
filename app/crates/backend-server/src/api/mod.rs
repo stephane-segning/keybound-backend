@@ -1,4 +1,6 @@
+pub mod auth;
 pub mod bff;
+pub mod bff_revamp;
 #[cfg(all(test, feature = "it-tests"))]
 mod it_tests;
 pub mod kc;

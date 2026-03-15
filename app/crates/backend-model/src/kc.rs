@@ -291,6 +291,7 @@ mod tests {
             fineract_customer_id: None,
             disabled: false,
             attributes: Some(json!({ "tier": "gold" })),
+            metadata: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
