@@ -1,4 +1,5 @@
 use crate::file_storage::{MinioStorage, S3CompatibleMinioStorage};
+use crate::flow_registry;
 use crate::state_machine::queue::{RedisStateMachineQueue, StateMachineQueue};
 use crate::worker::{NotificationQueue, RedisNotificationQueue};
 use backend_auth::{HttpClient, OidcState, SignatureState};
@@ -17,6 +18,7 @@ use tracing::info;
 pub struct AppState {
     pub sm: Arc<dyn StateMachineRepo>,
     pub flow: Arc<dyn FlowRepo>,
+    pub flow_registry: Arc<backend_flow_sdk::FlowRegistry>,
     pub user: Arc<dyn UserRepo>,
     pub device: Arc<dyn DeviceRepo>,
     pub sm_queue: Arc<dyn StateMachineQueue>,
@@ -32,6 +34,7 @@ impl std::fmt::Debug for AppState {
         f.debug_struct("AppState")
             .field("sm", &"<StateMachineRepository>")
             .field("flow", &"<FlowRepository>")
+            .field("flow_registry", &"<FlowRegistry>")
             .field("user", &"<UserRepository>")
             .field("device", &"<DeviceRepository>")
             .field("sm_queue", &"<StateMachineQueue>")
@@ -137,6 +140,7 @@ impl AppState {
 
         let sm: Arc<dyn StateMachineRepo> = Arc::new(sm_repo);
         let flow: Arc<dyn FlowRepo> = Arc::new(FlowRepository::new(pool.clone()));
+        let flow_registry = Arc::new(flow_registry::build_registry());
         let user: Arc<dyn UserRepo> = Arc::new(UserRepository::new(pool.clone()));
         let device: Arc<dyn DeviceRepo> = Arc::new(DeviceRepository::new(pool.clone()));
 
@@ -163,6 +167,7 @@ impl AppState {
         Ok(Self {
             sm,
             flow,
+            flow_registry,
             user,
             device,
             sm_queue,

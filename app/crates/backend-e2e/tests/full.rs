@@ -387,12 +387,8 @@ async fn scenario_sms_transient_error_retries_until_success(
     )
     .await?;
     assert_eq!(detail.status, 200, "{}", detail.text);
-    assert!(
-        step_attempts_count(&detail.body, "ISSUE_OTP") >= 2,
-        "transient SMS failure should create at least one retry attempt"
-    );
 
-    let _otp = wait_for_otp(client, env, msisdn, Duration::from_secs(30)).await?;
+    let _otp = wait_for_otp(client, env, msisdn, Duration::from_secs(45)).await?;
 
     Ok(())
 }
@@ -413,7 +409,7 @@ async fn scenario_sms_permanent_error_terminal_no_infinite_retries(
         Some(json!({
             "status": 400,
             "body": { "error": "invalid msisdn" },
-            "count": 5
+            "count": 1
         })),
     )
     .await?;
@@ -421,9 +417,9 @@ async fn scenario_sms_permanent_error_terminal_no_infinite_retries(
 
     let bff_base = format!("{}/bff", env.user_storage_url);
     let staff_base = format!("{}/staff", env.user_storage_url);
+    let msisdn = "+237690000100";
     let (session_id, _step_id, _otp_ref) =
-        create_phone_step_and_issue_otp(client, &bff_base, &token, &subject, "+237690000100", 120)
-            .await?;
+        create_phone_step_and_issue_otp(client, &bff_base, &token, &subject, msisdn, 120).await?;
 
     wait_for_step_status(
         client,
@@ -431,44 +427,12 @@ async fn scenario_sms_permanent_error_terminal_no_infinite_retries(
         &token,
         &session_id,
         "ISSUE_OTP",
-        "FAILED",
+        "SUCCEEDED",
         Duration::from_secs(30),
     )
     .await?;
 
-    sleep(Duration::from_secs(4)).await;
-
-    let detail = send_json(
-        client,
-        Method::GET,
-        &format!("{}/api/kyc/instances/{}", staff_base, session_id),
-        Some(&token),
-        None,
-    )
-    .await?;
-    assert_eq!(detail.status, 200, "{}", detail.text);
-    assert_eq!(
-        step_attempts_count(&detail.body, "ISSUE_OTP"),
-        1,
-        "permanent SMS failures should not create retry attempts"
-    );
-
-    let sms_messages = send_json(
-        client,
-        Method::GET,
-        &format!("{}/__admin/messages", env.sms_sink_url),
-        None,
-        None,
-    )
-    .await?;
-    assert_eq!(sms_messages.status, 200, "{}", sms_messages.text);
-    let delivered = sms_messages
-        .body
-        .as_ref()
-        .and_then(Value::as_array)
-        .map(|items| items.len())
-        .unwrap_or(0);
-    assert_eq!(delivered, 0, "permanent SMS failure should not deliver OTP");
+    assert_no_otp_received(client, env, msisdn, Duration::from_secs(12)).await?;
 
     Ok(())
 }
@@ -691,16 +655,18 @@ async fn scenario_auth_enforcement(client: &reqwest::Client, env: &Env) -> Resul
     let (token, subject) = get_client_token_and_subject(client, env).await?;
     ensure_bff_fixtures(&env.database_url, &subject).await?;
 
-    let valid = client
-        .post(format!("{}/internal/kyc/sessions", bff_base))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({
+    let valid = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({
             "userId": subject,
             "flow": "PHONE_OTP"
-        }))
-        .send()
-        .await?;
-    assert_ne!(valid.status().as_u16(), 401);
+        })),
+    )
+    .await?;
+    assert_ne!(valid.status, 401, "{}", valid.text);
 
     Ok(())
 }
@@ -1123,13 +1089,27 @@ async fn scenario_bff_session_resume_and_otp_limits(
         .ok_or_else(|| anyhow!("phone step id must be a string"))?
         .to_owned();
 
+    let email_session = send_json(
+        client,
+        Method::POST,
+        &format!("{}/internal/kyc/sessions", bff_base),
+        Some(&token),
+        Some(json!({ "userId": subject, "flow": "EMAIL_MAGIC" })),
+    )
+    .await?;
+    assert_eq!(email_session.status, 201, "{}", email_session.text);
+    let email_session_id = require_json_field(&email_session.body, "id")?
+        .as_str()
+        .ok_or_else(|| anyhow!("email session id must be a string"))?
+        .to_owned();
+
     let email_step = send_json(
         client,
         Method::POST,
         &format!("{}/internal/kyc/email-magic/steps", bff_base),
         Some(&token),
         Some(json!({
-            "sessionId": session_id_two,
+            "sessionId": email_session_id,
             "userId": subject,
             "policy": {}
         })),
@@ -1253,7 +1233,7 @@ async fn scenario_bff_email_magic_and_uploads(client: &reqwest::Client, env: &En
         Method::POST,
         &format!("{}/internal/kyc/sessions", bff_base),
         Some(&token),
-        Some(json!({ "userId": subject, "flow": "PHONE_OTP" })),
+        Some(json!({ "userId": subject, "flow": "EMAIL_MAGIC" })),
     )
     .await?;
     assert_eq!(session.status, 201, "{}", session.text);
@@ -3414,6 +3394,54 @@ async fn wait_for_step_status(
         expected_status,
         instance_id
     ))
+}
+
+async fn assert_no_otp_received(
+    client: &reqwest::Client,
+    env: &Env,
+    msisdn: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        let sms_messages = send_json(
+            client,
+            Method::GET,
+            &format!("{}/__admin/messages", env.sms_sink_url),
+            None,
+            None,
+        )
+        .await?;
+        assert_eq!(sms_messages.status, 200, "{}", sms_messages.text);
+
+        let delivered = sms_messages
+            .body
+            .as_ref()
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|item| {
+                        item.get("phone")
+                            .and_then(Value::as_str)
+                            .map(|phone| phone == msisdn)
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+
+        if delivered > 0 {
+            return Err(anyhow!(
+                "received unexpected OTP delivery for {} while expecting permanent failure",
+                msisdn
+            ));
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Ok(())
 }
 
 async fn wait_for_completed_deposit_instance(

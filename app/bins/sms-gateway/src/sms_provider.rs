@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use backend_core::{Error, NotificationJob};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing::info;
 
 #[cfg(test)]
@@ -9,6 +11,9 @@ use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
 };
+
+const TRANSIENT_RETRY_MAX_ATTEMPTS: usize = 4;
+const TRANSIENT_RETRY_INITIAL_BACKOFF_MILLIS: u64 = 200;
 
 /// SMS provider trait for sending OTP messages
 #[async_trait]
@@ -96,6 +101,7 @@ impl SmsProvider for ApiSmsProvider {
     async fn send_otp(&self, msisdn: &str, otp: &str) -> Result<(), Error> {
         let url = format!("{}/otp", self.base_url.trim_end_matches('/'));
         let mut request = self.client.post(&url).json(&json!({
+            "phone": msisdn,
             "msisdn": msisdn,
             "otp": otp
         }));
@@ -142,8 +148,7 @@ pub async fn process_notification_job(
             otp,
         } => {
             info!("Processing OTP job for step: {}", step_id);
-            provider.send_otp(&msisdn, &otp).await?;
-            Ok(())
+            send_otp_with_retry(provider, &msisdn, &otp).await
         }
         NotificationJob::MagicEmail { .. } => {
             // Email notifications are not handled by SMS gateway
@@ -153,9 +158,49 @@ pub async fn process_notification_job(
     }
 }
 
+async fn send_otp_with_retry(
+    provider: Arc<dyn SmsProvider>,
+    msisdn: &str,
+    otp: &str,
+) -> Result<(), Error> {
+    let mut attempt = 0usize;
+    loop {
+        match provider.send_otp(msisdn, otp).await {
+            Ok(()) => return Ok(()),
+            Err(error) if is_permanent_error(&error) => return Err(error),
+            Err(error) if is_transient_error(&error) => {
+                attempt += 1;
+                if attempt >= TRANSIENT_RETRY_MAX_ATTEMPTS {
+                    return Err(error);
+                }
+
+                let backoff_millis =
+                    TRANSIENT_RETRY_INITIAL_BACKOFF_MILLIS.saturating_mul(1_u64 << (attempt - 1));
+                sleep(Duration::from_millis(backoff_millis)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn is_transient_error(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Http { error_key, .. } if *error_key == "SMS_SEND_TRANSIENT"
+    )
+}
+
+pub(crate) fn is_permanent_error(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Http { error_key, .. } if *error_key == "SMS_SEND_PERMANENT"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn console_sms_provider_logs_to_console() {
@@ -232,6 +277,69 @@ mod tests {
         };
         let result = process_notification_job(provider, job).await;
         assert!(result.is_ok());
+    }
+
+    struct FlakyTransientProvider {
+        failures_before_success: usize,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl SmsProvider for FlakyTransientProvider {
+        async fn send_otp(&self, _msisdn: &str, _otp: &str) -> Result<(), Error> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call < self.failures_before_success {
+                return Err(Error::internal("SMS_SEND_TRANSIENT", "temporary outage"));
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn process_notification_job_retries_transient_errors() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(FlakyTransientProvider {
+            failures_before_success: 1,
+            calls: calls.clone(),
+        });
+        let job = NotificationJob::Otp {
+            step_id: "test_step".to_string(),
+            msisdn: "1234567890".to_string(),
+            otp: "123456".to_string(),
+        };
+
+        let result = process_notification_job(provider, job).await;
+        assert!(result.is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    struct PermanentFailureProvider {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl SmsProvider for PermanentFailureProvider {
+        async fn send_otp(&self, _msisdn: &str, _otp: &str) -> Result<(), Error> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(Error::internal("SMS_SEND_PERMANENT", "invalid request"))
+        }
+    }
+
+    #[tokio::test]
+    async fn process_notification_job_does_not_retry_permanent_errors() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(PermanentFailureProvider {
+            calls: calls.clone(),
+        });
+        let job = NotificationJob::Otp {
+            step_id: "test_step".to_string(),
+            msisdn: "1234567890".to_string(),
+            otp: "123456".to_string(),
+        };
+
+        let result = process_notification_job(provider, job).await;
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

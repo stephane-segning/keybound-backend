@@ -23,8 +23,11 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 
 const HEADER_SIGNATURE: &str = "x-auth-signature";
-const HEADER_TIMESTAMP: &str = "x-auth-timestamp";
+const HEADER_TIMESTAMP: &str = "x-auth-signature-timestamp";
 const HEADER_DEVICE_ID: &str = "x-auth-device-id";
+const HEADER_PUBLIC_KEY: &str = "x-auth-public-key";
+const HEADER_NONCE: &str = "x-auth-nonce";
+const HEADER_USER_ID: &str = "x-auth-user-id";
 
 pub fn router(api: BackendApi) -> Router {
     Router::new()
@@ -528,26 +531,44 @@ fn verify_signature_with_jwk(
     let signature = header_value(headers, HEADER_SIGNATURE)
         .ok_or_else(|| Error::unauthorized("Missing x-auth-signature"))?;
     let timestamp_str = header_value(headers, HEADER_TIMESTAMP)
-        .ok_or_else(|| Error::unauthorized("Missing x-auth-timestamp"))?;
+        .ok_or_else(|| Error::unauthorized("Missing x-auth-signature-timestamp"))?;
+    let public_key_header = header_value(headers, HEADER_PUBLIC_KEY)
+        .ok_or_else(|| Error::unauthorized("Missing x-auth-public-key"))?;
+    let nonce = header_value(headers, HEADER_NONCE)
+        .ok_or_else(|| Error::unauthorized("Missing x-auth-nonce"))?;
+    let device_id = header_value(headers, HEADER_DEVICE_ID)
+        .ok_or_else(|| Error::unauthorized("Missing x-auth-device-id"))?;
+    let user_id_hint = header_value(headers, HEADER_USER_ID).unwrap_or_default();
 
     let timestamp = timestamp_str
         .parse::<i64>()
-        .map_err(|_| Error::unauthorized("Invalid x-auth-timestamp"))?;
+        .map_err(|_| Error::unauthorized("Invalid x-auth-signature-timestamp"))?;
     let skew = (Utc::now().timestamp() - timestamp).abs();
     if skew > api.state.config.auth.max_clock_skew_seconds {
         return Err(Error::unauthorized("Timestamp out of skew"));
+    }
+
+    let provided_public_key = canonicalize_jwk_str(&public_key_header)?;
+    let expected_public_key = canonicalize_jwk_str(public_jwk)?;
+    if provided_public_key != expected_public_key {
+        return Err(Error::unauthorized(
+            "x-auth-public-key does not match expected key",
+        ));
     }
 
     let body_str = std::str::from_utf8(body)
         .map_err(|_| Error::bad_request("INVALID_BODY", "Body must be utf-8"))?;
 
     let canonical_payload = format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         timestamp,
+        nonce,
         method.as_str().to_uppercase(),
         path,
         body_str,
-        public_jwk,
+        provided_public_key,
+        device_id,
+        user_id_hint,
     );
     let digest = Sha256::digest(canonical_payload.as_bytes());
     let expected = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
@@ -632,4 +653,10 @@ fn canonicalize_jwk_value(value: &Value) -> Result<String, Error> {
         .collect::<BTreeMap<String, Value>>();
     serde_json::to_string(&sorted)
         .map_err(|error| Error::bad_request("INVALID_JWK", error.to_string()))
+}
+
+fn canonicalize_jwk_str(raw: &str) -> Result<String, Error> {
+    let parsed: Value = serde_json::from_str(raw)
+        .map_err(|error| Error::bad_request("INVALID_JWK", error.to_string()))?;
+    canonicalize_jwk_value(&parsed)
 }

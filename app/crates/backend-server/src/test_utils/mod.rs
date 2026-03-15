@@ -1,4 +1,5 @@
 use crate::file_storage::{EncryptionMode, MinioStorage, PresignedUpload};
+use crate::flow_registry;
 use crate::state::AppState;
 use crate::state_machine::jobs::StateMachineStepJob;
 use crate::state_machine::queue::StateMachineQueue;
@@ -446,6 +447,7 @@ cuss:
                 .sm
                 .unwrap_or_else(|| Arc::new(MockStateMachineRepo::new())),
             flow: self.flow.unwrap_or_else(|| Arc::new(MockFlowRepo::new())),
+            flow_registry: Arc::new(flow_registry::build_registry()),
             user: self.user.unwrap_or_else(|| Arc::new(MockUserRepo::new())),
             device: self
                 .device

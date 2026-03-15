@@ -1,6 +1,5 @@
 pub mod auth;
-pub mod bff;
-pub mod bff_revamp;
+pub mod bff_flow;
 #[cfg(all(test, feature = "it-tests"))]
 mod it_tests;
 pub mod kc;
@@ -14,6 +13,15 @@ use backend_core::{AppResult, Error};
 use http::{HeaderMap, HeaderValue};
 use std::sync::Arc;
 use tracing::{debug, instrument};
+
+pub(crate) const BFF_AUTH_USER_ID_HEADER: &str = "x-bff-authenticated-user-id";
+pub(crate) const BFF_AUTH_DEVICE_ID_HEADER: &str = "x-bff-authenticated-device-id";
+
+#[derive(Debug, Clone)]
+pub struct BffSignatureClaims {
+    pub user_id: String,
+    pub device_id: String,
+}
 
 #[derive(Clone)]
 pub struct BackendApi {
@@ -41,6 +49,31 @@ impl BackendApi {
         }
     }
 
+    pub(crate) fn require_bff_claims(&self, headers: &HeaderMap) -> AppResult<BffSignatureClaims> {
+        if !self.state.config.bff.enabled {
+            return Ok(BffSignatureClaims {
+                user_id: "usr_auth_disabled".to_owned(),
+                device_id: "dvc_auth_disabled".to_owned(),
+            });
+        }
+
+        Self::extract_bff_claims(headers)
+            .ok_or_else(|| Error::unauthorized("Missing signature-authenticated BFF claims"))
+    }
+
+    pub(crate) fn extract_bff_claims(headers: &HeaderMap) -> Option<BffSignatureClaims> {
+        let user_id = headers
+            .get(BFF_AUTH_USER_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned)?;
+        let device_id = headers
+            .get(BFF_AUTH_DEVICE_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned)?;
+
+        Some(BffSignatureClaims { user_id, device_id })
+    }
+
     #[instrument(skip(context))]
     pub(crate) fn require_user_id(context: &JwtToken) -> AppResult<String> {
         Ok(context.user_id().to_owned())
@@ -49,20 +82,6 @@ impl BackendApi {
 
 pub(crate) fn kc_error(code: &str, message: &str) -> gen_oas_server_kc::models::Error {
     gen_oas_server_kc::models::Error::new(code.to_owned(), message.to_owned())
-}
-
-#[backend_core::async_trait]
-impl gen_oas_server_bff::apis::ErrorHandler<Error> for BackendApi {
-    #[instrument(skip(self, error))]
-    async fn handle_error(
-        &self,
-        _method: &::http::Method,
-        _host: &headers::Host,
-        _cookies: &axum_extra::extract::CookieJar,
-        error: Error,
-    ) -> Result<axum::response::Response, http::StatusCode> {
-        Ok(error.into_response())
-    }
 }
 
 #[backend_core::async_trait]
@@ -90,24 +109,6 @@ impl gen_oas_server_staff::apis::ErrorHandler<Error> for BackendApi {
         error: Error,
     ) -> Result<axum::response::Response, http::StatusCode> {
         Ok(error.into_response())
-    }
-}
-
-#[backend_core::async_trait]
-impl gen_oas_server_bff::apis::ApiAuthBasic for BackendApi {
-    type Claims = JwtToken;
-
-    #[instrument(skip(self, headers))]
-    async fn extract_claims_from_auth_header(
-        &self,
-        _kind: gen_oas_server_bff::apis::BasicAuthKind,
-        headers: &HeaderMap,
-        key: &str,
-    ) -> Option<Self::Claims> {
-        if !self.state.config.bff.enabled {
-            return Some(auth_disabled_claims(&self.state.config.oauth2.issuer));
-        }
-        claims_from_header_key(headers, key, self.oidc_state.clone()).await
     }
 }
 

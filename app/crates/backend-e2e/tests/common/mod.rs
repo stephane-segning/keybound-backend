@@ -4,9 +4,14 @@ use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_postgres::NoTls;
+
+const E2E_BFF_DEVICE_ID: &str = "dvc_e2e_bff_signature";
+const E2E_BFF_DEVICE_JKT: &str = "jkt_e2e_bff_signature";
+const E2E_BFF_PUBLIC_JWK: &str = "{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"e2e-bff\",\"kty\":\"EC\",\"x\":\"e2e-x\",\"y\":\"e2e-y\"}";
 
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -98,6 +103,13 @@ pub async fn send_json(
     bearer: Option<&str>,
     body: Option<Value>,
 ) -> Result<JsonResponse> {
+    let request_path = request_path(url)?;
+    let body_json = body
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .with_context(|| format!("failed to serialize request body for {url}"))?;
+
     let mut request = client
         .request(method, url)
         .header(CONTENT_TYPE, "application/json");
@@ -106,8 +118,30 @@ pub async fn send_json(
         request = request.header(AUTHORIZATION, format!("Bearer {token}"));
     }
 
-    if let Some(payload) = body {
-        request = request.json(&payload);
+    if should_sign_bff_request(&request_path) {
+        let timestamp = chrono::Utc::now().timestamp();
+        let nonce = format!(
+            "e2e-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        );
+        let payload = body_json.as_deref().unwrap_or("");
+        let signature = bff_signature(
+            timestamp,
+            &nonce,
+            request.method().as_str(),
+            &request_path,
+            payload,
+        );
+        request = request
+            .header("x-auth-device-id", E2E_BFF_DEVICE_ID)
+            .header("x-auth-signature-timestamp", timestamp.to_string())
+            .header("x-auth-public-key", E2E_BFF_PUBLIC_JWK)
+            .header("x-auth-nonce", nonce)
+            .header("x-auth-signature", signature);
+    }
+
+    if let Some(payload) = body_json {
+        request = request.body(payload);
     }
 
     let response = request
@@ -132,6 +166,32 @@ pub async fn send_json(
         body: parsed,
         text,
     })
+}
+
+fn request_path(url: &str) -> Result<String> {
+    reqwest::Url::parse(url)
+        .map(|parsed| parsed.path().to_owned())
+        .map_err(|error| anyhow!("invalid URL `{url}`: {error}"))
+}
+
+fn should_sign_bff_request(path: &str) -> bool {
+    path == "/bff" || path.starts_with("/bff/")
+}
+
+fn bff_signature(timestamp: i64, nonce: &str, method: &str, path: &str, body: &str) -> String {
+    let canonical_payload = format!(
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        timestamp,
+        nonce,
+        method.to_uppercase(),
+        path,
+        body,
+        E2E_BFF_PUBLIC_JWK,
+        E2E_BFF_DEVICE_ID,
+        "",
+    );
+    let digest = Sha256::digest(canonical_payload.as_bytes());
+    URL_SAFE_NO_PAD.encode(digest)
 }
 
 pub async fn get_client_token_and_subject(
@@ -272,6 +332,55 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
         )
         .await
         .context("failed to upsert staff user fixture")?;
+
+    let device_record_id = {
+        let hash = Sha256::digest(E2E_BFF_PUBLIC_JWK.as_bytes());
+        format!("{E2E_BFF_DEVICE_ID}:{:x}", hash)
+    };
+    client
+        .execute(
+            r#"
+            INSERT INTO device (
+                device_id,
+                user_id,
+                jkt,
+                public_jwk,
+                device_record_id,
+                status,
+                label,
+                created_at,
+                last_seen_at
+            ) VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                'ACTIVE',
+                'e2e-signature-device',
+                NOW(),
+                NOW()
+            )
+            ON CONFLICT (device_id) DO UPDATE
+            SET
+                user_id = EXCLUDED.user_id,
+                jkt = EXCLUDED.jkt,
+                public_jwk = EXCLUDED.public_jwk,
+                device_record_id = EXCLUDED.device_record_id,
+                status = 'ACTIVE',
+                label = EXCLUDED.label,
+                last_seen_at = NOW()
+            "#,
+            &[
+                &E2E_BFF_DEVICE_ID,
+                &user_id,
+                &E2E_BFF_DEVICE_JKT,
+                &E2E_BFF_PUBLIC_JWK,
+                &device_record_id,
+            ],
+        )
+        .await
+        .context("failed to upsert bff signature device fixture")?;
 
     Ok(())
 }

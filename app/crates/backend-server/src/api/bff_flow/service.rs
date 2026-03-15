@@ -1,0 +1,735 @@
+use crate::api::BackendApi;
+use crate::flow_registry::{actor_label, waiting_status};
+use axum::http::HeaderMap;
+use backend_core::Error;
+use backend_flow_sdk::{Actor, Flow, FlowError, HumanReadableId, StepContext, StepOutcome};
+use backend_model::db::{FlowInstanceRow, FlowSessionRow};
+use backend_repository::{
+    FlowInstanceCreateInput, FlowSessionCreateInput, FlowSessionFilter, FlowStepCreateInput,
+    FlowStepPatch,
+};
+use chrono::{Duration, Utc};
+use serde_json::{Value, json};
+
+use super::models::{
+    AddFlowRequest, CreateSessionRequest, FlowDetailResponse, FlowResponse, SessionDetailResponse,
+    SessionResponse, StepResponse, SubmitStepRequest,
+};
+
+const FLOW_STATUS_RUNNING: &str = "RUNNING";
+const FLOW_STATUS_COMPLETED: &str = "COMPLETED";
+const FLOW_STATUS_FAILED: &str = "FAILED";
+
+pub async fn require_user_id(api: &BackendApi, headers: &HeaderMap) -> Result<String, Error> {
+    let claims = api.require_bff_claims(headers)?;
+    if claims.user_id.trim().is_empty() {
+        return Err(Error::unauthorized(
+            "Invalid signature-authenticated user id",
+        ));
+    }
+    if claims.device_id.trim().is_empty() {
+        return Err(Error::unauthorized(
+            "Invalid signature-authenticated device id",
+        ));
+    }
+    Ok(claims.user_id)
+}
+
+pub async fn create_session(
+    api: &BackendApi,
+    user_id: String,
+    body: CreateSessionRequest,
+) -> Result<SessionResponse, Error> {
+    let session_definition = api
+        .state
+        .flow_registry
+        .get_session(&body.session_type)
+        .ok_or_else(|| {
+            Error::bad_request(
+                "UNKNOWN_SESSION_TYPE",
+                format!("Unknown session type: {}", body.session_type),
+            )
+        })?;
+
+    let session_id = backend_id::flow_session_id()?;
+    let human_id = normalize_or_default_human_id(
+        body.human_id,
+        format!(
+            "{}.{}.{}",
+            session_definition.human_id_prefix,
+            Utc::now().format("%Y-%m-%d"),
+            session_id
+        ),
+    )?;
+
+    let row = api
+        .state
+        .flow
+        .create_session(FlowSessionCreateInput {
+            id: session_id,
+            human_id,
+            user_id: Some(user_id),
+            session_type: body.session_type,
+            status: "OPEN".to_owned(),
+            context: object_context(body.context),
+        })
+        .await?;
+
+    Ok(row.into())
+}
+
+pub async fn list_sessions(
+    api: &BackendApi,
+    user_id: String,
+) -> Result<Vec<SessionResponse>, Error> {
+    let (rows, _) = api
+        .state
+        .flow
+        .list_sessions(FlowSessionFilter {
+            user_id: Some(user_id),
+            session_type: None,
+            status: None,
+            page: 1,
+            limit: 100,
+        })
+        .await?;
+
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+pub async fn get_session(
+    api: &BackendApi,
+    session_id: String,
+    user_id: String,
+) -> Result<SessionDetailResponse, Error> {
+    let session = ensure_session_owner(api, &session_id, &user_id).await?;
+    let flows = api.state.flow.list_flows_for_session(&session.id).await?;
+
+    Ok(SessionDetailResponse {
+        session: session.into(),
+        flows: flows.into_iter().map(Into::into).collect(),
+    })
+}
+
+pub async fn list_session_flows(
+    api: &BackendApi,
+    session_id: String,
+    user_id: String,
+) -> Result<Vec<FlowResponse>, Error> {
+    ensure_session_owner(api, &session_id, &user_id).await?;
+    let flows = api.state.flow.list_flows_for_session(&session_id).await?;
+    Ok(flows.into_iter().map(Into::into).collect())
+}
+
+pub async fn add_flow_to_session(
+    api: &BackendApi,
+    session_id: String,
+    user_id: String,
+    body: AddFlowRequest,
+) -> Result<FlowResponse, Error> {
+    let session = ensure_session_owner(api, &session_id, &user_id).await?;
+
+    let flow_definition = get_flow_definition(api, &body.flow_type)?;
+    validate_session_flow_compatibility(api, &session, flow_definition.flow_type())?;
+
+    let initial_step = body
+        .initial_step
+        .clone()
+        .unwrap_or_else(|| flow_definition.initial_step().to_owned());
+
+    ensure_flow_step_exists(flow_definition, &initial_step)?;
+
+    let flow_id = backend_id::flow_instance_id()?;
+    let flow_human_id = normalize_or_default_human_id(
+        body.human_id,
+        format!("{}.{}", session.human_id, flow_definition.human_id()),
+    )?;
+
+    let created = api
+        .state
+        .flow
+        .create_flow(FlowInstanceCreateInput {
+            id: flow_id,
+            human_id: flow_human_id,
+            session_id: session_id.clone(),
+            flow_type: body.flow_type,
+            status: FLOW_STATUS_RUNNING.to_owned(),
+            current_step: None,
+            step_ids: json!([]),
+            context: object_context(body.context),
+        })
+        .await?;
+
+    api.state
+        .flow
+        .update_session_status(&session_id, FLOW_STATUS_RUNNING, None)
+        .await?;
+
+    let advanced = create_step_chain(api, &session, created, initial_step, None).await?;
+    refresh_session_status(api, &session_id).await?;
+
+    Ok(advanced.into())
+}
+
+pub async fn get_flow(
+    api: &BackendApi,
+    flow_id: String,
+    user_id: String,
+) -> Result<FlowDetailResponse, Error> {
+    let flow = api
+        .state
+        .flow
+        .get_flow(&flow_id)
+        .await?
+        .ok_or_else(|| Error::not_found("FLOW_NOT_FOUND", "Flow not found"))?;
+
+    ensure_flow_owner(api, &flow, &user_id).await?;
+    let steps = api.state.flow.list_steps_for_flow(&flow_id).await?;
+
+    Ok(FlowDetailResponse {
+        flow: flow.into(),
+        steps: steps.into_iter().map(Into::into).collect(),
+    })
+}
+
+pub async fn list_flow_steps(
+    api: &BackendApi,
+    flow_id: String,
+    user_id: String,
+) -> Result<Vec<StepResponse>, Error> {
+    let flow = api
+        .state
+        .flow
+        .get_flow(&flow_id)
+        .await?
+        .ok_or_else(|| Error::not_found("FLOW_NOT_FOUND", "Flow not found"))?;
+
+    ensure_flow_owner(api, &flow, &user_id).await?;
+    let steps = api.state.flow.list_steps_for_flow(&flow_id).await?;
+
+    Ok(steps.into_iter().map(Into::into).collect())
+}
+
+pub async fn get_step(
+    api: &BackendApi,
+    step_id: String,
+    user_id: String,
+) -> Result<StepResponse, Error> {
+    let step = api
+        .state
+        .flow
+        .get_step(&step_id)
+        .await?
+        .ok_or_else(|| Error::not_found("STEP_NOT_FOUND", "Step not found"))?;
+
+    let flow = api
+        .state
+        .flow
+        .get_flow(&step.flow_id)
+        .await?
+        .ok_or_else(|| Error::not_found("FLOW_NOT_FOUND", "Flow not found"))?;
+
+    ensure_flow_owner(api, &flow, &user_id).await?;
+    Ok(step.into())
+}
+
+pub async fn submit_step(
+    api: &BackendApi,
+    step_id: String,
+    user_id: String,
+    body: SubmitStepRequest,
+) -> Result<StepResponse, Error> {
+    let step = api
+        .state
+        .flow
+        .get_step(&step_id)
+        .await?
+        .ok_or_else(|| Error::not_found("STEP_NOT_FOUND", "Step not found"))?;
+
+    let flow = api
+        .state
+        .flow
+        .get_flow(&step.flow_id)
+        .await?
+        .ok_or_else(|| Error::not_found("FLOW_NOT_FOUND", "Flow not found"))?;
+
+    ensure_flow_owner(api, &flow, &user_id).await?;
+
+    let flow_definition = get_flow_definition(api, &flow.flow_type)?;
+    let step_definition = get_step_definition(flow_definition, &step.step_type)?;
+
+    if matches!(step_definition.actor(), Actor::System) {
+        return Err(Error::conflict(
+            "SYSTEM_STEP_NOT_SUBMITTABLE",
+            "System steps are executed automatically",
+        ));
+    }
+
+    step_definition
+        .validate_input(&body.input)
+        .await
+        .map_err(flow_error_to_http)?;
+
+    let updated_step = api
+        .state
+        .flow
+        .patch_step(
+            &step_id,
+            FlowStepPatch::new()
+                .status(FLOW_STATUS_COMPLETED)
+                .input(body.input.clone())
+                .output(json!({"accepted": true}))
+                .clear_error()
+                .finished_at(Utc::now()),
+        )
+        .await?;
+
+    let session = api
+        .state
+        .flow
+        .get_session(&flow.session_id)
+        .await?
+        .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
+
+    let context = store_step_output(flow.context.clone(), &updated_step.step_type, &body.input);
+    let mut current_flow = api
+        .state
+        .flow
+        .update_flow(&flow.id, None, None, None, Some(context))
+        .await?;
+
+    if let Some(next_step) = next_transition(flow_definition, &updated_step.step_type) {
+        if has_flow_step(flow_definition, next_step) {
+            current_flow =
+                create_step_chain(api, &session, current_flow, next_step.to_owned(), None).await?;
+        } else {
+            current_flow = finalize_flow(api, &current_flow, terminal_status(next_step)).await?;
+        }
+    } else {
+        current_flow = finalize_flow(api, &current_flow, FLOW_STATUS_COMPLETED).await?;
+    }
+
+    refresh_session_status(api, &current_flow.session_id).await?;
+
+    Ok(updated_step.into())
+}
+
+fn get_flow_definition<'a>(api: &'a BackendApi, flow_type: &str) -> Result<&'a dyn Flow, Error> {
+    api.state.flow_registry.get_flow(flow_type).ok_or_else(|| {
+        Error::bad_request(
+            "UNKNOWN_FLOW_TYPE",
+            format!("Unknown flow type: {flow_type}"),
+        )
+    })
+}
+
+fn get_step_definition<'a>(
+    flow: &'a dyn Flow,
+    step_type: &str,
+) -> Result<&'a dyn backend_flow_sdk::Step, Error> {
+    flow.steps()
+        .iter()
+        .find(|step| step.step_type() == step_type)
+        .map(|step| step.as_ref())
+        .ok_or_else(|| {
+            Error::bad_request(
+                "UNKNOWN_STEP_TYPE",
+                format!(
+                    "Unknown step type `{step_type}` for flow `{}`",
+                    flow.flow_type()
+                ),
+            )
+        })
+}
+
+fn ensure_flow_step_exists(flow: &dyn Flow, step_type: &str) -> Result<(), Error> {
+    if has_flow_step(flow, step_type) {
+        return Ok(());
+    }
+
+    Err(Error::bad_request(
+        "UNKNOWN_STEP_TYPE",
+        format!(
+            "Unknown step type `{step_type}` for flow `{}`",
+            flow.flow_type()
+        ),
+    ))
+}
+
+fn has_flow_step(flow: &dyn Flow, step_type: &str) -> bool {
+    flow.steps()
+        .iter()
+        .any(|step| step.step_type() == step_type)
+}
+
+fn next_transition<'a>(flow: &'a dyn Flow, step_type: &str) -> Option<&'a str> {
+    flow.transitions()
+        .get(step_type)
+        .map(|transition| transition.on_success.as_str())
+}
+
+fn terminal_status(step_type: &str) -> &'static str {
+    if step_type.eq_ignore_ascii_case("FAILED") {
+        FLOW_STATUS_FAILED
+    } else {
+        FLOW_STATUS_COMPLETED
+    }
+}
+
+fn validate_session_flow_compatibility(
+    api: &BackendApi,
+    session: &FlowSessionRow,
+    flow_type: &str,
+) -> Result<(), Error> {
+    let Some(definition) = api.state.flow_registry.get_session(&session.session_type) else {
+        return Ok(());
+    };
+
+    if definition.allowed_flows.is_empty()
+        || definition
+            .allowed_flows
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(flow_type))
+    {
+        return Ok(());
+    }
+
+    Err(Error::bad_request(
+        "FLOW_NOT_ALLOWED",
+        format!(
+            "Flow `{flow_type}` is not allowed for session type `{}`",
+            session.session_type
+        ),
+    ))
+}
+
+async fn create_step_chain(
+    api: &BackendApi,
+    session: &FlowSessionRow,
+    mut flow: FlowInstanceRow,
+    mut step_type: String,
+    initial_input: Option<Value>,
+) -> Result<FlowInstanceRow, Error> {
+    let mut pending_input = initial_input;
+
+    loop {
+        let flow_definition = get_flow_definition(api, &flow.flow_type)?;
+        let step_definition = get_step_definition(flow_definition, &step_type)?;
+
+        let existing_steps = api.state.flow.list_steps_for_flow(&flow.id).await?;
+        let attempt_no = existing_steps
+            .iter()
+            .filter(|existing| existing.step_type == step_type)
+            .count() as i32;
+
+        let step_id = backend_id::flow_step_id()?;
+        let human_suffix = if attempt_no == 0 {
+            step_definition.human_id().to_owned()
+        } else {
+            format!("{}-{}", step_definition.human_id(), attempt_no)
+        };
+
+        let step_human_id = HumanReadableId::parse(flow.human_id.clone())
+            .map_err(flow_error_to_http)?
+            .with_suffix(&human_suffix)
+            .map_err(flow_error_to_http)?
+            .to_string();
+
+        let created_step = api
+            .state
+            .flow
+            .create_step(FlowStepCreateInput {
+                id: step_id.clone(),
+                human_id: step_human_id,
+                flow_id: flow.id.clone(),
+                step_type: step_type.clone(),
+                actor: actor_label(step_definition.actor()).to_owned(),
+                status: waiting_status(step_definition.actor()).to_owned(),
+                attempt_no,
+                input: pending_input.clone(),
+                output: None,
+                error: None,
+                next_retry_at: None,
+                finished_at: None,
+            })
+            .await?;
+
+        let updated_step_ids = append_step_id(&flow.step_ids, &created_step.id);
+        flow = api
+            .state
+            .flow
+            .update_flow(
+                &flow.id,
+                Some(FLOW_STATUS_RUNNING.to_owned()),
+                Some(Some(step_type.clone())),
+                Some(updated_step_ids),
+                None,
+            )
+            .await?;
+
+        if !matches!(step_definition.actor(), Actor::System) {
+            return Ok(flow);
+        }
+
+        let input_value = pending_input.clone().unwrap_or_else(|| json!({}));
+        let context = StepContext {
+            session_id: flow.session_id.clone(),
+            flow_id: flow.id.clone(),
+            step_id,
+            input: input_value.clone(),
+            session_context: session.context.clone(),
+            flow_context: flow.context.clone(),
+        };
+
+        match step_definition
+            .execute(&context)
+            .await
+            .map_err(flow_error_to_http)?
+        {
+            StepOutcome::Done => {
+                api.state
+                    .flow
+                    .patch_step(
+                        &created_step.id,
+                        FlowStepPatch::new()
+                            .status(FLOW_STATUS_COMPLETED)
+                            .input(input_value.clone())
+                            .output(json!({"result": "done"}))
+                            .clear_error()
+                            .finished_at(Utc::now()),
+                    )
+                    .await?;
+
+                let context = store_step_output(flow.context.clone(), &step_type, &input_value);
+                flow = api
+                    .state
+                    .flow
+                    .update_flow(&flow.id, None, None, None, Some(context))
+                    .await?;
+
+                let Some(next) = next_transition(flow_definition, &step_type) else {
+                    return finalize_flow(api, &flow, FLOW_STATUS_COMPLETED).await;
+                };
+
+                if !has_flow_step(flow_definition, next) {
+                    return finalize_flow(api, &flow, terminal_status(next)).await;
+                }
+
+                step_type = next.to_owned();
+                pending_input = None;
+            }
+            StepOutcome::Waiting { .. } => {
+                api.state
+                    .flow
+                    .patch_step(&created_step.id, FlowStepPatch::new().status("WAITING"))
+                    .await?;
+                return Ok(flow);
+            }
+            StepOutcome::Failed { error, retryable } => {
+                api.state
+                    .flow
+                    .patch_step(
+                        &created_step.id,
+                        FlowStepPatch::new()
+                            .status(FLOW_STATUS_FAILED)
+                            .error(json!({"error": error, "retryable": retryable}))
+                            .finished_at(Utc::now()),
+                    )
+                    .await?;
+
+                return finalize_flow(api, &flow, FLOW_STATUS_FAILED).await;
+            }
+            StepOutcome::Retry { after } => {
+                api.state
+                    .flow
+                    .patch_step(
+                        &created_step.id,
+                        FlowStepPatch::new().status("WAITING").next_retry_at(
+                            Utc::now()
+                                + Duration::from_std(after)
+                                    .unwrap_or_else(|_| Duration::seconds(0)),
+                        ),
+                    )
+                    .await?;
+
+                return Ok(flow);
+            }
+        }
+    }
+}
+
+async fn finalize_flow(
+    api: &BackendApi,
+    flow: &FlowInstanceRow,
+    status: &str,
+) -> Result<FlowInstanceRow, Error> {
+    let finalized = api
+        .state
+        .flow
+        .update_flow(&flow.id, Some(status.to_owned()), Some(None), None, None)
+        .await?;
+
+    refresh_session_status(api, &finalized.session_id).await?;
+    Ok(finalized)
+}
+
+async fn refresh_session_status(api: &BackendApi, session_id: &str) -> Result<(), Error> {
+    let flows = api.state.flow.list_flows_for_session(session_id).await?;
+
+    if flows.is_empty() {
+        api.state
+            .flow
+            .update_session_status(session_id, "OPEN", None)
+            .await?;
+        return Ok(());
+    }
+
+    if flows
+        .iter()
+        .any(|flow| flow.status.eq_ignore_ascii_case(FLOW_STATUS_RUNNING))
+    {
+        api.state
+            .flow
+            .update_session_status(session_id, FLOW_STATUS_RUNNING, None)
+            .await?;
+        return Ok(());
+    }
+
+    if flows
+        .iter()
+        .any(|flow| flow.status.eq_ignore_ascii_case(FLOW_STATUS_FAILED))
+    {
+        api.state
+            .flow
+            .update_session_status(session_id, FLOW_STATUS_FAILED, Some(Utc::now()))
+            .await?;
+        return Ok(());
+    }
+
+    if flows
+        .iter()
+        .all(|flow| flow.status.eq_ignore_ascii_case(FLOW_STATUS_COMPLETED))
+    {
+        api.state
+            .flow
+            .update_session_status(session_id, FLOW_STATUS_COMPLETED, Some(Utc::now()))
+            .await?;
+        return Ok(());
+    }
+
+    api.state
+        .flow
+        .update_session_status(session_id, "OPEN", None)
+        .await
+}
+
+async fn ensure_session_owner(
+    api: &BackendApi,
+    session_id: &str,
+    user_id: &str,
+) -> Result<FlowSessionRow, Error> {
+    let session = api
+        .state
+        .flow
+        .get_session(session_id)
+        .await?
+        .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
+
+    if session.user_id.as_deref() != Some(user_id) {
+        return Err(Error::unauthorized("Session does not belong to caller"));
+    }
+
+    Ok(session)
+}
+
+async fn ensure_flow_owner(
+    api: &BackendApi,
+    flow: &FlowInstanceRow,
+    user_id: &str,
+) -> Result<(), Error> {
+    let session = api
+        .state
+        .flow
+        .get_session(&flow.session_id)
+        .await?
+        .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
+
+    if session.user_id.as_deref() != Some(user_id) {
+        return Err(Error::unauthorized("Flow does not belong to caller"));
+    }
+
+    Ok(())
+}
+
+fn append_step_id(step_ids: &Value, step_id: &str) -> Value {
+    let mut values = step_ids
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|value| value.as_str() != Some(step_id))
+        .collect::<Vec<_>>();
+
+    values.push(Value::String(step_id.to_owned()));
+    Value::Array(values)
+}
+
+fn store_step_output(mut context: Value, step_type: &str, input: &Value) -> Value {
+    if !context.is_object() {
+        context = json!({});
+    }
+
+    if let Some(root) = context.as_object_mut() {
+        let entry = root
+            .entry("step_output")
+            .or_insert_with(|| Value::Object(Default::default()));
+
+        if !entry.is_object() {
+            *entry = Value::Object(Default::default());
+        }
+
+        if let Some(step_map) = entry.as_object_mut() {
+            step_map.insert(step_type.to_owned(), input.clone());
+        }
+    }
+
+    context
+}
+
+fn normalize_or_default_human_id(value: Option<String>, fallback: String) -> Result<String, Error> {
+    let candidate = value.unwrap_or(fallback);
+    HumanReadableId::parse(candidate.clone()).map_err(flow_error_to_http)?;
+    Ok(candidate)
+}
+
+fn object_context(context: Option<Value>) -> Value {
+    let value = context.unwrap_or_else(|| json!({}));
+    if value.is_object() { value } else { json!({}) }
+}
+
+fn flow_error_to_http(error: FlowError) -> Error {
+    match error {
+        FlowError::FeatureNotEnabled { feature, .. } => Error::bad_request(
+            "FEATURE_NOT_ENABLED",
+            format!("Feature not enabled: {feature}"),
+        ),
+        FlowError::UnknownFlowType(flow_type) => Error::bad_request(
+            "UNKNOWN_FLOW_TYPE",
+            format!("Unknown flow type: {flow_type}"),
+        ),
+        FlowError::UnknownStepType(step_type) => Error::bad_request(
+            "UNKNOWN_STEP_TYPE",
+            format!("Unknown step type: {step_type}"),
+        ),
+        FlowError::UnknownSessionType(session_type) => Error::bad_request(
+            "UNKNOWN_SESSION_TYPE",
+            format!("Unknown session type: {session_type}"),
+        ),
+        FlowError::InvalidHumanReadableId(reason) => Error::bad_request("INVALID_HUMAN_ID", reason),
+        FlowError::InvalidDefinition(reason) => {
+            Error::bad_request("INVALID_FLOW_DEFINITION", reason)
+        }
+        FlowError::Serialization(reason) => Error::internal("FLOW_SERIALIZATION_ERROR", reason),
+        FlowError::Io(error) => Error::internal("FLOW_IO_ERROR", error.to_string()),
+    }
+}

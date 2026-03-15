@@ -4,7 +4,10 @@ use backend_core::config::{self, SmsProviderType};
 use backend_core::NotificationJob;
 use clap::Parser;
 use mimalloc::MiMalloc;
-use sms_provider::{process_notification_job, ApiSmsProvider, ConsoleSmsProvider, SnsSmsProvider};
+use sms_provider::{
+    is_permanent_error, process_notification_job, ApiSmsProvider, ConsoleSmsProvider,
+    SnsSmsProvider,
+};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -41,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Create SMS provider based on configuration
     let provider = create_sms_provider(sms_config).await?;
-    let provider = Arc::new(provider);
 
     // Connect to Redis
     info!("Connecting to Redis at: {}", config.redis.url);
@@ -63,11 +65,16 @@ async fn main() -> anyhow::Result<()> {
         .build(move |job: NotificationJob| {
             let provider = provider_for_worker.clone();
             async move {
-                if let Err(e) = process_notification_job(provider, job).await {
-                    warn!("Failed to process notification job: {}", e);
-                    Err(apalis::prelude::BoxDynError::from(e))
-                } else {
-                    Ok(())
+                match process_notification_job(provider, job).await {
+                    Ok(()) => Ok(()),
+                    Err(error) if is_permanent_error(&error) => {
+                        warn!("Dropping permanent SMS job error without retry: {}", error);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        warn!("Failed to process notification job (retryable): {}", error);
+                        Err(apalis::prelude::BoxDynError::from(error))
+                    }
                 }
             }
         });
@@ -131,6 +138,15 @@ mod tests {
     use super::*;
     use apalis::prelude::{TaskSink, WorkerBuilder};
     use apalis_redis::RedisStorage;
+
+    #[test]
+    fn permanent_error_detection_matches_error_key() {
+        let permanent = backend_core::Error::internal("SMS_SEND_PERMANENT", "bad request");
+        let transient = backend_core::Error::internal("SMS_SEND_TRANSIENT", "upstream unavailable");
+
+        assert!(is_permanent_error(&permanent));
+        assert!(!is_permanent_error(&transient));
+    }
 
     async fn setup_redis(redis_url: &str) -> redis::Client {
         let client = redis::Client::open(redis_url).unwrap();

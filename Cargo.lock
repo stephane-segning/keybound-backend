@@ -1130,6 +1130,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]

@@ -23,7 +23,8 @@
 				"resolve-library-id",
 				"get-library-docs",
 				"query-docs"
-			]
+			],
+			"disabled": true
 		},
 		"memory": {
 			"command": "npx",
@@ -41,7 +42,8 @@
 				"read_graph",
 				"search_nodes",
 				"open_nodes"
-			]
+			],
+			"disabled": true
 		}
 	}
 }

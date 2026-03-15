@@ -6,7 +6,10 @@
 //! It handles user storage, device binding, KYC flows, and integrations.
 
 pub(crate) mod api;
+pub(crate) mod bff_signature;
 pub(crate) mod file_storage;
+pub(crate) mod flow_logic;
+pub(crate) mod flow_registry;
 pub(crate) mod health;
 pub(crate) mod state;
 pub(crate) mod state_machine;
@@ -194,9 +197,11 @@ fn build_router(
     // Mount BFF router if base path is provided
     let bff_base = config.bff.base_path.trim();
     if !bff_base.is_empty() && bff_base != "/" {
-        let bff_router = gen_oas_server_bff::server::new(api.clone());
-        let bff_revamp_router = api::bff_revamp::router(api.clone());
-        let bff_router = bff_router.merge(bff_revamp_router);
+        let bff_router =
+            api::bff_flow::router(api.clone()).layer(axum::middleware::from_fn_with_state(
+                api.state.clone(),
+                bff_signature::require_bff_signature,
+            ));
         router = router.nest(bff_base, bff_router);
     }
 
@@ -233,9 +238,6 @@ fn build_router(
         .collect();
     if jwks_base_paths.is_empty() {
         let mut defaults: Vec<&str> = Vec::new();
-        if config.bff.enabled {
-            defaults.push(&config.bff.base_path);
-        }
         if config.staff.enabled {
             defaults.push(&config.staff.base_path);
         }
@@ -246,6 +248,8 @@ fn build_router(
                 .filter(|p| !p.is_empty() && p != "/"),
         );
     }
+    let bff_base_path = config.bff.base_path.trim().to_owned();
+    jwks_base_paths.retain(|path| path.trim() != bff_base_path);
 
     router = router.layer(jwks_auth_layer(oidc_state, jwks_base_paths));
 
