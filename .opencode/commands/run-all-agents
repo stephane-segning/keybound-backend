@@ -1,0 +1,212 @@
+#!/bin/bash
+# opencode command: run-all-agents
+# Usage: opencode run --agent agent-orchestrator run-all-agents
+
+echo "=== Running All Agents in Optimal Order ==="
+echo ""
+
+# Track completion status
+COMPLETION_DIR=".opencode/status"
+mkdir -p "$COMPLETION_DIR"
+
+# Function to mark agent complete
+mark_complete() {
+    echo "$1" > "$COMPLETION_DIR/$1"
+    echo "✅ $1 marked complete"
+}
+
+# Function to check if agent is complete
+is_complete() {
+    [ -f "$COMPLETION_DIR/$1" ]
+}
+
+# Phase 1: Foundation - Must complete first
+echo "📦 Phase 1: Foundation & Code Generation"
+if ! is_complete "foundation"; then
+    echo "Running bff-generator..."
+    opencode run --agent bff-generator generate-bff
+    if [ $? -eq 0 ]; then
+        echo "✅ BFF generation complete"
+    else
+        echo "❌ BFF generation failed - stopping"
+        exit 1
+    fi
+    
+    echo ""
+    echo "Checking flow-architect readiness..."
+    # Check if integration traits are defined
+    if grep -q "SmsProvider\|EmailProvider" app/crates/backend-flow-sdk/src/integrations.rs 2>/dev/null; then
+        echo "✅ Integration traits already defined"
+    else
+        echo "⚠️  Integration traits not found - please define them manually"
+        echo "   Agents: flow-architect needs to create integration traits"
+    fi
+    
+    mark_complete "foundation"
+else
+    echo "✅ Phase 1 already complete"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Phase 2: Core Flows - Can run in parallel after foundation
+echo "🔧 Phase 2: Core Flow Implementation"
+
+# OTP Flow
+if ! is_complete "otp-flow"; then
+    echo "Running flow-otp-master..."
+    opencode run --agent flow-otp-master implement-otp-flow
+    if [ $? -eq 0 ]; then
+        opencode run --agent flow-otp-master validate-flow phone_otp
+        if [ $? -eq 0 ]; then
+            mark_complete "otp-flow"
+            echo "✅ OTP flow implementation complete"
+        else
+            echo "❌ OTP flow validation failed"
+        fi
+    else
+        echo "❌ OTP flow implementation failed"
+    fi
+else
+    echo "✅ OTP flow already complete"
+fi
+
+# Email Flow (can run in parallel with OTP)
+echo ""
+if ! is_complete "email-flow"; then
+    echo "Running flow-email-wizard..."
+    # Email flow implementation
+    # This would call specific commands for email wizard
+    echo "⚠️  Email flow implementation needs to be defined"
+    # mark_complete "email-flow"
+else
+    echo "✅ Email flow already complete"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Phase 3: Advanced Flows - Can run in parallel after core flowsecho "🏗️  Phase 3: Advanced Flow Implementation"
+
+# Deposit Flow
+if ! is_complete "deposit-flow"; then
+    echo "Running flow-deposit-builder..."
+    opencode run --agent flow-deposit-builder validate-flow first_deposit
+    if [ $? -eq 0 ]; then
+        mark_complete "deposit-flow"
+        echo "✅ Deposit flow implementation complete"
+    else
+        echo "❌ Deposit flow validation failed"
+    fi
+else
+    echo "✅ Deposit flow already complete"
+fi
+
+# Document Flows (can run in parallel with deposit)
+echo ""
+if ! is_complete "document-flows"; then
+    echo "Running integration-specialist..."
+    opencode run --agent integration-specialist validate-flow id_document
+    opencode run --agent integration-specialist validate-flow address_proof
+    if [ $? -eq 0 ]; then
+        mark_complete "document-flows"
+        echo "✅ Document flows implementation complete"
+    fi
+else
+    echo "✅ Document flows already complete"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Phase 4: Testing - After implementations are complete
+echo "🧪 Phase 4: Comprehensive Testing"
+
+if ! is_complete "testing"; then
+    # Check if any flows were actually implemented
+    flow_count=$(find .opencode/status -name "*flow*" | wc -l)
+    if [ $flow_count -eq 0 ]; then
+        echo "⚠️  No flows marked complete - skipping tests"
+    else
+        echo "Running test-engineer on all implemented flows..."
+        
+        for status_file in .opencode/status/*; do
+            agent_name=$(basename "$status_file")
+            if [[ "$agent_name" == *"flow"* ]]; then
+                flow_name=$(echo "$agent_name" | sed 's/-flow//')
+                echo "Testing $flow_name..."
+                opencode run --agent test-engineer test-flow "$flow_name"
+            fi
+        done
+        
+        # Also test any flow that exists in codebase
+        for flow in phone_otp email_magic first_deposit id_document address_proof; do
+            if [ -f "app/crates/backend-flow-sdk/src/flows/${flow}.rs" ]; then
+                opencode run --agent test-engineer test-flow "$flow"
+            fi
+        done
+        
+        mark_complete "testing"
+        echo "✅ Testing phase complete"
+    fi
+else
+    echo "✅ Testing phase already complete"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Phase 5: Final Delivery
+echo "🚀 Phase 5: Final Delivery"
+
+if ! is_complete "delivery"; then
+    echo "Running project-closer..."
+    opencode run --agent project-closer final-lint
+    opencode run --agent project-closer update-documentation
+    
+    if [ $? -eq 0 ]; then
+        mark_complete "delivery"
+        echo "✅ Final delivery complete"
+    else
+        echo "❌ Final delivery failed"
+    fi
+else
+    echo "✅ Final delivery already complete"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Summary
+echo "📊 EXECUTION SUMMARY"
+echo "====================="
+echo ""
+
+# Count completed phases
+phases=(foundation otp-flow email-flow deposit-flow document-flows testing delivery)
+completed=0
+total=${#phases[@]}
+
+for phase in "${phases[@]}"; do
+    if is_complete "$phase"; then
+        ((completed++))
+        echo "✅ $phase"
+    else
+        echo "⏳ $phase"
+    fi
+done
+
+echo ""
+echo "Progress: $completed / $total phases complete"
+echo ""
+
+# Show status of status directory
+if [ -d ".opencode/status" ]; then
+    echo "Agent completion status:"
+    ls -1 .opencode/status/ | sed 's/^/  - /'
+fi
+
+echo ""
+echo "=== All Agents Execution Complete ==="

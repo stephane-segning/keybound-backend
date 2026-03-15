@@ -1,680 +1,737 @@
-//! Repository traits defining database operation contracts.
-//!
-//! These traits abstract the database layer, enabling:
-//! - Clean separation between business logic and persistence
-//! - Easier testing with mock implementations
-//! - Type-safe queries through Diesel DSL
-
+use crate::traits::*;
+use backend_core::{Error, async_trait};
+use backend_model::db;
 use chrono::{DateTime, Utc};
+use diesel::dsl::{count_star, max};
+use diesel::prelude::*;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
+use diesel_async::AsyncPgConnection;
+use diesel_async::RunQueryDsl;
+use diesel_async::pooled_connection::deadpool::Pool;
+use regex::Regex;
 use serde_json::Value;
+use std::collections::HashSet;
+use tracing::{debug, info, instrument, warn};
 
-/// Result type alias for repository operations.
-pub type RepoResult<T> = backend_core::Result<T>;
-
-/// Pagination filter for list queries.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PageFilter {
-    pub page: i32,
-    pub limit: i32,
+#[derive(Clone)]
+pub struct StateMachineRepository {
+    pub(crate) pool: Pool<AsyncPgConnection>,
 }
 
-impl PageFilter {
-    /// Returns normalized filter with page >= 1 and limit between 1 and 100.
-    pub fn normalized(self) -> Self {
-        Self {
-            page: self.page.max(1),
-            limit: self.limit.clamp(1, 100),
+impl StateMachineRepository {
+    pub fn new(pool: Pool<AsyncPgConnection>) -> Self {
+        Self { pool }
+    }
+
+    async fn get_conn(
+        &self,
+    ) -> RepoResult<diesel_async::pooled_connection::deadpool::Object<AsyncPgConnection>> {
+        self.pool
+            .get()
+            .await
+            .map_err(|e| backend_core::Error::DieselPool(e.to_string()))
+    }
+
+    fn normalize_phone_regex(raw_regex: &str) -> String {
+        let trimmed = raw_regex.trim();
+        let normalized = if trimmed.len() >= 2 && trimmed.starts_with('/') && trimmed.ends_with('/')
+        {
+            trimmed[1..trimmed.len() - 1].trim().to_owned()
+        } else {
+            trimmed.to_owned()
+        };
+        debug!(raw_regex = raw_regex, normalized = %normalized, "normalized phone regex");
+        normalized
+    }
+}
+
+#[async_trait]
+impl StateMachineRepo for StateMachineRepository {
+    #[instrument(skip(self, input))]
+    async fn create_instance(&self, input: SmInstanceCreateInput) -> RepoResult<db::SmInstanceRow> {
+        use backend_model::schema::sm_instance;
+
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+        debug!(instance_id = %input.id, kind = %input.kind, "creating state machine instance built");
+
+        let row = db::SmInstanceRow {
+            id: input.id,
+            kind: input.kind,
+            user_id: input.user_id,
+            idempotency_key: input.idempotency_key,
+            status: input.status,
+            context: input.context,
+            created_at: now,
+            updated_at: now,
+            completed_at: None,
+        };
+
+        let insert_result = diesel::insert_into(sm_instance::table)
+            .values(&row)
+            .get_result::<db::SmInstanceRow>(&mut conn)
+            .await;
+
+        match insert_result {
+            Ok(created) => Ok(created),
+            Err(err @ DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                let existing = sm_instance::table
+                    .filter(sm_instance::idempotency_key.eq(&row.idempotency_key))
+                    .select(db::SmInstanceRow::as_select())
+                    .first::<db::SmInstanceRow>(&mut conn)
+                    .await
+                    .optional()
+                    .map_err(Error::from)?;
+
+                if let Some(existing) = existing {
+                    Ok(existing)
+                } else {
+                    Err(Error::from(err))
+                }
+            }
+            Err(err) => Err(Error::from(err)),
         }
     }
 
-    /// Calculates the offset for SQL LIMIT/OFFSET pagination.
-    pub fn offset(&self) -> i64 {
-        i64::from((self.page - 1) * self.limit)
-    }
-}
+    #[instrument(skip(self))]
+    async fn get_instance(&self, instance_id: &str) -> RepoResult<Option<db::SmInstanceRow>> {
+        use backend_model::schema::sm_instance;
 
-/// Filter criteria for state machine instance queries.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SmInstanceFilter {
-    pub kind: Option<String>,
-    pub status: Option<String>,
-    pub user_id: Option<String>,
-    pub phone_number: Option<String>,
-    pub created_from: Option<DateTime<Utc>>,
-    pub created_to: Option<DateTime<Utc>>,
-    pub page: i32,
-    pub limit: i32,
-}
-
-impl SmInstanceFilter {
-    /// Returns normalized filter with trimmed strings and valid pagination.
-    pub fn normalized(self) -> Self {
-        let page = self.page.max(1);
-        let limit = self.limit.clamp(1, 100);
-        let kind = self
-            .kind
-            .map(|v| v.trim().to_owned())
-            .filter(|v| !v.is_empty());
-        let status = self
-            .status
-            .map(|v| v.trim().to_owned())
-            .filter(|v| !v.is_empty());
-        let user_id = self
-            .user_id
-            .map(|v| v.trim().to_owned())
-            .filter(|v| !v.is_empty());
-        let phone_number = self
-            .phone_number
-            .map(|v| v.trim().to_owned())
-            .filter(|v| !v.is_empty());
-
-        Self {
-            kind,
-            status,
-            user_id,
-            phone_number,
-            created_from: self.created_from,
-            created_to: self.created_to,
-            page,
-            limit,
-        }
+        debug!(instance_id = instance_id, "fetching state machine instance");
+        let mut conn = self.get_conn().await?;
+        sm_instance::table
+            .filter(sm_instance::id.eq(instance_id))
+            .select(db::SmInstanceRow::as_select())
+            .first::<db::SmInstanceRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Error::from)
     }
 
-    /// Calculates the offset for SQL LIMIT/OFFSET pagination.
-    pub fn offset(&self) -> i64 {
-        i64::from((self.page - 1) * self.limit)
-    }
-}
-
-/// Input for creating a new state machine instance.
-#[derive(Debug, Clone)]
-pub struct SmInstanceCreateInput {
-    pub id: String,
-    pub kind: String,
-    pub user_id: Option<String>,
-    pub idempotency_key: String,
-    pub status: String,
-    pub context: Value,
-}
-
-/// Input for creating a state machine event.
-#[derive(Debug, Clone)]
-pub struct SmEventCreateInput {
-    pub id: String,
-    pub instance_id: String,
-    pub kind: String,
-    pub actor_type: String,
-    pub actor_id: Option<String>,
-    pub payload: Value,
-}
-
-/// Input for creating a step attempt record.
-#[derive(Debug, Clone)]
-pub struct SmStepAttemptCreateInput {
-    pub id: String,
-    pub instance_id: String,
-    pub step_name: String,
-    pub attempt_no: i32,
-    pub status: String,
-    pub external_ref: Option<String>,
-    pub input: Value,
-    pub output: Option<Value>,
-    pub error: Option<Value>,
-    pub queued_at: Option<DateTime<Utc>>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
-    pub next_retry_at: Option<DateTime<Utc>>,
-}
-
-/// Partial update for step attempt records.
-#[derive(Debug, Clone, Default)]
-pub struct SmStepAttemptPatch {
-    pub status: Option<String>,
-    pub output: Option<Option<Value>>,
-    pub error: Option<Option<Value>>,
-    pub queued_at: Option<Option<DateTime<Utc>>>,
-    pub started_at: Option<Option<DateTime<Utc>>>,
-    pub finished_at: Option<Option<DateTime<Utc>>>,
-    pub next_retry_at: Option<Option<DateTime<Utc>>>,
-}
-
-impl SmStepAttemptPatch {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn status(mut self, status: impl Into<String>) -> Self {
-        self.status = Some(status.into());
-        self
-    }
-
-    pub fn output(mut self, value: Value) -> Self {
-        self.output = Some(Some(value));
-        self
-    }
-
-    pub fn clear_output(mut self) -> Self {
-        self.output = Some(None);
-        self
-    }
-
-    pub fn error(mut self, value: Value) -> Self {
-        self.error = Some(Some(value));
-        self
-    }
-
-    pub fn clear_error(mut self) -> Self {
-        self.error = Some(None);
-        self
-    }
-
-    pub fn queued_at(mut self, dt: DateTime<Utc>) -> Self {
-        self.queued_at = Some(Some(dt));
-        self
-    }
-
-    pub fn clear_queued_at(mut self) -> Self {
-        self.queued_at = Some(None);
-        self
-    }
-
-    pub fn started_at(mut self, dt: DateTime<Utc>) -> Self {
-        self.started_at = Some(Some(dt));
-        self
-    }
-
-    pub fn clear_started_at(mut self) -> Self {
-        self.started_at = Some(None);
-        self
-    }
-
-    pub fn finished_at(mut self, dt: DateTime<Utc>) -> Self {
-        self.finished_at = Some(Some(dt));
-        self
-    }
-
-    pub fn clear_finished_at(mut self) -> Self {
-        self.finished_at = Some(None);
-        self
-    }
-
-    pub fn next_retry_at(mut self, dt: DateTime<Utc>) -> Self {
-        self.next_retry_at = Some(Some(dt));
-        self
-    }
-
-    pub fn clear_next_retry_at(mut self) -> Self {
-        self.next_retry_at = Some(None);
-        self
-    }
-
-    pub fn next_retry_at_opt(mut self, opt: Option<DateTime<Utc>>) -> Self {
-        self.next_retry_at = Some(opt);
-        self
-    }
-}
-
-/// Input payload for upserting a row in app_user_data.
-#[derive(Debug, Clone)]
-pub struct UserDataUpsertInput {
-    pub user_id: String,
-    pub name: String,
-    pub data_type: String,
-    pub content: Value,
-    pub eager_fetch: bool,
-}
-
-/// Deposit recipient data synced from static configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DepositRecipientUpsertInput {
-    pub provider: String,
-    pub full_name: String,
-    pub phone_number: String,
-    pub phone_regex: String,
-    pub currency: String,
-}
-
-/// Resolved contact for a deposit request.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DepositRecipientContact {
-    pub provider: String,
-    pub full_name: String,
-    pub phone_number: String,
-    pub currency: String,
-}
-
-/// Filtering options for flow sessions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FlowSessionFilter {
-    pub user_id: Option<String>,
-    pub session_type: Option<String>,
-    pub status: Option<String>,
-    pub page: i32,
-    pub limit: i32,
-}
-
-impl FlowSessionFilter {
-    pub fn normalized(self) -> Self {
-        Self {
-            user_id: self
-                .user_id
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty()),
-            session_type: self
-                .session_type
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty()),
-            status: self
-                .status
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty()),
-            page: self.page.max(1),
-            limit: self.limit.clamp(1, 100),
-        }
-    }
-
-    pub fn offset(&self) -> i64 {
-        i64::from((self.page - 1) * self.limit)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FlowSessionCreateInput {
-    pub id: String,
-    pub human_id: String,
-    pub user_id: Option<String>,
-    pub session_type: String,
-    pub status: String,
-    pub context: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlowInstanceCreateInput {
-    pub id: String,
-    pub human_id: String,
-    pub session_id: String,
-    pub flow_type: String,
-    pub status: String,
-    pub current_step: Option<String>,
-    pub step_ids: Value,
-    pub context: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlowStepCreateInput {
-    pub id: String,
-    pub human_id: String,
-    pub flow_id: String,
-    pub step_type: String,
-    pub actor: String,
-    pub status: String,
-    pub attempt_no: i32,
-    pub input: Option<Value>,
-    pub output: Option<Value>,
-    pub error: Option<Value>,
-    pub next_retry_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct FlowStepPatch {
-    pub status: Option<String>,
-    pub input: Option<Option<Value>>,
-    pub output: Option<Option<Value>>,
-    pub error: Option<Option<Value>>,
-    pub next_retry_at: Option<Option<DateTime<Utc>>>,
-    pub finished_at: Option<Option<DateTime<Utc>>>,
-}
-
-impl FlowStepPatch {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn status(mut self, value: impl Into<String>) -> Self {
-        self.status = Some(value.into());
-        self
-    }
-
-    pub fn input(mut self, value: Value) -> Self {
-        self.input = Some(Some(value));
-        self
-    }
-
-    pub fn output(mut self, value: Value) -> Self {
-        self.output = Some(Some(value));
-        self
-    }
-
-    pub fn error(mut self, value: Value) -> Self {
-        self.error = Some(Some(value));
-        self
-    }
-
-    pub fn clear_error(mut self) -> Self {
-        self.error = Some(None);
-        self
-    }
-
-    pub fn finished_at(mut self, value: DateTime<Utc>) -> Self {
-        self.finished_at = Some(Some(value));
-        self
-    }
-
-    pub fn next_retry_at(mut self, value: DateTime<Utc>) -> Self {
-        self.next_retry_at = Some(Some(value));
-        self
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SigningKeyCreateInput {
-    pub kid: String,
-    pub private_key_pem: String,
-    pub public_key_jwk: Value,
-    pub algorithm: String,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub is_active: bool,
-}
-
-/// Repository for flow_* persistence model.
-#[backend_core::async_trait]
-pub trait FlowRepo: Send + Sync {
-    async fn create_session(
-        &self,
-        input: FlowSessionCreateInput,
-    ) -> RepoResult<backend_model::db::FlowSessionRow>;
-
-    async fn get_session(
-        &self,
-        session_id: &str,
-    ) -> RepoResult<Option<backend_model::db::FlowSessionRow>>;
-
-    async fn list_sessions(
-        &self,
-        filter: FlowSessionFilter,
-    ) -> RepoResult<(Vec<backend_model::db::FlowSessionRow>, i64)>;
-
-    async fn update_session_status(
-        &self,
-        session_id: &str,
-        status: &str,
-        completed_at: Option<DateTime<Utc>>,
-    ) -> RepoResult<()>;
-
-    async fn update_session_context(&self, session_id: &str, context: Value) -> RepoResult<()>;
-
-    async fn create_flow(
-        &self,
-        input: FlowInstanceCreateInput,
-    ) -> RepoResult<backend_model::db::FlowInstanceRow>;
-
-    async fn get_flow(
-        &self,
-        flow_id: &str,
-    ) -> RepoResult<Option<backend_model::db::FlowInstanceRow>>;
-
-    async fn list_flows_for_session(
-        &self,
-        session_id: &str,
-    ) -> RepoResult<Vec<backend_model::db::FlowInstanceRow>>;
-
-    async fn update_flow(
-        &self,
-        flow_id: &str,
-        status: Option<String>,
-        current_step: Option<Option<String>>,
-        step_ids: Option<Value>,
-        context: Option<Value>,
-    ) -> RepoResult<backend_model::db::FlowInstanceRow>;
-
-    async fn create_step(
-        &self,
-        input: FlowStepCreateInput,
-    ) -> RepoResult<backend_model::db::FlowStepRow>;
-
-    async fn get_step(&self, step_id: &str) -> RepoResult<Option<backend_model::db::FlowStepRow>>;
-
-    async fn list_steps_for_flow(
-        &self,
-        flow_id: &str,
-    ) -> RepoResult<Vec<backend_model::db::FlowStepRow>>;
-
-    async fn patch_step(
-        &self,
-        step_id: &str,
-        patch: FlowStepPatch,
-    ) -> RepoResult<backend_model::db::FlowStepRow>;
-
-    async fn deactivate_signing_keys(&self) -> RepoResult<usize>;
-
-    async fn create_signing_key(
-        &self,
-        input: SigningKeyCreateInput,
-    ) -> RepoResult<backend_model::db::SigningKeyRow>;
-
-    async fn get_active_signing_key(&self) -> RepoResult<Option<backend_model::db::SigningKeyRow>>;
-
-    async fn list_active_signing_keys(&self) -> RepoResult<Vec<backend_model::db::SigningKeyRow>>;
-}
-
-/// Repository trait for state machine persistence operations.
-#[backend_core::async_trait]
-pub trait StateMachineRepo: Send + Sync {
-    /// Creates a new state machine instance.
-    async fn create_instance(
-        &self,
-        input: SmInstanceCreateInput,
-    ) -> RepoResult<backend_model::db::SmInstanceRow>;
-
-    async fn get_instance(
-        &self,
-        instance_id: &str,
-    ) -> RepoResult<Option<backend_model::db::SmInstanceRow>>;
-
-    /// Finds an instance by its idempotency key for deduplication.
+    #[instrument(skip(self))]
     async fn get_instance_by_idempotency_key(
         &self,
-        idempotency_key: &str,
-    ) -> RepoResult<Option<backend_model::db::SmInstanceRow>>;
+        idempotency_key_val: &str,
+    ) -> RepoResult<Option<db::SmInstanceRow>> {
+        use backend_model::schema::sm_instance;
 
-    /// Lists instances with filtering and pagination.
-    /// Returns (rows, total_count).
+        debug!(
+            idempotency_key = idempotency_key_val,
+            "fetching instance by idempotency key"
+        );
+        let mut conn = self.get_conn().await?;
+        sm_instance::table
+            .filter(sm_instance::idempotency_key.eq(idempotency_key_val))
+            .select(db::SmInstanceRow::as_select())
+            .first::<db::SmInstanceRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self, filter))]
     async fn list_instances(
         &self,
         filter: SmInstanceFilter,
-    ) -> RepoResult<(Vec<backend_model::db::SmInstanceRow>, i64)>;
+    ) -> RepoResult<(Vec<db::SmInstanceRow>, i64)> {
+        use backend_model::schema::{app_user, sm_instance};
 
-    /// Updates instance status and optionally sets completed_at.
+        let filter = filter.normalized();
+        debug!(?filter, "listing state machine instances");
+        let mut conn = self.get_conn().await?;
+
+        let mut count_query = sm_instance::table.into_boxed();
+        let mut rows_query = sm_instance::table.into_boxed();
+
+        if let Some(kind) = filter.kind.as_ref() {
+            count_query = count_query.filter(sm_instance::kind.eq(kind));
+            rows_query = rows_query.filter(sm_instance::kind.eq(kind));
+        }
+        if let Some(status) = filter.status.as_ref() {
+            count_query = count_query.filter(sm_instance::status.eq(status));
+            rows_query = rows_query.filter(sm_instance::status.eq(status));
+        }
+        if let Some(user_id) = filter.user_id.as_ref() {
+            count_query = count_query.filter(sm_instance::user_id.eq(user_id));
+            rows_query = rows_query.filter(sm_instance::user_id.eq(user_id));
+        }
+        if let Some(phone_number) = filter.phone_number.as_ref() {
+            let user_ids = app_user::table
+                .filter(app_user::phone_number.eq(phone_number))
+                .select(app_user::user_id)
+                .load::<String>(&mut conn)
+                .await
+                .map_err(Error::from)?;
+
+            if user_ids.is_empty() {
+                return Ok((Vec::new(), 0));
+            }
+
+            let user_ids_nullable = user_ids
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<Option<String>>>();
+            count_query =
+                count_query.filter(sm_instance::user_id.eq_any(user_ids_nullable.clone()));
+            rows_query = rows_query.filter(sm_instance::user_id.eq_any(user_ids_nullable));
+        }
+        if let Some(from) = filter.created_from {
+            count_query = count_query.filter(sm_instance::created_at.ge(from));
+            rows_query = rows_query.filter(sm_instance::created_at.ge(from));
+        }
+        if let Some(to) = filter.created_to {
+            count_query = count_query.filter(sm_instance::created_at.le(to));
+            rows_query = rows_query.filter(sm_instance::created_at.le(to));
+        }
+
+        let total = count_query
+            .select(count_star())
+            .get_result::<i64>(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        let rows = rows_query
+            .order(sm_instance::updated_at.desc())
+            .limit(i64::from(filter.limit))
+            .offset(filter.offset())
+            .select(db::SmInstanceRow::as_select())
+            .load::<db::SmInstanceRow>(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        Ok((rows, total))
+    }
+
+    #[instrument(skip(self))]
     async fn update_instance_status(
         &self,
         instance_id: &str,
         status: &str,
         completed_at: Option<DateTime<Utc>>,
-    ) -> RepoResult<()>;
+    ) -> RepoResult<()> {
+        use backend_model::schema::sm_instance;
 
-    /// Updates the context JSON of an instance.
-    async fn update_instance_context(&self, instance_id: &str, context: Value) -> RepoResult<()>;
+        debug!(instance_id = instance_id, status = status, completed_at = ?completed_at, "updating state machine instance status");
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
 
-    /// Appends an event to the instance's event history.
-    async fn append_event(
-        &self,
-        input: SmEventCreateInput,
-    ) -> RepoResult<backend_model::db::SmEventRow>;
+        diesel::update(sm_instance::table.filter(sm_instance::id.eq(instance_id)))
+            .set((
+                sm_instance::status.eq(status),
+                sm_instance::updated_at.eq(now),
+                sm_instance::completed_at.eq(completed_at),
+            ))
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
 
-    /// Lists all events for an instance in chronological order.
-    async fn list_events(
-        &self,
-        instance_id: &str,
-    ) -> RepoResult<Vec<backend_model::db::SmEventRow>>;
+        Ok(())
+    }
 
-    /// Creates a new step attempt record.
+    #[instrument(skip(self))]
+    async fn update_instance_context(&self, instance_id: &str, context: Value) -> RepoResult<()> {
+        use backend_model::schema::sm_instance;
+
+        debug!(
+            instance_id = instance_id,
+            "updating state machine instance context"
+        );
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+
+        diesel::update(sm_instance::table.filter(sm_instance::id.eq(instance_id)))
+            .set((
+                sm_instance::context.eq(context),
+                sm_instance::updated_at.eq(now),
+            ))
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        Ok(())
+    }
+
+    #[instrument(skip(self, input))]
+    async fn append_event(&self, input: SmEventCreateInput) -> RepoResult<db::SmEventRow> {
+        use backend_model::schema::sm_event;
+
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+        debug!(event_id = %input.id, instance_id = %input.instance_id, kind = %input.kind, "appending state machine event");
+
+        let row = db::SmEventRow {
+            id: input.id,
+            instance_id: input.instance_id,
+            kind: input.kind,
+            actor_type: input.actor_type,
+            actor_id: input.actor_id,
+            payload: input.payload,
+            created_at: now,
+        };
+
+        diesel::insert_into(sm_event::table)
+            .values(&row)
+            .get_result::<db::SmEventRow>(&mut conn)
+            .await
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
+    async fn list_events(&self, instance_id_val: &str) -> RepoResult<Vec<db::SmEventRow>> {
+        use backend_model::schema::sm_event;
+
+        debug!(
+            instance_id = instance_id_val,
+            "listing state machine events"
+        );
+        let mut conn = self.get_conn().await?;
+        sm_event::table
+            .filter(sm_event::instance_id.eq(instance_id_val))
+            .order(sm_event::created_at.asc())
+            .select(db::SmEventRow::as_select())
+            .load::<db::SmEventRow>(&mut conn)
+            .await
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self, input))]
     async fn create_step_attempt(
         &self,
         input: SmStepAttemptCreateInput,
-    ) -> RepoResult<backend_model::db::SmStepAttemptRow>;
+    ) -> RepoResult<db::SmStepAttemptRow> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Patches specific fields of a step attempt.
+        let mut conn = self.get_conn().await?;
+        debug!(attempt_id = %input.id, instance_id = %input.instance_id, step_name = %input.step_name, attempt_no = input.attempt_no, "creating state machine step attempt");
+
+        let row = db::SmStepAttemptRow {
+            id: input.id,
+            instance_id: input.instance_id,
+            step_name: input.step_name,
+            attempt_no: input.attempt_no,
+            status: input.status,
+            external_ref: input.external_ref,
+            input: input.input,
+            output: input.output,
+            error: input.error,
+            queued_at: input.queued_at,
+            started_at: input.started_at,
+            finished_at: input.finished_at,
+            next_retry_at: input.next_retry_at,
+        };
+
+        diesel::insert_into(sm_step_attempt::table)
+            .values(&row)
+            .get_result::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self, patch))]
     async fn patch_step_attempt(
         &self,
         attempt_id: &str,
         patch: SmStepAttemptPatch,
-    ) -> RepoResult<backend_model::db::SmStepAttemptRow>;
+    ) -> RepoResult<db::SmStepAttemptRow> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Atomically claim a queued attempt for execution.
-    /// Returns None if the attempt was not in QUEUED state (already running/finished/cancelled).
+        debug!(attempt_id = attempt_id, patch = ?patch, "patching state machine step attempt");
+        let mut conn = self.get_conn().await?;
+        let current = sm_step_attempt::table
+            .filter(sm_step_attempt::id.eq(attempt_id))
+            .select(db::SmStepAttemptRow::as_select())
+            .first::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Error::from)?
+            .ok_or_else(|| Error::not_found("SM_ATTEMPT_NOT_FOUND", "Step attempt not found"))?;
+
+        let updated = db::SmStepAttemptRow {
+            status: patch.status.unwrap_or(current.status),
+            output: patch.output.unwrap_or(current.output),
+            error: patch.error.unwrap_or(current.error),
+            queued_at: patch.queued_at.unwrap_or(current.queued_at),
+            started_at: patch.started_at.unwrap_or(current.started_at),
+            finished_at: patch.finished_at.unwrap_or(current.finished_at),
+            next_retry_at: patch.next_retry_at.unwrap_or(current.next_retry_at),
+            ..current
+        };
+
+        diesel::update(sm_step_attempt::table.filter(sm_step_attempt::id.eq(attempt_id)))
+            .set((
+                sm_step_attempt::status.eq(&updated.status),
+                sm_step_attempt::output.eq(&updated.output),
+                sm_step_attempt::error.eq(&updated.error),
+                sm_step_attempt::queued_at.eq(&updated.queued_at),
+                sm_step_attempt::started_at.eq(&updated.started_at),
+                sm_step_attempt::finished_at.eq(&updated.finished_at),
+                sm_step_attempt::next_retry_at.eq(&updated.next_retry_at),
+            ))
+            .get_result::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
     async fn claim_step_attempt(
         &self,
-        attempt_id: &str,
-    ) -> RepoResult<Option<backend_model::db::SmStepAttemptRow>>;
+        attempt_id_val: &str,
+    ) -> RepoResult<Option<db::SmStepAttemptRow>> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Lists all step attempts for an instance.
+        debug!(
+            attempt_id = attempt_id_val,
+            "claiming state machine step attempt"
+        );
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+
+        diesel::update(
+            sm_step_attempt::table
+                .filter(sm_step_attempt::id.eq(attempt_id_val))
+                .filter(sm_step_attempt::status.eq("QUEUED")),
+        )
+        .set((
+            sm_step_attempt::status.eq("RUNNING"),
+            sm_step_attempt::started_at.eq(Some(now)),
+            sm_step_attempt::finished_at.eq::<Option<DateTime<Utc>>>(None),
+            sm_step_attempt::error.eq::<Option<Value>>(None),
+        ))
+        .get_result::<db::SmStepAttemptRow>(&mut conn)
+        .await
+        .optional()
+        .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
     async fn list_step_attempts(
         &self,
-        instance_id: &str,
-    ) -> RepoResult<Vec<backend_model::db::SmStepAttemptRow>>;
+        instance_id_val: &str,
+    ) -> RepoResult<Vec<db::SmStepAttemptRow>> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Gets the most recent attempt for a step within an instance.
+        debug!(
+            instance_id = instance_id_val,
+            "listing state machine step attempts"
+        );
+        let mut conn = self.get_conn().await?;
+        sm_step_attempt::table
+            .filter(sm_step_attempt::instance_id.eq(instance_id_val))
+            .order((
+                sm_step_attempt::step_name.asc(),
+                sm_step_attempt::attempt_no.asc(),
+            ))
+            .select(db::SmStepAttemptRow::as_select())
+            .load::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
     async fn get_latest_step_attempt(
         &self,
-        instance_id: &str,
-        step_name: &str,
-    ) -> RepoResult<Option<backend_model::db::SmStepAttemptRow>>;
+        instance_id_val: &str,
+        step_name_val: &str,
+    ) -> RepoResult<Option<db::SmStepAttemptRow>> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Finds a step attempt by its external reference (e.g., SMS ID).
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            "fetching latest state machine step attempt"
+        );
+        let mut conn = self.get_conn().await?;
+        sm_step_attempt::table
+            .filter(sm_step_attempt::instance_id.eq(instance_id_val))
+            .filter(sm_step_attempt::step_name.eq(step_name_val))
+            .order(sm_step_attempt::attempt_no.desc())
+            .select(db::SmStepAttemptRow::as_select())
+            .first::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
     async fn get_step_attempt_by_external_ref(
         &self,
-        instance_id: &str,
-        step_name: &str,
-        external_ref: &str,
-    ) -> RepoResult<Option<backend_model::db::SmStepAttemptRow>>;
+        instance_id_val: &str,
+        step_name_val: &str,
+        external_ref_val: &str,
+    ) -> RepoResult<Option<db::SmStepAttemptRow>> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Cancels all other attempts for a step (used when one succeeds).
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            external_ref = external_ref_val,
+            "fetching state machine step attempt by external ref"
+        );
+        let mut conn = self.get_conn().await?;
+        sm_step_attempt::table
+            .filter(sm_step_attempt::instance_id.eq(instance_id_val))
+            .filter(sm_step_attempt::step_name.eq(step_name_val))
+            .filter(sm_step_attempt::external_ref.eq(external_ref_val))
+            .order(sm_step_attempt::attempt_no.desc())
+            .select(db::SmStepAttemptRow::as_select())
+            .first::<db::SmStepAttemptRow>(&mut conn)
+            .await
+            .optional()
+            .map_err(Error::from)
+    }
+
+    #[instrument(skip(self))]
     async fn cancel_other_attempts_for_step(
         &self,
-        instance_id: &str,
-        step_name: &str,
+        instance_id_val: &str,
+        step_name_val: &str,
         keep_attempt_id: &str,
-    ) -> RepoResult<()>;
+    ) -> RepoResult<()> {
+        use backend_model::schema::sm_step_attempt;
 
-    /// Gets the next attempt number for a step (1-indexed).
-    async fn next_attempt_no(&self, instance_id: &str, step_name: &str) -> RepoResult<i32>;
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            keep_attempt_id = keep_attempt_id,
+            "cancelling other state machine attempts"
+        );
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+        diesel::update(
+            sm_step_attempt::table
+                .filter(sm_step_attempt::instance_id.eq(instance_id_val))
+                .filter(sm_step_attempt::step_name.eq(step_name_val))
+                .filter(sm_step_attempt::id.ne(keep_attempt_id))
+                .filter(sm_step_attempt::status.ne("CANCELLED")),
+        )
+        .set((
+            sm_step_attempt::status.eq("CANCELLED"),
+            sm_step_attempt::finished_at.eq(Some(now)),
+        ))
+        .execute(&mut conn)
+        .await
+        .map_err(Error::from)?;
 
-    /// Replaces configured deposit recipients with a new static set.
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    async fn next_attempt_no(&self, instance_id_val: &str, step_name_val: &str) -> RepoResult<i32> {
+        use backend_model::schema::sm_step_attempt;
+
+        debug!(
+            instance_id = instance_id_val,
+            step_name = step_name_val,
+            "calculating next attempt number"
+        );
+        let mut conn = self.get_conn().await?;
+        let current_max = sm_step_attempt::table
+            .filter(sm_step_attempt::instance_id.eq(instance_id_val))
+            .filter(sm_step_attempt::step_name.eq(step_name_val))
+            .select(max(sm_step_attempt::attempt_no))
+            .get_result::<Option<i32>>(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        Ok(current_max.unwrap_or(0) + 1)
+    }
+
+    #[instrument(skip(self, recipients))]
     async fn sync_deposit_recipients(
         &self,
         recipients: Vec<DepositRecipientUpsertInput>,
-    ) -> RepoResult<usize>;
+    ) -> RepoResult<usize> {
+        use backend_model::schema::app_deposit_recipients;
 
-    /// Resolves the deposit recipient using the caller phone number and currency.
+        let mut conn = self.get_conn().await?;
+        let now = Utc::now();
+        let recipient_count = recipients.len();
+        debug!(recipient_count, "syncing deposit recipients");
+        let mut rows = Vec::with_capacity(recipient_count);
+        let mut seen = HashSet::new();
+
+        for recipient in recipients {
+            let provider = recipient.provider.trim().to_owned();
+            let full_name = recipient.full_name.trim().to_owned();
+            let phone_number = recipient.phone_number.trim().to_owned();
+            let phone_regex =
+                StateMachineRepository::normalize_phone_regex(recipient.phone_regex.as_str());
+            let currency = recipient.currency.trim().to_uppercase();
+
+            debug!(
+                provider = %provider,
+                currency = %currency,
+                phone_number = %phone_number,
+                phone_regex = %phone_regex,
+                "validated deposit recipient input"
+            );
+
+            if provider.is_empty()
+                || full_name.is_empty()
+                || phone_number.is_empty()
+                || phone_regex.is_empty()
+                || currency.is_empty()
+            {
+                return Err(Error::bad_request(
+                    "DEPOSIT_RECIPIENT_CONFIG_INVALID",
+                    "Deposit recipients cannot contain empty provider/fullname/phone/regex/currency values",
+                ));
+            }
+            if !seen.insert((provider.clone(), currency.clone())) {
+                return Err(Error::bad_request(
+                    "DEPOSIT_RECIPIENT_CONFIG_DUPLICATE",
+                    format!(
+                        "Duplicate deposit recipient entry for provider {provider} and currency {currency}"
+                    ),
+                ));
+            }
+            Regex::new(phone_regex.as_str()).map_err(|error| {
+                Error::bad_request(
+                    "DEPOSIT_RECIPIENT_REGEX_INVALID",
+                    format!("Invalid regex for provider {provider}: {error}"),
+                )
+            })?;
+
+            debug!(
+                provider = %provider,
+                phone_regex = %phone_regex,
+                "deposit recipient regex validated"
+            );
+
+            rows.push(db::AppDepositRecipientRow {
+                provider,
+                full_name,
+                phone_number,
+                phone_regex,
+                currency,
+                created_at: now,
+                updated_at: now,
+            });
+
+            if let Some(last_row) = rows.last() {
+                debug!(
+                    provider = %last_row.provider,
+                    currency = %last_row.currency,
+                    "prepared deposit recipient row"
+                );
+            }
+        }
+
+        diesel::delete(app_deposit_recipients::table)
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        debug!(
+            rows_prepared = rows.len(),
+            "cleared deposit recipient table and ready to insert rows"
+        );
+
+        if rows.is_empty() {
+            info!("deposit recipients sync completed with 0 rows");
+            return Ok(0);
+        }
+
+        let inserted = diesel::insert_into(app_deposit_recipients::table)
+            .values(rows)
+            .execute(&mut conn)
+            .await
+            .map_err(Error::from)?;
+
+        info!(inserted, "deposit recipients sync completed");
+        Ok(inserted)
+    }
+
+    #[instrument(skip(self))]
     async fn select_deposit_recipient_contact(
         &self,
-        user_phone_number: &str,
-        currency: &str,
-    ) -> RepoResult<DepositRecipientContact>;
-}
+        user_phone_number_val: &str,
+        currency_val: &str,
+    ) -> RepoResult<DepositRecipientContact> {
+        use backend_model::schema::app_deposit_recipients;
 
-/// Repository trait for user account operations.
-#[backend_core::async_trait]
-pub trait UserRepo: Send + Sync {
-    /// Creates a new user from Keycloak upsert request.
-    async fn create_user(
-        &self,
-        req: &backend_model::kc::UserUpsert,
-    ) -> RepoResult<backend_model::db::UserRow>;
+        let normalized_phone = user_phone_number_val.trim();
+        if normalized_phone.is_empty() {
+            return Err(Error::bad_request(
+                "USER_PHONE_REQUIRED",
+                "User phone number is required for deposit provider resolution",
+            ));
+        }
 
-    /// Gets a user by ID.
-    async fn get_user(&self, user_id: &str) -> RepoResult<Option<backend_model::db::UserRow>>;
+        let normalized_currency = currency_val.trim().to_uppercase();
+        if normalized_currency.is_empty() {
+            return Err(Error::bad_request(
+                "DEPOSIT_CURRENCY_REQUIRED",
+                "Currency is required for deposit provider resolution",
+            ));
+        }
 
-    /// Updates a user from Keycloak upsert request.
-    async fn update_user(
-        &self,
-        user_id: &str,
-        req: &backend_model::kc::UserUpsert,
-    ) -> RepoResult<Option<backend_model::db::UserRow>>;
+        debug!(
+            user_phone = normalized_phone,
+            currency = %normalized_currency,
+            "selecting deposit recipient"
+        );
 
-    /// Deletes a user by ID. Returns rows deleted (0 or 1).
-    async fn delete_user(&self, user_id: &str) -> RepoResult<u64>;
+        let mut conn = self.get_conn().await?;
+        let recipients = app_deposit_recipients::table
+            .filter(app_deposit_recipients::currency.eq(&normalized_currency))
+            .order(app_deposit_recipients::provider.asc())
+            .select(db::AppDepositRecipientRow::as_select())
+            .load::<db::AppDepositRecipientRow>(&mut conn)
+            .await
+            .map_err(Error::from)?;
 
-    /// Searches users by various criteria.
-    async fn search_users(
-        &self,
-        req: &backend_model::kc::UserSearch,
-    ) -> RepoResult<Vec<backend_model::db::UserRow>>;
+        debug!(
+            recipient_count = recipients.len(),
+            currency = %normalized_currency,
+            "loaded deposit recipient configs"
+        );
 
-    /// Finds a user by phone number within a realm.
-    async fn resolve_user_by_phone(
-        &self,
-        realm: &str,
-        phone: &str,
-    ) -> RepoResult<Option<backend_model::db::UserRow>>;
+        if recipients.is_empty() {
+            return Err(Error::bad_request(
+                "DEPOSIT_RECIPIENT_NOT_CONFIGURED",
+                format!(
+                    "No deposit recipients configured for currency {}",
+                    normalized_currency
+                ),
+            ));
+        }
 
-    /// Finds or creates a user by phone number.
-    /// Returns (user, created) where created is true if new user was created.
-    async fn resolve_or_create_user_by_phone(
-        &self,
-        realm: &str,
-        phone: &str,
-    ) -> RepoResult<(backend_model::db::UserRow, bool)>;
+        for recipient in recipients {
+            let regex = match Regex::new(recipient.phone_regex.as_str()) {
+                Ok(regex) => regex,
+                Err(error) => {
+                    warn!(
+                        provider = %recipient.provider,
+                        regex = %recipient.phone_regex,
+                        %error,
+                        "invalid deposit recipient regex stored in database"
+                    );
+                    continue;
+                }
+            };
+            if regex.is_match(normalized_phone) {
+                debug!(
+                    provider = %recipient.provider,
+                    currency = %recipient.currency,
+                    phone_regex = %recipient.phone_regex,
+                    "matched deposit recipient for user phone"
+                );
+                return Ok(DepositRecipientContact {
+                    provider: recipient.provider,
+                    full_name: recipient.full_name,
+                    phone_number: recipient.phone_number,
+                    currency: recipient.currency,
+                });
+            }
+        }
 
-    /// Upserts a typed dynamic data row for a user.
-    async fn upsert_user_data(
-        &self,
-        input: UserDataUpsertInput,
-    ) -> RepoResult<backend_model::db::UserDataRow>;
-
-    /// Lists user dynamic data. When eager_fetch_only=true, returns only eagerly fetched rows.
-    async fn list_user_data(
-        &self,
-        user_id: &str,
-        eager_fetch_only: bool,
-    ) -> RepoResult<Vec<backend_model::db::UserDataRow>>;
-}
-
-/// Repository trait for device binding operations.
-#[backend_core::async_trait]
-pub trait DeviceRepo: Send + Sync {
-    /// Looks up a device by ID and/or JKT. Updates last_seen_at on match.
-    async fn lookup_device(
-        &self,
-        req: &backend_model::kc::DeviceLookupRequest,
-    ) -> RepoResult<Option<backend_model::db::DeviceRow>>;
-
-    /// Lists all devices for a user, optionally including revoked ones.
-    async fn list_user_devices(
-        &self,
-        user_id: &str,
-        include_revoked: bool,
-    ) -> RepoResult<Vec<backend_model::db::DeviceRow>>;
-
-    /// Gets a specific device for a user.
-    async fn get_user_device(
-        &self,
-        user_id: &str,
-        device_id: &str,
-    ) -> RepoResult<Option<backend_model::db::DeviceRow>>;
-
-    /// Updates device status (active, revoked, etc.).
-    async fn update_device_status(
-        &self,
-        record_id: &str,
-        status: &str,
-    ) -> RepoResult<backend_model::db::DeviceRow>;
-
-    /// Finds an existing device binding by device_id and JKT.
-    /// Returns (user_id, device_record_id) if found.
-    async fn find_device_binding(
-        &self,
-        device_id: &str,
-        jkt: &str,
-    ) -> RepoResult<Option<(String, String)>>;
-
-    /// Binds a device to a user with public key.
-    async fn bind_device(
-        &self,
-        req: &backend_model::kc::EnrollmentBindRequest,
-    ) -> RepoResult<String>;
-
-    /// Counts the number of devices for a user.
-    async fn count_user_devices(&self, user_id: &str) -> RepoResult<i64>;
+        Err(Error::bad_request(
+            "DEPOSIT_PROVIDER_NOT_SUPPORTED",
+            format!(
+                "No deposit recipient matches phone prefix for currency {}",
+                normalized_currency
+            ),
+        ))
+    }
 }

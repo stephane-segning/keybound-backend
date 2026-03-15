@@ -1,0 +1,43 @@
+#!/bin/bash
+# opencode command: resolve-conflicts
+# Usage: opencode run --agent agent-orchestrator resolve-conflicts [agent1] [agent2]
+
+AGENT1=${1:-""}
+AGENT2=${2:-""}
+
+echo "=== Resolving Agent Conflicts ==="
+
+if [ -z "$AGENT1" ] || [ -z "$AGENT2" ]; then
+    echo "Usage: opencode run --agent agent-orchestrator resolve-conflicts <agent1> <agent2>"
+    echo "Example: opencode run --agent agent-orchestrator resolve-conflicts flow-otp-master flow-email-wizard"
+    exit 1
+fi
+
+echo "Analyzing conflicts between $AGENT1 and $AGENT2..."
+echo ""
+
+# Check for overlapping file modifications
+echo "Checking for file conflicts..."
+branch1="agent/$AGENT1"
+branch2="agent/$AGENT2"
+
+git diff --name-only $branch1..main | sort > /tmp/files-$AGENT1.txt
+git diff --name-only $branch2..main | sort > /tmp/files-$AGENT2.txt
+
+common_files=$(comm -12 /tmp/files-$AGENT1.txt /tmp/files-$AGENT2.txt)
+
+if [ -n "$common_files" ]; then
+    echo "  ⚠️  Common modified files:"
+    echo "$common_files" | sed 's/^/    - /'
+    echo ""
+    echo "  Suggested resolution:"
+    echo "    1. Have $AGENT1 complete and merge first"
+    echo "    2. Then have $AGENT2 rebase on main"
+    echo "    3. Resolve any conflicts in shared files"
+else
+    echo "  ✅ No file conflicts detected"
+    echo "  ✅ Agents can work in parallel"
+fi
+
+echo ""
+echo "=== Conflict Analysis Complete ==="

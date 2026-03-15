@@ -33,8 +33,33 @@ The runtime is Rust/`axum` with Diesel-async for the database layer and `diesel_
 ## Documentation
 
 - Refer back to `AGENTS.md` for up-to-date architectural constraints and workflows.
+- Refer to `AGENTS.md` section "Opencode AI Agents" for AI-powered development workflows.
 - Migrations live in `app/crates/backend-migrate/migrations` and follow the `YYYYMMDDHHMMSS_description.sql` naming scheme.
 - Keep `app/gen/*` files in sync only through automated OpenAPI generation (changes should start in `openapi/`).
+
+## AI-Powered Development
+
+This project includes 10 specialized AI agents via the opencode CLI tool to assist with implementation:
+
+**Quick start with agents:**
+```bash
+# List all available agents
+opencode agent list
+
+# Run daily project status check
+opencode run --agent agent-orchestrator daily-standup
+
+# Generate BFF OpenAPI code
+opencode run --agent bff-generator generate-bff
+
+# Implement Phone OTP flow
+opencode run --agent flow-otp-master implement-otp-flow
+
+# Validate flow implementation
+opencode run --agent flow-otp-master validate-flow phone_otp
+```
+
+See `AGENTS.md` "Opencode AI Agents" section for complete agent documentation, project phases, and usage examples.
 
 ## Notes
 

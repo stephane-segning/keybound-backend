@@ -635,6 +635,172 @@ match result {
 }
 ```
 
+## Opencode AI Agents
+
+This project includes 10 specialized AI agents in `.opencode/agents/` for automated code generation, architecture design, flow implementation, testing, and project coordination.
+
+### Available Agents
+
+| Agent | LLM Model | Primary Purpose | When to Use |
+|-------|-----------|-----------------|-------------|
+| **agent-orchestrator** | gemini-2.5-pro | Master coordinator for all agents | When you need to orchestrate multiple agents or resolve conflicts |
+| **bff-generator** | gemini-3.1-flash-lite | Generate BFF OpenAPI code | To generate BFF API handlers from OpenAPI specs |
+| **flow-architect** | kimi-k2-thinking | Design integration traits and patterns | To define SmsProvider, EmailProvider traits and flow patterns |
+| **flow-otp-master** | deepseek-v3p2 | Implement Phone OTP flow | To add OTP generation, SMS integration, rate limiting |
+| **flow-email-wizard** | cogito-671b-v2-p1 | Implement Email Magic flow | To add magic link generation and email verification |
+| **flow-deposit-builder** | kimi-k2-instruct | Implement First Deposit flow | To add payment processing and CUSS integration |
+| **integration-specialist** | gemini-2.5-flash | Document verification flows | To add ID document and address proof flows |
+| **test-engineer** | qwen3-vl-30b-a3b-thinking | Write comprehensive tests | To achieve >80% test coverage |
+| **project-closer** | minimax-m2p2 | Final polish and delivery | For final lint, docs, and pre-deployment checks |
+| **flow-orchestrator** | gemini-2.5-pro | Project coordination (legacy) | For architectural decisions and daily standups |
+
+See `.opencode/AGENTS-QUICK-REFERENCE.md` for comprehensive agent documentation with examples.
+
+### Project Phases & Agent Usage
+
+**Phase 1: Foundation (Start Here)**
+```bash
+# Generate BFF OpenAPI code (if not already generated)
+opencode run --agent bff-generator generate-bff
+
+# Check architecture readiness
+opencode run --agent flow-architect design-integration-traits
+```
+
+**Phase 2: Core Flow Implementation**
+```bash
+# Implement Phone OTP flow
+opencode run --agent flow-otp-master implement-otp-flow
+
+# Validate the implementation
+opencode run --agent flow-otp-master validate-flow phone_otp
+
+# Test the flow
+opencode run --agent test-engineer test-flow phone_otp
+```
+
+**Phase 3: Advanced Flows**
+```bash
+# Validate deposit flow implementation
+opencode run --agent flow-deposit-builder validate-flow first_deposit
+
+# Validate document flows
+opencode run --agent integration-specialist validate-flow id_document
+opencode run --agent integration-specialist validate-flow address_proof
+```
+
+**Phase 4: Testing**
+```bash
+# Test all flows
+for flow in phone_otp email_magic first_deposit id_document address_proof; do
+  opencode run --agent test-engineer test-flow $flow
+done
+```
+
+**Phase 5: Delivery**
+```bash
+# Final quality checks
+opencode run --agent project-closer final-lint
+opencode run --agent project-closer update-documentation
+```
+
+### Managing Multiple Agents
+
+**Use agent-orchestrator for coordination:**
+
+```bash
+# Run all agents in optimal order based on dependencies
+opencode run --agent agent-orchestrator run-all-agents
+
+# Coordinate a specific phase
+opencode run --agent agent-orchestrator coordinate-phase foundation
+opencode run --agent agent-orchestrator coordinate-phase core-flows
+opencode run --agent agent-orchestrator coordinate-phase advanced
+opencode run --agent agent-orchestrator coordinate-phase testing
+opencode run --agent agent-orchestrator coordinate-phase delivery
+
+# Track progress across all agents
+opencode run --agent agent-orchestrator track-progress
+
+# Resolve conflicts between agents
+opencode run --agent agent-orchestrator resolve-conflicts flow-otp-master flow-email-wizard
+```
+
+### Daily Project Management
+
+**Monitor status:**
+```bash
+# Daily standup (should be run regularly)
+opencode run --agent agent-orchestrator daily-standup
+
+# Full workspace validation
+opencode run --agent agent-orchestrator check-workspace
+```
+
+### Quick Reference Commands
+
+| Command | Purpose | Typical Agent |
+|---------|---------|---------------|
+| `generate-bff` | Generate OpenAPI code | bff-generator |
+| `validate-flow <name>` | Check flow implementation | Any flow-* agent |
+| `test-flow <name>` | Run flow tests | test-engineer |
+| `implement-otp-flow` | Generate OTP boilerplate | flow-otp-master |
+| `check-workspace` | Full validation | agent-orchestrator |
+| `track-progress` | View all agent status | agent-orchestrator |
+
+### Configuration
+
+Agents are configured in `.opencode/agents/` as Markdown files with YAML frontmatter:
+
+```yaml
+---
+name: agent-name
+description: Agent purpose
+llm: model-name
+commands:
+  - cmd-1
+  - cmd-2
+rules:
+  - Rule 1
+  - Rule 2
+---
+```
+
+### Customization
+
+**Add new agent:**
+```bash
+# Create new agent config
+echo "---\nname: my-agent\ndescription: Custom agent\nllm: claude-3-opus\ncommands: [my-cmd]\n---" > .opencode/agents/my-agent.md
+
+# Create corresponding command
+touch .opencode/commands/my-cmd
+chmod +x .opencode/commands/my-cmd
+```
+
+### Troubleshooting Agent Issues
+
+**Agent not loading:**
+```bash
+# Verify agent config syntax
+json_pp -t null < .opencode/agents/agent-name.md 2>/dev/null || echo "Invalid YAML frontmatter"
+```
+
+**Command not found:**
+```bash
+# Check command permissions
+ls -l .opencode/commands/
+# Ensure executable: chmod +x .opencode/commands/command-name
+```
+
+**Progress tracking:**
+```bash
+# View detailed agent status
+opencode run --agent agent-orchestrator track-progress
+```
+
+For complete agent documentation, see `.opencode/README.md`, `.opencode/QUICKSTART.md`, and `.opencode/PROJECT-EXECUTION.md`.
+
 ## Database & Migrations
 
 ### Migration Workflow
