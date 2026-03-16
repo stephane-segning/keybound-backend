@@ -69,6 +69,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/user-storage/Dockerfile
       target: dev
+    restart: unless-stopped
     entrypoint:
       - /app/sms-gateway
     command:

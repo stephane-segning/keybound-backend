@@ -265,13 +265,33 @@ fn build_router(
 
     if config.logging.log_requests_enabled {
         router.layer(
-            TraceLayer::new_for_http().make_span_with(|req: &HttpRequest<_>| {
-                tracing::info_span!(
-                    "http-request",
-                    method = %req.method(),
-                    path = %request_path(req)
-                )
-            }),
+            TraceLayer::new_for_http()
+                .make_span_with(|req: &HttpRequest<_>| {
+                    let remote_addr = req
+                        .extensions()
+                        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                        .map(|ci| ci.0.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    tracing::info_span!(
+                        "http-request",
+                        method = %req.method(),
+                        path = %request_path(req),
+                        remote_addr = %remote_addr,
+                    )
+                })
+                .on_request(|req: &HttpRequest<_>, _span: &tracing::Span| {
+                    tracing::info!(
+                        headers = ?req.headers(),
+                        "received request"
+                    )
+                })
+                .on_response(|res: &Response, latency: std::time::Duration, _span: &tracing::Span| {
+                    tracing::info!(
+                        status = %res.status(),
+                        latency = ?latency,
+                        "sending response"
+                    )
+                }),
         )
     } else {
         router

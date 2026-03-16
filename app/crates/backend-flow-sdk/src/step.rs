@@ -1,6 +1,6 @@
 use crate::{Actor, FlowError, StepContext};
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
@@ -8,6 +8,7 @@ pub struct ContextUpdates {
     pub session_context_patch: Option<Value>,
     pub flow_context_patch: Option<Value>,
     pub user_metadata_patch: Option<Value>,
+    pub notifications: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,5 +48,12 @@ pub trait Step: Send + Sync + 'static {
 
     async fn validate_input(&self, _input: &Value) -> Result<(), FlowError> {
         Ok(())
+    }
+
+    async fn verify_input(&self, _ctx: &StepContext, _input: &Value) -> Result<StepOutcome, FlowError> {
+        Ok(StepOutcome::Done {
+            output: Some(json!({"verified": true})),
+            updates: None,
+        })
     }
 }

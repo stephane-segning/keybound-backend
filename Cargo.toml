@@ -100,6 +100,10 @@ mimalloc = "0"
 axum-extra = "0.12"
 headers = "0.4"
 tower-http = { version = "0.6.8", features = ["trace"] }
+opentelemetry = { version = "0.29.0" }
+opentelemetry_sdk = { version = "0.29.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.29.0", features = ["trace", "grpc-tonic"] }
+tracing-opentelemetry = "0.30.0"
 
 mockall = "0.14"
 serial_test = "3.4.0"

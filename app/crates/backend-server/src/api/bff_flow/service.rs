@@ -290,6 +290,50 @@ pub async fn submit_step(
         .await
         .map_err(flow_error_to_http)?;
 
+    let session = api
+        .state
+        .flow
+        .get_session(&flow.session_id)
+        .await?
+        .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
+
+    let verify_context = StepContext {
+        session_id: session.id.clone(),
+        flow_id: flow.id.clone(),
+        step_id: step.id.clone(),
+        input: body.input.clone(),
+        session_context: session.context.clone(),
+        flow_context: flow.context.clone(),
+    };
+
+    let verify_outcome = step_definition
+        .verify_input(&verify_context, &body.input)
+        .await
+        .map_err(flow_error_to_http)?;
+
+    let (output_value, context_updates) = match verify_outcome {
+        StepOutcome::Done { output, updates } => (output.unwrap_or_else(|| json!({"verified": true})), updates),
+        StepOutcome::Failed { error, retryable: _ } => {
+            return Err(Error::bad_request("VERIFICATION_FAILED", error));
+        }
+        _ => (json!({"verified": true}), None),
+    };
+
+    let mut updated_flow_context = flow.context.clone();
+    if let Some(updates) = context_updates {
+        if let Some(patch) = updates.flow_context_patch {
+            if let (Some(base_obj), Some(patch_obj)) = (updated_flow_context.as_object_mut(), patch.as_object()) {
+                for (k, v) in patch_obj {
+                    if v.is_null() {
+                        base_obj.remove(k);
+                    } else {
+                        base_obj.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+    }
+
     let updated_step = api
         .state
         .flow
@@ -298,20 +342,13 @@ pub async fn submit_step(
             FlowStepPatch::new()
                 .status(FLOW_STATUS_COMPLETED)
                 .input(body.input.clone())
-                .output(json!({"accepted": true}))
+                .output(output_value.clone())
                 .clear_error()
                 .finished_at(Utc::now()),
         )
         .await?;
 
-    let session = api
-        .state
-        .flow
-        .get_session(&flow.session_id)
-        .await?
-        .ok_or_else(|| Error::not_found("SESSION_NOT_FOUND", "Session not found"))?;
-
-    let context = store_step_output(flow.context.clone(), &updated_step.step_type, &body.input);
+    let context = store_step_output(updated_flow_context, &updated_step.step_type, &body.input);
     let mut current_flow = api
         .state
         .flow
@@ -560,6 +597,20 @@ async fn create_step_chain(
                                 .update_metadata(user_id, metadata_patch)
                                 .await?;
                         }
+                    if let Some(notifications) = updates.notifications {
+                        for notification in notifications {
+                            match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {
+                                Ok(job) => {
+                                    if let Err(e) = api.state.notification_queue.enqueue(job).await {
+                                        tracing::warn!("Failed to enqueue notification: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to deserialize notification job: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 flow = api

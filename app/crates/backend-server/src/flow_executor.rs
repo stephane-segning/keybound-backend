@@ -140,6 +140,20 @@ impl FlowExecutor {
                                 .update_metadata(user_id, metadata_patch)
                                 .await?;
                         }
+                    if let Some(notifications) = updates.notifications {
+                        for notification in notifications {
+                            match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {
+                                Ok(job) => {
+                                    if let Err(e) = self.state.notification_queue.enqueue(job).await {
+                                        tracing::warn!("Failed to enqueue notification: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to deserialize notification job: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if let Some(next_step_type) = flow_def.find_next_step(&step.step_type) {

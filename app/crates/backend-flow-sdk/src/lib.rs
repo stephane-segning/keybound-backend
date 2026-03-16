@@ -18,4 +18,4 @@ pub use id::HumanReadableId;
 pub use import::{ImportFormat, import_flow_definition, import_session_definition};
 pub use registry::FlowRegistry;
 pub use session::SessionDefinition;
-pub use step::{Step, StepOutcome};
+pub use step::{Step, StepOutcome, ContextUpdates};

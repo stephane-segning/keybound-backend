@@ -28,7 +28,7 @@ init: # Initialize docker compose services
 	docker compose -p {{project}} -f {{compose_file}} build {{c}}
 
 help: # Show this help message
-	@printf 'Commands:\n  init            Initialize docker compose services\n  help            Show this help message\n  pull            Pull latest images from registries\n  build           Build all configured compose services\n  up              Start services with rebuild\n  up-single       Start a single service (pass service=...)\n  up-sms          Start SMS gateway service\n  up-no-build     Start services without rebuilding\n  img             Show stored service images\n  start           Resume stopped services\n  down            Stop and remove containers\n  destroy         Snapshot removal of containers + volumes\n  stop            Stop running containers\n  restart         Restart services (stop + up)\n  logs            Follow all service logs\n  logs-keycloak   Follow Keycloak logs\n  logs-sms        Follow SMS gateway logs\n  ps              List active containers\n  ps-all          List all containers (including exited)\n  stats           Show container stats\n  dev             Run backend (dev)\n  dev-sms         Run SMS gateway (dev)\n  prepare         Build backend (release)\n  test-it         Run OAS integration tests\n  test-e2e-rust   Run Rust-native crate-level e2e tests (wiremock/testcontainers)\n  test-e2e-smoke  Run Compose smoke e2e suite with Rust runner\n  test-e2e-full   Run Compose full e2e suite with Rust runner\n'
+	@printf 'Commands:\n  init            Initialize docker compose services\n  help            Show this help message\n  pull            Pull latest images from registries\n  build           Build all configured compose services\n  up              Start services with rebuild\n  up-single       Start a single service (pass service=...)\n  up-sms          Start SMS gateway service\n  up-no-build     Start services without rebuilding\n  img             Show stored service images\n  start           Resume stopped services\n  down            Stop and remove containers\n  destroy         Snapshot removal of containers + volumes\n  stop            Stop running containers\n  restart         Restart services (stop + up)\n  logs            Follow all service logs\n  logs-keycloak   Follow Keycloak logs\n  logs-sms        Follow SMS gateway logs\n  ps              List active containers\n  ps-all          List all containers (including exited)\n  stats           Show container stats\n  dev             Run backend (dev)\n  dev-sms         Run SMS gateway (dev)\n  prepare         Build backend (release)\n  test-it         Run OAS integration tests\n  test-e2e-rust   Run Rust-native crate-level e2e tests (wiremock/testcontainers)\n  test-e2e-smoke  Run Compose smoke e2e suite with Rust runner\n  test-e2e-full   Run Compose full e2e suite with Rust runner\n  test-sms-comm   Test SMS gateway communication (requires running compose)\n'
 
 pull: # Pull latest images from registries
 	docker compose -p {{project}} -f {{compose_file}} pull {{c}}
@@ -188,3 +188,15 @@ all-checks:
 	cargo fix --allow-dirty
 	cargo clippy --all-targets --all-features --fix --allow-dirty -- -D warnings
 	cargo check --all-targets --all-features
+
+# Test SMS gateway communication with main app (requires running compose)
+test-sms-comm:
+	@echo "Testing SMS gateway communication..."
+	@echo "1. Checking if services are running..."
+	@docker compose -p {{project}} -f {{compose_file}} ps app app-worker sms-gateway redis
+	@echo "\n2. Checking Redis connectivity..."
+	@docker compose -p {{project}} -f {{compose_file}} exec redis redis-cli ping
+	@echo "\n3. Checking notification queue..."
+	@docker compose -p {{project}} -f {{compose_file}} exec redis redis-cli keys "apalis:backend:notifications*"
+	@echo "\n4. SMS gateway logs (last 10 lines)..."
+	@docker compose -p {{project}} -f {{compose_file}} logs --tail=10 sms-gateway
