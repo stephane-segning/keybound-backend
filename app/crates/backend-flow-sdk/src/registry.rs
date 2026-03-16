@@ -108,4 +108,10 @@ impl FlowRegistry {
         values.sort();
         values
     }
+
+    pub fn sessions(&self) -> Vec<&SessionDefinition> {
+        let mut values: Vec<_> = self.sessions.values().collect();
+        values.sort_by(|a, b| a.session_type.cmp(&b.session_type));
+        values
+    }
 }

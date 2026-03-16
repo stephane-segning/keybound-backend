@@ -931,6 +931,7 @@ dependencies = [
  "mimalloc",
  "openssl",
  "openssl-sys",
+ "serde",
  "serde_json",
  "serde_yaml",
  "tokio",

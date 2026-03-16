@@ -5,9 +5,9 @@ mod branding;
 use openssl_sys as _;
 
 use backend_core::{Cli, Commands, Result, RuntimeMode, init_tracing, load_from_path};
-use backend_flow_sdk::export::export_flow_definition;
+use backend_flow_sdk::export::{export_flow_definition, export_session_definition};
 use backend_flow_sdk::flow::{FlowDefinition, FlowMetadata, FlowSpec, FlowStepDefinition};
-use backend_flow_sdk::{ExportFormat, ImportFormat, import_flow_definition};
+use backend_flow_sdk::{ExportFormat, ImportFormat, SessionDefinition, import_flow_definition};
 use backend_server::{run_worker, serve};
 use branding::banner::BANNER;
 use clap::Parser;
@@ -185,7 +185,7 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
     let registry = backend_server::flow_registry::build_registry(imports)
         .map_err(|e| backend_core::Error::Server(e.to_string()))?;
 
-    let mut definitions = Vec::new();
+    let mut flow_definitions = Vec::new();
     for flow_type in registry.flow_types() {
         if let Some(flow) = registry.get_flow(&flow_type) {
             let mut steps = Vec::new();
@@ -208,7 +208,7 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
                 });
             }
 
-            definitions.push(FlowDefinition {
+            flow_definitions.push(FlowDefinition {
                 api_version: "flow/v1".to_owned(),
                 kind: "Flow".to_owned(),
                 metadata: FlowMetadata {
@@ -222,24 +222,37 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
         }
     }
 
-    let selected = if all || target.is_none() {
-        definitions
+    let session_definitions: Vec<SessionDefinition> = registry
+        .sessions()
+        .into_iter()
+        .map(|s| SessionDefinition {
+            session_type: s.session_type.clone(),
+            human_id_prefix: s.human_id_prefix.clone(),
+            feature: s.feature.clone(),
+            allowed_flows: s.allowed_flows.clone(),
+            override_existing: None,
+        })
+        .collect();
+
+    let (selected_flows, selected_sessions) = if all || target.is_none() {
+        (flow_definitions, session_definitions)
     } else {
-        definitions
+        let target_val = target.unwrap_or_default();
+        let flows: Vec<FlowDefinition> = flow_definitions
             .into_iter()
-            .filter(|definition| {
-                definition
-                    .metadata
-                    .flow_type
-                    .eq_ignore_ascii_case(target.unwrap_or_default())
-            })
-            .collect()
+            .filter(|d| d.metadata.flow_type.eq_ignore_ascii_case(target_val))
+            .collect();
+        let sessions: Vec<SessionDefinition> = session_definitions
+            .into_iter()
+            .filter(|s| s.session_type.eq_ignore_ascii_case(target_val))
+            .collect();
+        (flows, sessions)
     };
 
-    if selected.is_empty() {
+    if selected_flows.is_empty() && selected_sessions.is_empty() {
         return Err(backend_core::Error::not_found(
-            "FLOW_DEFINITION_NOT_FOUND",
-            "No matching flow definitions found",
+            "DEFINITION_NOT_FOUND",
+            "No matching flow or session definitions found",
         ));
     }
 
@@ -257,17 +270,29 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
         })
         .unwrap_or(ExportFormat::Yaml);
 
-    let payload = if selected.len() == 1 {
-        export_flow_definition(&selected[0], format)
+    let payload = if selected_flows.len() == 1 && selected_sessions.is_empty() {
+        export_flow_definition(&selected_flows[0], format)
+            .map_err(|error| backend_core::Error::Server(error.to_string()))?
+    } else if selected_sessions.len() == 1 && selected_flows.is_empty() {
+        export_session_definition(&selected_sessions[0], format)
             .map_err(|error| backend_core::Error::Server(error.to_string()))?
     } else {
-        backend_flow_sdk::export_registry(&selected, format)
+        #[derive(serde::Serialize)]
+        struct ExportBundle {
+            flows: Vec<FlowDefinition>,
+            sessions: Vec<SessionDefinition>,
+        }
+        let bundle = ExportBundle {
+            flows: selected_flows,
+            sessions: selected_sessions,
+        };
+        backend_flow_sdk::export_registry(&bundle, format)
             .map_err(|error| backend_core::Error::Server(error.to_string()))?
     };
 
     if let Some(path) = output {
         std::fs::write(path, payload)?;
-        info!(file = %path.display(), "flow definition export written");
+        info!(file = %path.display(), "definition export written");
     } else {
         println!("{payload}");
     }
