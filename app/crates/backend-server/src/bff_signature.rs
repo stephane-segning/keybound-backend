@@ -1,6 +1,6 @@
 use crate::api::{BFF_AUTH_DEVICE_ID_HEADER, BFF_AUTH_USER_ID_HEADER};
 use crate::auth_signature::{
-    ReplayGuard, canonicalize_payload, canonicalize_public_key, validate_public_key_match,
+    ReplayGuard, canonicalize_device_auth_payload, canonicalize_public_key, validate_public_key_match,
     validate_timestamp, validate_user_id_hint, verify_signature,
 };
 use crate::state::AppState;
@@ -88,6 +88,15 @@ async fn authenticate_signature(
         .ok_or_else(|| Error::unauthorized("Missing x-auth-nonce"))?;
     let user_id_hint = header_value(headers, HEADER_USER_ID);
 
+    tracing::debug!(
+        device_id = %device_id,
+        signature = %signature,
+        timestamp = %timestamp_str,
+        nonce = %nonce,
+        public_key_len = public_key.len(),
+        "Received signature auth headers"
+    );
+
     let timestamp = timestamp_str
         .parse::<i64>()
         .map_err(|_| Error::unauthorized("Invalid x-auth-signature-timestamp"))?;
@@ -122,18 +131,15 @@ async fn authenticate_signature(
     validate_user_id_hint(user_id_hint.as_deref(), &device.user_id)?;
     validate_public_key_match(&public_key, &device.public_jwk)?;
 
-    let body_str = std::str::from_utf8(body)
-        .map_err(|_| Error::bad_request("INVALID_BODY", "Body must be utf-8"))?;
+    let timestamp_i64 = timestamp_str
+        .parse::<i64>()
+        .map_err(|_| Error::unauthorized("Invalid x-auth-signature-timestamp"))?;
 
-    let canonical_payload = canonicalize_payload(
-        timestamp,
-        &nonce,
-        method.as_str(),
-        path,
-        body_str,
-        &public_key,
+    let canonical_payload = canonicalize_device_auth_payload(
         &device_id,
-        user_id_hint.as_deref(),
+        &nonce,
+        &public_key,
+        timestamp_i64,
     )?;
 
     verify_signature(&public_key, &canonical_payload, &signature)?;

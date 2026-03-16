@@ -34,6 +34,27 @@ Every BFF request must include:
 {user_id_hint}
 ```
 
+### Canonical Payload Format
+
+**Device Authentication Payload (used by frontend/BFF):**
+
+```json
+{
+  "deviceId": "dvc_xxx",
+  "nonce": "nce_xxx",
+  "publicKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"...\",\"y\":\"...\"}",
+  "ts": "1710000000"
+}
+```
+
+**Key Order:** Alphabetical (`deviceId`, `nonce`, `publicKey`, `ts`)
+
+**Important:** The `publicKey` value must be escaped when embedded in JSON:
+```javascript
+const escapedPublicKey = publicKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+const canonical = `{"deviceId":"${deviceId}","nonce":"${nonce}","publicKey":"${escapedPublicKey}","ts":"${ts}"}`;
+```
+
 ### Signing Example (JavaScript/WebCrypto)
 
 ```javascript

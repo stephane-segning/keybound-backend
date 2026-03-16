@@ -13,9 +13,17 @@ use sha2::{Digest, Sha256};
 
 /// Decodes base64url standard into raw bytes.
 fn decode_base64_url(encoded: &str) -> Result<Vec<u8>> {
+    let encoded = encoded.trim_end_matches('=');
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(encoded)
-        .map_err(|_| Error::unauthorized("Invalid base64url encoding"))
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                signature_b64url = %encoded,
+                "Failed to decode base64url signature"
+            );
+            Error::unauthorized("Invalid base64url encoding")
+        })
 }
 
 #[derive(Deserialize, Debug)]

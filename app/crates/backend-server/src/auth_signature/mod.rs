@@ -2,7 +2,7 @@ pub mod canonical;
 pub mod replay;
 pub mod verify;
 
-pub use canonical::{canonicalize_payload, canonicalize_public_key};
+pub use canonical::{canonicalize_device_auth_payload, canonicalize_payload, canonicalize_public_key};
 #[cfg(any(test, feature = "test-utils"))]
 pub use replay::in_memory::{InMemoryReplayGuard, SharedInMemoryReplayGuard};
 pub use replay::{RedisReplayGuard, ReplayGuard};
@@ -132,5 +132,21 @@ mod tests {
     fn test_canonicalize_public_key_invalid_json() {
         let result = canonicalize_public_key("not json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_canonicalize_device_auth_payload() {
+        let public_key = r#"{"crv":"P-256","kty":"EC","x":"abc","y":"def"}"#;
+        let result = canonicalize_device_auth_payload(
+            "dvc_123",
+            "nonce456",
+            public_key,
+            1234567890,
+        )
+        .unwrap();
+
+        assert!(result.starts_with(r#"{"deviceId":"dvc_123","publicKey":"{"#));
+        assert!(result.contains(r#""ts":"1234567890""#));
+        assert!(result.contains(r#""nonce":"nonce456""#));
     }
 }

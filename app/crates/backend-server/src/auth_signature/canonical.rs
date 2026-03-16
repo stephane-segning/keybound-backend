@@ -1,6 +1,19 @@
 use backend_core::{Error, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+
+/// Canonical payload for device-bound signature auth.
+/// Format: JSON with keys in specific order matching frontend
+/// {"deviceId":"...","publicKey":"...","ts":"...","nonce":"..."}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceSignaturePayload {
+    device_id: String,
+    public_key: String,
+    ts: String,
+    nonce: String,
+}
 
 /// Canonical payload format for signature auth:
 /// timestamp\nnonce\nMETHOD\nPATH\nBODY\nPUBLIC_KEY\nDEVICE_ID\nUSER_ID_HINT
@@ -26,6 +39,25 @@ pub fn canonicalize_payload(
         provided_public_key,
         device_id,
         user_id_hint.unwrap_or_default(),
+    );
+
+    Ok(canonical)
+}
+
+/// Canonical payload for device authentication (used by BFF/frontend).
+/// Creates a JSON string with keys in specific order matching frontend:
+/// {"deviceId":"...","publicKey":"...","ts":"...","nonce":"..."}
+pub fn canonicalize_device_auth_payload(
+    device_id: &str,
+    nonce: &str,
+    public_key_json: &str,
+    timestamp: i64,
+) -> Result<String> {
+    let escaped_public_key = public_key_json.replace('\\', "\\\\").replace('"', "\\\"");
+
+    let canonical = format!(
+        r#"{{"deviceId":"{}","publicKey":"{}","ts":"{}","nonce":"{}"}}"#,
+        device_id, escaped_public_key, timestamp, nonce
     );
 
     Ok(canonical)
