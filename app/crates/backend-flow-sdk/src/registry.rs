@@ -33,7 +33,8 @@ impl FlowRegistry {
 
     pub fn register_flow_definition(&mut self, definition: FlowDefinition) {
         debug!("Registering flow definition: {}", definition.flow_type);
-        self.flow_definitions.insert(definition.flow_type.clone(), definition);
+        self.flow_definitions
+            .insert(definition.flow_type.clone(), definition);
     }
 
     pub fn get_step(&self, step_type: &str) -> Option<&dyn Step> {

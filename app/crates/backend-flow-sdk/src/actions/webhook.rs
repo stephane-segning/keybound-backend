@@ -1,6 +1,7 @@
 use crate::step::ContextUpdates;
 use crate::{Actor, FlowError, Step, StepContext, StepOutcome};
 use async_trait::async_trait;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -221,12 +222,10 @@ impl Step for WebhookStep {
                             }
                         }
 
-                        let retryable =
-                            status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+                        let retryable = status.is_server_error()
+                            || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
 
-                        if retryable
-                            && let Some(policy) = config.retry_policy
-                        {
+                        if retryable && let Some(policy) = config.retry_policy {
                             return Ok(StepOutcome::Retry {
                                 after: Duration::from_millis(policy.backoff_ms),
                             });
@@ -319,48 +318,24 @@ fn apply_patch(target: &mut Value, path: &str, value: Value) {
 }
 
 pub fn render_template_str(template: &str, ctx: &StepContext) -> String {
-    let mut result = template.to_string();
-
-    if result.contains("{{session.")
-        && let Value::Object(map) = &ctx.session_context
-    {
-        for (k, v) in map {
-            let pattern = format!("{{{{session.{}}}}}", k);
-            if result.contains(&pattern) {
-                let val_str = match v {
-                    Value::String(s) => s.clone(),
-                    _ => v.to_string(),
-                };
-                result = result.replace(&pattern, &val_str);
-            }
-        }
-    }
-
-    if result.contains("{{flow.context.")
-        && let Value::Object(map) = &ctx.flow_context
-    {
-        for (k, v) in map {
-            let pattern = format!("{{{{flow.context.{}}}}}", k);
-            if result.contains(&pattern) {
-                let val_str = match v {
-                    Value::String(s) => s.clone(),
-                    _ => v.to_string(),
-                };
-                result = result.replace(&pattern, &val_str);
-            }
-        }
-    }
-
-    result = result.replace("{{session_id}}", &ctx.session_id);
-    result = result.replace("{{flow_id}}", &ctx.flow_id);
-
-    result
+    let re = Regex::new(r"\{\{\s*([^}]+?)\s*\}\}").expect("valid template regex");
+    re.replace_all(template, |captures: &regex::Captures<'_>| {
+        let token = captures
+            .get(1)
+            .map(|m: regex::Match<'_>| m.as_str())
+            .unwrap_or_default();
+        resolve_template_token(token, ctx).unwrap_or_else(|| captures[0].to_string())
+    })
+    .into_owned()
 }
 
 pub fn render_template_val(val: &Value, ctx: &StepContext) -> Value {
     match val {
-        Value::String(s) => Value::String(render_template_str(s, ctx)),
-        Value::Array(arr) => Value::Array(arr.iter().map(|v| render_template_val(v, ctx)).collect()),
+        Value::String(s) => render_template_exact_value(s, ctx)
+            .unwrap_or_else(|| Value::String(render_template_str(s, ctx))),
+        Value::Array(arr) => {
+            Value::Array(arr.iter().map(|v| render_template_val(v, ctx)).collect())
+        }
         Value::Object(map) => {
             let mut new_map = Map::new();
             for (k, v) in map {
@@ -370,4 +345,76 @@ pub fn render_template_val(val: &Value, ctx: &StepContext) -> Value {
         }
         _ => val.clone(),
     }
+}
+
+fn resolve_template_token(token: &str, ctx: &StepContext) -> Option<String> {
+    match token {
+        "session_id" => return Some(ctx.session_id.clone()),
+        "flow_id" => return Some(ctx.flow_id.clone()),
+        _ => {}
+    }
+
+    if let Some(path) = token.strip_prefix("session.") {
+        return read_dot_path(&ctx.session_context, path);
+    }
+
+    if let Some(path) = token.strip_prefix("flow.context.") {
+        return read_dot_path(&ctx.flow_context, path);
+    }
+
+    None
+}
+
+fn resolve_template_raw(token: &str, ctx: &StepContext) -> Option<Value> {
+    match token {
+        "session_id" => return Some(Value::String(ctx.session_id.clone())),
+        "flow_id" => return Some(Value::String(ctx.flow_id.clone())),
+        _ => {}
+    }
+
+    if let Some(path) = token.strip_prefix("session.") {
+        return read_dot_path_value(&ctx.session_context, path).cloned();
+    }
+
+    if let Some(path) = token.strip_prefix("flow.context.") {
+        return read_dot_path_value(&ctx.flow_context, path).cloned();
+    }
+
+    None
+}
+
+fn read_dot_path(value: &Value, path: &str) -> Option<String> {
+    read_dot_path_value(value, path).and_then(stringify_value)
+}
+
+fn read_dot_path_value<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut current = value;
+
+    if path.is_empty() {
+        return Some(current);
+    }
+
+    for part in path.split('.') {
+        current = current.get(part)?;
+    }
+
+    Some(current)
+}
+
+fn stringify_value(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(inner) => Some(inner.clone()),
+        _ => Some(value.to_string()),
+    }
+}
+
+fn render_template_exact_value(template: &str, ctx: &StepContext) -> Option<Value> {
+    let re = Regex::new(r"^\{\{\s*([^}]+?)\s*\}\}$").ok()?;
+    let captures = re.captures(template)?;
+    let token = captures
+        .get(1)
+        .map(|m: regex::Match<'_>| m.as_str())
+        .unwrap_or_default();
+    resolve_template_raw(token, ctx)
 }

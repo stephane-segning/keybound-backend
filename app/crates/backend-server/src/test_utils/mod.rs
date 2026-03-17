@@ -1,5 +1,5 @@
-use crate::file_storage::{EncryptionMode, MinioStorage, PresignedUpload};
-use crate::flow_registry;
+use crate::flows::registry as flow_registry;
+use crate::object_storage::{EncryptionMode, ObjectStorage, PresignedUpload};
 use crate::state::AppState;
 use crate::worker::NotificationQueue;
 use backend_auth::{OidcState, SignatureState};
@@ -25,9 +25,9 @@ mock! {
 }
 
 mock! {
-    pub MinioStorage {}
+    pub ObjectStorage {}
     #[async_trait]
-    impl MinioStorage for MinioStorage {
+    impl ObjectStorage for ObjectStorage {
         async fn head_object(&self, bucket: &str, key: &str) -> std::result::Result<(), Error>;
 
         async fn upload(
@@ -229,7 +229,7 @@ pub struct TestAppStateBuilder {
     pub user: Option<Arc<dyn UserRepo>>,
     pub device: Option<Arc<dyn DeviceRepo>>,
     pub notification_queue: Option<Arc<dyn NotificationQueue>>,
-    pub minio: Option<Arc<dyn MinioStorage>>,
+    pub object_storage: Option<Arc<dyn ObjectStorage>>,
     pub config: Option<Config>,
 }
 
@@ -258,8 +258,8 @@ impl TestAppStateBuilder {
         self
     }
 
-    pub fn with_minio(mut self, minio: Arc<dyn MinioStorage>) -> Self {
-        self.minio = Some(minio);
+    pub fn with_object_storage(mut self, object_storage: Arc<dyn ObjectStorage>) -> Self {
+        self.object_storage = Some(object_storage);
         self
     }
 
@@ -329,9 +329,9 @@ cuss:
             notification_queue: self
                 .notification_queue
                 .unwrap_or_else(|| Arc::new(MockNotificationQueue::new())),
-            minio: self
-                .minio
-                .unwrap_or_else(|| Arc::new(MockMinioStorage::new())),
+            object_storage: self
+                .object_storage
+                .unwrap_or_else(|| Arc::new(MockObjectStorage::new())),
             config,
             oidc_state,
             signature_state,

@@ -2,8 +2,8 @@ mod common;
 
 use anyhow::{Result, anyhow};
 use common::{
-    BffTestFixture, Env, ensure_bff_fixtures, http_client, require_json_field,
-    send_json_with_bff,
+    BffTestFixture, Env, ensure_bff_fixtures, get_client_token_and_subject, http_client,
+    require_json_field, reset_sms_sink, send_json, send_json_with_bff, wait_for_otp,
 };
 use reqwest::Method;
 use serde_json::{Value, json};
@@ -39,6 +39,13 @@ fn require_step_id(body: &Option<Value>) -> Result<String> {
         .ok_or_else(|| anyhow!("step id must be a string"))
 }
 
+fn require_step_id_from_value(step: &Value) -> Result<String> {
+    step.get("id")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("step id missing"))
+}
+
 async fn wait_for_step_status(
     client: &reqwest::Client,
     bff_base: &str,
@@ -51,15 +58,8 @@ async fn wait_for_step_status(
     let url = format!("{}/flow/steps/{}", bff_base, step_id);
 
     while std::time::Instant::now() < deadline {
-        let response = send_json_with_bff(
-            client,
-            Method::GET,
-            &url,
-            None,
-            None,
-            Some(fixture),
-        )
-        .await?;
+        let response =
+            send_json_with_bff(client, Method::GET, &url, None, None, Some(fixture)).await?;
 
         if response.status == 200 {
             let status = response
@@ -86,6 +86,47 @@ async fn wait_for_step_status(
     ))
 }
 
+async fn wait_for_session_status(
+    client: &reqwest::Client,
+    bff_base: &str,
+    fixture: &BffTestFixture,
+    session_id: &str,
+    expected_status: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    let url = format!("{}/flow/sessions/{}", bff_base, session_id);
+
+    while std::time::Instant::now() < deadline {
+        let response =
+            send_json_with_bff(client, Method::GET, &url, None, None, Some(fixture)).await?;
+
+        if response.status == 200 {
+            let status = response
+                .body
+                .as_ref()
+                .and_then(|b| b.get("session"))
+                .and_then(|s| s.get("status"))
+                .and_then(Value::as_str);
+
+            if let Some(s) = status
+                && s == expected_status
+            {
+                return Ok(());
+            }
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(anyhow!(
+        "Session {} did not reach status {} within {:?}",
+        session_id,
+        expected_status,
+        timeout
+    ))
+}
+
 async fn wait_for_flow_status(
     client: &reqwest::Client,
     bff_base: &str,
@@ -98,15 +139,8 @@ async fn wait_for_flow_status(
     let url = format!("{}/flow/flows/{}", bff_base, flow_id);
 
     while std::time::Instant::now() < deadline {
-        let response = send_json_with_bff(
-            client,
-            Method::GET,
-            &url,
-            None,
-            None,
-            Some(fixture),
-        )
-        .await?;
+        let response =
+            send_json_with_bff(client, Method::GET, &url, None, None, Some(fixture)).await?;
 
         if response.status == 200 {
             let status = response
@@ -133,6 +167,111 @@ async fn wait_for_flow_status(
     ))
 }
 
+async fn get_flow_steps(
+    client: &reqwest::Client,
+    bff_base: &str,
+    fixture: &BffTestFixture,
+    flow_id: &str,
+) -> Result<Vec<Value>> {
+    let response = send_json_with_bff(
+        client,
+        Method::GET,
+        &format!("{}/flow/flows/{}", bff_base, flow_id),
+        None,
+        None,
+        Some(fixture),
+    )
+    .await?;
+
+    assert_eq!(response.status, 200, "Get flow failed: {}", response.text);
+
+    response
+        .body
+        .as_ref()
+        .and_then(|b| b.get("steps"))
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| anyhow!("steps missing in flow response"))
+}
+
+fn find_step<'a>(steps: &'a [Value], step_type: &str) -> Result<&'a Value> {
+    steps
+        .iter()
+        .find(|step| step.get("stepType").and_then(Value::as_str) == Some(step_type))
+        .ok_or_else(|| anyhow!("step `{step_type}` not found"))
+}
+
+async fn reset_cuss(client: &reqwest::Client, env: &Env) -> Result<()> {
+    let response = send_json(
+        client,
+        Method::POST,
+        &format!("{}/__admin/reset", env.cuss_url),
+        None,
+        Some(json!({})),
+    )
+    .await?;
+
+    if response.status != 200 {
+        return Err(anyhow!(
+            "cuss reset failed ({}): {}",
+            response.status,
+            response.text
+        ));
+    }
+
+    Ok(())
+}
+
+async fn wait_for_cuss_requests(
+    client: &reqwest::Client,
+    env: &Env,
+    expected_endpoints: &[&str],
+    timeout: Duration,
+) -> Result<Vec<Value>> {
+    let deadline = std::time::Instant::now() + timeout;
+
+    while std::time::Instant::now() < deadline {
+        let response = send_json(
+            client,
+            Method::GET,
+            &format!("{}/__admin/requests", env.cuss_url),
+            None,
+            None,
+        )
+        .await?;
+
+        if response.status == 200 {
+            let requests = response
+                .body
+                .unwrap_or_else(|| json!([]))
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+
+            let all_present = expected_endpoints.iter().all(|expected| {
+                requests.iter().any(|item| {
+                    item.get("endpoint")
+                        .and_then(Value::as_str)
+                        .map(|value| value == *expected)
+                        .unwrap_or(false)
+                })
+            });
+
+            if all_present {
+                return Ok(requests);
+            }
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(anyhow!(
+        "CUSS requests {:?} not observed within {:?}",
+        expected_endpoints,
+        timeout
+    ))
+}
+
 #[tokio::test]
 #[file_serial]
 async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
@@ -141,10 +280,15 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     let user_id = format!("usr_flow_sdk_e2e_{}", chrono::Utc::now().timestamp());
     ensure_bff_fixtures(&env.database_url, &user_id).await?;
 
-    let fixture = BffTestFixture::generate(&user_id);
-    let fixture = fixture.store_global();
+    let fixture = BffTestFixture::generate(&user_id).store_global();
+    let (staff_token, _) = get_client_token_and_subject(&client, &env).await?;
 
     let bff_base = format!("{}/bff", env.user_storage_url);
+    let staff_base = format!("{}/staff", env.user_storage_url);
+    let phone_number = "+237690123456";
+
+    reset_sms_sink(&client, &env).await?;
+    reset_cuss(&client, &env).await?;
 
     println!("=== Step 1: Create KYC_FULL session ===");
     let session_response = send_json_with_bff(
@@ -154,15 +298,17 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
         None,
         Some(json!({
             "sessionType": "kyc_full",
-            "context": {
-                "phone_number": "+237690123456"
-            }
+            "context": {}
         })),
         Some(fixture),
     )
     .await?;
 
-    assert_eq!(session_response.status, 201, "Session creation failed: {}", session_response.text);
+    assert_eq!(
+        session_response.status, 201,
+        "Session creation failed: {}",
+        session_response.text
+    );
     let session_id = require_session_id(&session_response.body)?;
     println!("Created session: {}", session_id);
 
@@ -180,94 +326,54 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(phone_flow_response.status, 201, "Phone OTP flow creation failed: {}", phone_flow_response.text);
+    assert_eq!(
+        phone_flow_response.status, 201,
+        "Phone OTP flow creation failed: {}",
+        phone_flow_response.text
+    );
     let phone_flow_id = require_flow_id(&phone_flow_response.body)?;
     println!("Created phone_otp flow: {}", phone_flow_id);
 
-    println!("=== Step 3: Get flow details and find generate step ===");
-    let flow_detail = send_json_with_bff(
+    println!("=== Step 3: Submit phone init step ===");
+    let phone_steps = get_flow_steps(&client, &bff_base, fixture, &phone_flow_id).await?;
+    let init_phone_step_id = require_step_id_from_value(find_step(&phone_steps, "init_phone")?)?;
+
+    let init_phone_response = send_json_with_bff(
         &client,
-        Method::GET,
-        &format!("{}/flow/flows/{}", bff_base, phone_flow_id),
+        Method::POST,
+        &format!("{}/flow/steps/{}", bff_base, init_phone_step_id),
         None,
-        None,
+        Some(json!({
+            "input": {
+                "phone_number": phone_number
+            }
+        })),
         Some(fixture),
     )
     .await?;
+    assert_eq!(
+        init_phone_response.status, 200,
+        "Phone init failed: {}",
+        init_phone_response.text
+    );
 
-    assert_eq!(flow_detail.status, 200, "Get flow failed: {}", flow_detail.text);
-    
-    let steps = flow_detail
-        .body
-        .as_ref()
-        .and_then(|b| b.get("steps"))
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("steps missing in flow response"))?;
+    println!("=== Step 4: Read OTP from sms-sink ===");
+    let otp = wait_for_otp(&client, &env, phone_number, Duration::from_secs(15)).await?;
 
-    let generate_step = steps
-        .iter()
-        .find(|s| s.get("stepType").and_then(Value::as_str) == Some("generate"))
-        .ok_or_else(|| anyhow!("generate step not found"))?;
-
-    let generate_step_id = generate_step
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("step id missing"))?
-        .to_owned();
-
-    println!("Found generate step: {}", generate_step_id);
-
-    println!("=== Step 4: Wait for generate step to complete (SYSTEM actor) ===");
-    wait_for_step_status(&client, &bff_base, fixture, &generate_step_id, "COMPLETED", Duration::from_secs(10)).await?;
-    println!("Generate step completed");
-
-    println!("=== Step 5: Get flow again to find verify step ===");
-    let flow_detail_after = send_json_with_bff(
+    println!("=== Step 5: Get verify step ===");
+    let phone_steps_after = get_flow_steps(&client, &bff_base, fixture, &phone_flow_id).await?;
+    let verify_step_id = require_step_id_from_value(find_step(&phone_steps_after, "verify_otp")?)?;
+    wait_for_step_status(
         &client,
-        Method::GET,
-        &format!("{}/flow/flows/{}", bff_base, phone_flow_id),
-        None,
-        None,
-        Some(fixture),
+        &bff_base,
+        fixture,
+        &verify_step_id,
+        "WAITING",
+        Duration::from_secs(10),
     )
     .await?;
 
-    let steps_after = flow_detail_after
-        .body
-        .as_ref()
-        .and_then(|b| b.get("steps"))
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("steps missing"))?;
-
-    let verify_step = steps_after
-        .iter()
-        .find(|s| s.get("stepType").and_then(Value::as_str) == Some("verify"))
-        .ok_or_else(|| anyhow!("verify step not found"))?;
-
-    let verify_step_id = verify_step
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("verify step id missing"))?
-        .to_owned();
-
-    println!("Found verify step: {}", verify_step_id);
-
-    println!("=== Step 6: Get flow context to retrieve OTP ===");
-    let flow_context = flow_detail_after
-        .body
-        .as_ref()
-        .and_then(|b| b.get("context"))
-        .cloned()
-        .unwrap_or(json!({}));
-
-    let otp = flow_context
-        .get("otp")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("OTP not found in flow context"))?;
-
-    println!("Retrieved OTP from context");
-
-    println!("=== Step 7: Submit OTP verification ===");
+    println!("=== Step 6: Submit OTP verification ===");
     let verify_response = send_json_with_bff(
         &client,
         Method::POST,
@@ -282,12 +388,59 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(verify_response.status, 200, "Verify step failed: {}", verify_response.text);
+    assert_eq!(
+        verify_response.status, 200,
+        "Verify step failed: {}",
+        verify_response.text
+    );
     println!("OTP verification submitted");
 
-    println!("=== Step 8: Wait for phone_otp flow to complete ===");
-    wait_for_flow_status(&client, &bff_base, fixture, &phone_flow_id, "COMPLETED", Duration::from_secs(10)).await?;
+    println!("=== Step 7: Wait for phone_otp flow to complete ===");
+    wait_for_flow_status(
+        &client,
+        &bff_base,
+        fixture,
+        &phone_flow_id,
+        "COMPLETED",
+        Duration::from_secs(10),
+    )
+    .await?;
     println!("Phone OTP flow completed");
+
+    println!("=== Step 8: Verify user metadata after phone flow ===");
+    let phone_user_response = send_json_with_bff(
+        &client,
+        Method::GET,
+        &format!("{}/flow/users/{}", bff_base, user_id),
+        None,
+        None,
+        Some(fixture),
+    )
+    .await?;
+
+    assert_eq!(
+        phone_user_response.status, 200,
+        "Get user failed: {}",
+        phone_user_response.text
+    );
+    let phone_metadata = phone_user_response
+        .body
+        .as_ref()
+        .and_then(|b| b.get("metadata"))
+        .cloned()
+        .unwrap_or(json!({}));
+    assert_eq!(
+        phone_metadata.pointer("/phone/number"),
+        Some(&json!(phone_number))
+    );
+    assert_eq!(
+        phone_metadata.pointer("/phone/verified"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        phone_metadata.pointer("/kyc/phoneOtpVerified"),
+        Some(&json!(true))
+    );
 
     println!("=== Step 9: Add FIRST_DEPOSIT flow to same session ===");
     let deposit_flow_response = send_json_with_bff(
@@ -296,21 +449,128 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
         &format!("{}/flow/sessions/{}/flows", bff_base, session_id),
         None,
         Some(json!({
-            "flowType": "first_deposit",
-            "context": {
-                "amount": "5000",
+            "flowType": "first_deposit"
+        })),
+        Some(fixture),
+    )
+    .await?;
+
+    assert_eq!(
+        deposit_flow_response.status, 201,
+        "First deposit flow creation failed: {}",
+        deposit_flow_response.text
+    );
+    let deposit_flow_id = require_flow_id(&deposit_flow_response.body)?;
+    println!("Created first_deposit flow: {}", deposit_flow_id);
+
+    println!("=== Step 10: Submit first deposit init step ===");
+    let deposit_steps = get_flow_steps(&client, &bff_base, fixture, &deposit_flow_id).await?;
+    let init_deposit_step_id =
+        require_step_id_from_value(find_step(&deposit_steps, "init_first_deposit")?)?;
+
+    let init_deposit_response = send_json_with_bff(
+        &client,
+        Method::POST,
+        &format!("{}/flow/steps/{}", bff_base, init_deposit_step_id),
+        None,
+        Some(json!({
+            "input": {
+                "amount": 5000,
                 "currency": "XAF"
             }
         })),
         Some(fixture),
     )
     .await?;
+    assert_eq!(
+        init_deposit_response.status, 200,
+        "First deposit init failed: {}",
+        init_deposit_response.text
+    );
 
-    assert_eq!(deposit_flow_response.status, 201, "First deposit flow creation failed: {}", deposit_flow_response.text);
-    let deposit_flow_id = require_flow_id(&deposit_flow_response.body)?;
-    println!("Created first_deposit flow: {}", deposit_flow_id);
+    println!("=== Step 11: Approve waiting admin step via /staff/flow ===");
+    let admin_steps_response = send_json(
+        &client,
+        Method::GET,
+        &format!(
+            "{}/flow/steps?status=WAITING&userId={}&flowType=first_deposit",
+            staff_base, user_id
+        ),
+        Some(&staff_token),
+        None,
+    )
+    .await?;
+    assert_eq!(
+        admin_steps_response.status, 200,
+        "List admin steps failed: {}",
+        admin_steps_response.text
+    );
 
-    println!("=== Step 10: Get user metadata ===");
+    let admin_steps = admin_steps_response
+        .body
+        .as_ref()
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| anyhow!("admin steps array missing"))?;
+    let admin_step_id =
+        require_step_id_from_value(find_step(&admin_steps, "await_admin_decision")?)?;
+
+    let approve_response = send_json(
+        &client,
+        Method::POST,
+        &format!("{}/flow/steps/{}", staff_base, admin_step_id),
+        Some(&staff_token),
+        Some(json!({
+            "input": {
+                "decision": "APPROVED"
+            }
+        })),
+    )
+    .await?;
+    assert_eq!(
+        approve_response.status, 200,
+        "Approve admin step failed: {}",
+        approve_response.text
+    );
+
+    println!("=== Step 12: Wait for first_deposit flow to complete ===");
+    wait_for_flow_status(
+        &client,
+        &bff_base,
+        fixture,
+        &deposit_flow_id,
+        "COMPLETED",
+        Duration::from_secs(15),
+    )
+    .await?;
+
+    println!("=== Step 13: Verify CUSS webhook calls ===");
+    let cuss_requests = wait_for_cuss_requests(
+        &client,
+        &env,
+        &["register", "approve"],
+        Duration::from_secs(15),
+    )
+    .await?;
+    let register_request = cuss_requests
+        .iter()
+        .find(|item| item.get("endpoint").and_then(Value::as_str) == Some("register"))
+        .ok_or_else(|| anyhow!("register request missing"))?;
+    let approve_request = cuss_requests
+        .iter()
+        .find(|item| item.get("endpoint").and_then(Value::as_str) == Some("approve"))
+        .ok_or_else(|| anyhow!("approve request missing"))?;
+
+    assert_eq!(
+        register_request.pointer("/payload/externalId"),
+        Some(&json!(session_id))
+    );
+    assert_eq!(
+        approve_request.pointer("/payload/depositAmount"),
+        Some(&json!(5000))
+    );
+
+    println!("=== Step 14: Get user metadata ===");
     let user_response = send_json_with_bff(
         &client,
         Method::GET,
@@ -321,8 +581,12 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(user_response.status, 200, "Get user failed: {}", user_response.text);
-    
+    assert_eq!(
+        user_response.status, 200,
+        "Get user failed: {}",
+        user_response.text
+    );
+
     let metadata = user_response
         .body
         .as_ref()
@@ -330,9 +594,22 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
         .cloned()
         .unwrap_or(json!({}));
 
-    println!("User metadata: {}", serde_json::to_string_pretty(&metadata)?);
+    println!(
+        "User metadata: {}",
+        serde_json::to_string_pretty(&metadata)?
+    );
+    assert_eq!(metadata.pointer("/fineractId"), Some(&json!(1)));
+    assert_eq!(metadata.pointer("/savingsAccountId"), Some(&json!(2)));
+    assert_eq!(
+        metadata.pointer("/firstDeposit/status"),
+        Some(&json!("APPROVED"))
+    );
+    assert_eq!(
+        metadata.pointer("/firstDeposit/transactionId"),
+        Some(&json!(20))
+    );
 
-    println!("=== Step 11: Get KYC level ===");
+    println!("=== Step 15: Get KYC level ===");
     let kyc_level_response = send_json_with_bff(
         &client,
         Method::GET,
@@ -343,8 +620,12 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(kyc_level_response.status, 200, "Get KYC level failed: {}", kyc_level_response.text);
-    
+    assert_eq!(
+        kyc_level_response.status, 200,
+        "Get KYC level failed: {}",
+        kyc_level_response.text
+    );
+
     let levels = kyc_level_response
         .body
         .as_ref()
@@ -353,9 +634,213 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
         .cloned()
         .unwrap_or_default();
 
+    assert!(levels.iter().any(|value| value == "PHONE_OTP_VERIFIED"));
+    assert!(levels.iter().any(|value| value == "FIRST_DEPOSIT_VERIFIED"));
+
     println!("KYC levels: {:?}", levels);
 
     println!("=== E2E Flow SDK test completed successfully ===");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[file_serial]
+async fn flow_sdk_first_deposit_reject_closes_session() -> Result<()> {
+    let (env, client) = test_context()?;
+
+    let user_id = format!("usr_flow_sdk_reject_{}", chrono::Utc::now().timestamp());
+    ensure_bff_fixtures(&env.database_url, &user_id).await?;
+
+    let fixture = BffTestFixture::generate(&user_id).store_global();
+    let (staff_token, _) = get_client_token_and_subject(&client, &env).await?;
+
+    let bff_base = format!("{}/bff", env.user_storage_url);
+    let staff_base = format!("{}/staff", env.user_storage_url);
+
+    reset_cuss(&client, &env).await?;
+
+    let session_response = send_json_with_bff(
+        &client,
+        Method::POST,
+        &format!("{}/flow/sessions", bff_base),
+        None,
+        Some(json!({
+            "sessionType": "kyc_full"
+        })),
+        Some(fixture),
+    )
+    .await?;
+    assert_eq!(session_response.status, 201, "{}", session_response.text);
+    let session_id = require_session_id(&session_response.body)?;
+
+    let flow_response = send_json_with_bff(
+        &client,
+        Method::POST,
+        &format!("{}/flow/sessions/{}/flows", bff_base, session_id),
+        None,
+        Some(json!({
+            "flowType": "first_deposit"
+        })),
+        Some(fixture),
+    )
+    .await?;
+    assert_eq!(flow_response.status, 201, "{}", flow_response.text);
+    let flow_id = require_flow_id(&flow_response.body)?;
+
+    let flow_steps = get_flow_steps(&client, &bff_base, fixture, &flow_id).await?;
+    let init_step_id = require_step_id_from_value(find_step(&flow_steps, "init_first_deposit")?)?;
+
+    let init_response = send_json_with_bff(
+        &client,
+        Method::POST,
+        &format!("{}/flow/steps/{}", bff_base, init_step_id),
+        None,
+        Some(json!({
+            "input": {
+                "amount": 7000,
+                "currency": "XAF"
+            }
+        })),
+        Some(fixture),
+    )
+    .await?;
+    assert_eq!(init_response.status, 200, "{}", init_response.text);
+
+    let admin_steps_response = send_json(
+        &client,
+        Method::GET,
+        &format!(
+            "{}/flow/steps?status=WAITING&userId={}&flowType=first_deposit",
+            staff_base, user_id
+        ),
+        Some(&staff_token),
+        None,
+    )
+    .await?;
+    assert_eq!(
+        admin_steps_response.status, 200,
+        "{}",
+        admin_steps_response.text
+    );
+    let admin_steps = admin_steps_response
+        .body
+        .as_ref()
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| anyhow!("admin steps array missing"))?;
+    let admin_step_id =
+        require_step_id_from_value(find_step(&admin_steps, "await_admin_decision")?)?;
+
+    let reject_response = send_json(
+        &client,
+        Method::POST,
+        &format!("{}/flow/steps/{}", staff_base, admin_step_id),
+        Some(&staff_token),
+        Some(json!({
+            "input": {
+                "decision": "REJECTED"
+            }
+        })),
+    )
+    .await?;
+    assert_eq!(reject_response.status, 200, "{}", reject_response.text);
+
+    wait_for_flow_status(
+        &client,
+        &bff_base,
+        fixture,
+        &flow_id,
+        "CLOSED",
+        Duration::from_secs(10),
+    )
+    .await?;
+    wait_for_session_status(
+        &client,
+        &bff_base,
+        fixture,
+        &session_id,
+        "CLOSED",
+        Duration::from_secs(10),
+    )
+    .await?;
+
+    let repeat_reject_response = send_json(
+        &client,
+        Method::POST,
+        &format!("{}/flow/steps/{}", staff_base, admin_step_id),
+        Some(&staff_token),
+        Some(json!({
+            "input": {
+                "decision": "REJECTED"
+            }
+        })),
+    )
+    .await?;
+    assert_eq!(
+        repeat_reject_response.status, 409,
+        "{}",
+        repeat_reject_response.text
+    );
+
+    let session_detail = send_json_with_bff(
+        &client,
+        Method::GET,
+        &format!("{}/flow/sessions/{}", bff_base, session_id),
+        None,
+        None,
+        Some(fixture),
+    )
+    .await?;
+    assert_eq!(session_detail.status, 200, "{}", session_detail.text);
+    assert_eq!(
+        session_detail
+            .body
+            .as_ref()
+            .and_then(|body| body.pointer("/session/context/close_reason")),
+        Some(&json!("REJECTED_BY_ADMIN"))
+    );
+
+    let user_response = send_json_with_bff(
+        &client,
+        Method::GET,
+        &format!("{}/flow/users/{}", bff_base, user_id),
+        None,
+        None,
+        Some(fixture),
+    )
+    .await?;
+    assert_eq!(user_response.status, 200, "{}", user_response.text);
+    let metadata = user_response
+        .body
+        .as_ref()
+        .and_then(|body| body.get("metadata"))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    assert!(metadata.get("fineractId").is_none());
+    assert!(metadata.get("savingsAccountId").is_none());
+    assert!(metadata.get("firstDeposit").is_none());
+
+    let cuss_requests = send_json(
+        &client,
+        Method::GET,
+        &format!("{}/__admin/requests", env.cuss_url),
+        None,
+        None,
+    )
+    .await?;
+    assert_eq!(cuss_requests.status, 200, "{}", cuss_requests.text);
+    let requests = cuss_requests
+        .body
+        .as_ref()
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        requests.is_empty(),
+        "unexpected CUSS requests: {:?}",
+        requests
+    );
 
     Ok(())
 }
@@ -374,7 +859,7 @@ async fn flow_sdk_session_creation_and_listing() -> Result<()> {
     let bff_base = format!("{}/bff", env.user_storage_url);
 
     println!("=== Create multiple sessions ===");
-    
+
     for i in 0..3 {
         let session_response = send_json_with_bff(
             &client,
@@ -391,7 +876,11 @@ async fn flow_sdk_session_creation_and_listing() -> Result<()> {
         )
         .await?;
 
-        assert_eq!(session_response.status, 201, "Session {} creation failed", i);
+        assert_eq!(
+            session_response.status, 201,
+            "Session {} creation failed",
+            i
+        );
     }
 
     println!("=== List sessions ===");
@@ -405,7 +894,11 @@ async fn flow_sdk_session_creation_and_listing() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(list_response.status, 200, "List sessions failed: {}", list_response.text);
+    assert_eq!(
+        list_response.status, 200,
+        "List sessions failed: {}",
+        list_response.text
+    );
 
     let sessions = list_response
         .body
@@ -413,7 +906,11 @@ async fn flow_sdk_session_creation_and_listing() -> Result<()> {
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow::anyhow!("sessions array missing"))?;
 
-    assert!(sessions.len() >= 3, "Expected at least 3 sessions, got {}", sessions.len());
+    assert!(
+        sessions.len() >= 3,
+        "Expected at least 3 sessions, got {}",
+        sessions.len()
+    );
 
     println!("Found {} sessions", sessions.len());
 
@@ -478,8 +975,14 @@ async fn flow_sdk_retry_config_validation() -> Result<()> {
 
     assert_eq!(flow_detail.status, 200);
 
-    let flow_def = flow_detail.body.as_ref().ok_or_else(|| anyhow::anyhow!("No body"))?;
-    println!("Flow definition: {}", serde_json::to_string_pretty(flow_def)?);
+    let flow_def = flow_detail
+        .body
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("No body"))?;
+    println!(
+        "Flow definition: {}",
+        serde_json::to_string_pretty(flow_def)?
+    );
 
     Ok(())
 }

@@ -62,6 +62,7 @@ mod tests {
     fn make_ctx(config: HashMap<String, serde_json::Value>) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "error-step".to_string(),
             input: json!({}),
@@ -78,10 +79,7 @@ mod tests {
     async fn error_returns_failed_with_message() {
         let action = ErrorAction;
         let mut config = HashMap::new();
-        config.insert(
-            "message".to_string(),
-            json!("Something went wrong"),
-        );
+        config.insert("message".to_string(), json!("Something went wrong"));
         config.insert("code".to_string(), json!("ERR_001"));
         config.insert("retryable".to_string(), json!(false));
 

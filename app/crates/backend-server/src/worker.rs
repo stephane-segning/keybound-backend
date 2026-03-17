@@ -7,7 +7,7 @@
 //!
 //! The worker uses a distributed lock to ensure only one instance runs at a time.
 
-use crate::flow_executor::FlowExecutor;
+use crate::flows::executor::FlowExecutor;
 use crate::state::AppState;
 use apalis::prelude::TaskSink;
 use apalis_redis::{RedisConfig, RedisStorage};

@@ -332,7 +332,10 @@ impl Step for ValidateDepositAction {
             (Some(amt), Some(curr)) => {
                 let is_valid = amt >= config.min_amount
                     && amt <= config.max_amount
-                    && config.currencies.iter().any(|c| c.eq_ignore_ascii_case(curr));
+                    && config
+                        .currencies
+                        .iter()
+                        .any(|c| c.eq_ignore_ascii_case(curr));
 
                 tracing::info!(
                     "[VALIDATE_DEPOSIT] amount={}, currency={}, valid={}",
@@ -381,6 +384,7 @@ mod tests {
     fn make_ctx(config: HashMap<String, serde_json::Value>) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "kyc-step".to_string(),
             input: json!({}),
@@ -399,6 +403,7 @@ mod tests {
     ) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "kyc-step".to_string(),
             input,

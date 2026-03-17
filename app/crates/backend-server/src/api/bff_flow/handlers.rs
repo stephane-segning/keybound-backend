@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
+use axum::http::StatusCode;
 use backend_core::Error;
 use tracing::instrument;
 
@@ -14,7 +15,7 @@ use super::service;
 
 #[utoipa::path(
     get,
-    path = "/users/{userId}",
+    path = "/flow/users/{userId}",
     tag = "users",
     params(("userId" = String, Path)),
     responses((status = 200, body = UserResponse))
@@ -32,7 +33,7 @@ pub async fn get_user(
 
 #[utoipa::path(
     get,
-    path = "/users/{userId}/kyc-level",
+    path = "/flow/users/{userId}/kyc-level",
     tag = "users",
     params(("userId" = String, Path)),
     responses((status = 200, body = KycLevelResponse))
@@ -50,7 +51,7 @@ pub async fn get_kyc_level(
 
 #[utoipa::path(
     get,
-    path = "/sessions",
+    path = "/flow/sessions",
     tag = "sessions",
     responses((status = 200, body = [SessionResponse]))
 )]
@@ -66,25 +67,25 @@ pub async fn list_sessions(
 
 #[utoipa::path(
     post,
-    path = "/sessions",
+    path = "/flow/sessions",
     tag = "sessions",
     request_body = CreateSessionRequest,
-    responses((status = 200, body = SessionResponse))
+    responses((status = 201, body = SessionResponse))
 )]
 #[instrument(skip(api, headers))]
 pub async fn create_session(
     State(api): State<BackendApi>,
     headers: HeaderMap,
     Json(body): Json<CreateSessionRequest>,
-) -> Result<Json<SessionResponse>, Error> {
+) -> Result<(StatusCode, Json<SessionResponse>), Error> {
     let user_id = service::require_user_id(&api, &headers).await?;
     let session = service::create_session(&api, user_id, body).await?;
-    Ok(Json(session))
+    Ok((StatusCode::CREATED, Json(session)))
 }
 
 #[utoipa::path(
     get,
-    path = "/sessions/{sessionId}",
+    path = "/flow/sessions/{sessionId}",
     tag = "sessions",
     params(("sessionId" = String, Path)),
     responses((status = 200, body = SessionDetailResponse))
@@ -102,7 +103,7 @@ pub async fn get_session(
 
 #[utoipa::path(
     get,
-    path = "/sessions/{sessionId}/flows",
+    path = "/flow/sessions/{sessionId}/flows",
     tag = "sessions",
     params(("sessionId" = String, Path)),
     responses((status = 200, body = [FlowResponse]))
@@ -120,11 +121,11 @@ pub async fn list_session_flows(
 
 #[utoipa::path(
     post,
-    path = "/sessions/{sessionId}/flows",
+    path = "/flow/sessions/{sessionId}/flows",
     tag = "sessions",
     params(("sessionId" = String, Path)),
     request_body = AddFlowRequest,
-    responses((status = 200, body = FlowResponse))
+    responses((status = 201, body = FlowResponse))
 )]
 #[instrument(skip(api, headers))]
 pub async fn add_flow_to_session(
@@ -132,15 +133,15 @@ pub async fn add_flow_to_session(
     Path(session_id): Path<String>,
     headers: HeaderMap,
     Json(body): Json<AddFlowRequest>,
-) -> Result<Json<FlowResponse>, Error> {
+) -> Result<(StatusCode, Json<FlowResponse>), Error> {
     let user_id = service::require_user_id(&api, &headers).await?;
     let flow = service::add_flow_to_session(&api, session_id, user_id, body).await?;
-    Ok(Json(flow))
+    Ok((StatusCode::CREATED, Json(flow)))
 }
 
 #[utoipa::path(
     get,
-    path = "/flows/{flowId}",
+    path = "/flow/flows/{flowId}",
     tag = "flows",
     params(("flowId" = String, Path)),
     responses((status = 200, body = FlowDetailResponse))
@@ -158,7 +159,7 @@ pub async fn get_flow(
 
 #[utoipa::path(
     get,
-    path = "/flows/{flowId}/steps",
+    path = "/flow/flows/{flowId}/steps",
     tag = "flows",
     params(("flowId" = String, Path)),
     responses((status = 200, body = [StepResponse]))
@@ -176,7 +177,7 @@ pub async fn list_flow_steps(
 
 #[utoipa::path(
     get,
-    path = "/steps/{stepId}",
+    path = "/flow/steps/{stepId}",
     tag = "steps",
     params(("stepId" = String, Path)),
     responses((status = 200, body = StepResponse))
@@ -194,7 +195,7 @@ pub async fn get_step(
 
 #[utoipa::path(
     post,
-    path = "/steps/{stepId}",
+    path = "/flow/steps/{stepId}",
     tag = "steps",
     params(("stepId" = String, Path)),
     request_body = SubmitStepRequest,

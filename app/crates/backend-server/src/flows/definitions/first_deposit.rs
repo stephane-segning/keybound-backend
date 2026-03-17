@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 pub fn steps() -> Vec<StepRef> {
     vec![
-        Arc::new(super::builtin_steps::CheckUserExistsStep),
-        Arc::new(super::builtin_steps::ValidateDepositStep),
+        Arc::new(super::shared_steps::CheckUserExistsStep),
+        Arc::new(super::shared_steps::ValidateDepositStep),
         Arc::new(AwaitPaymentConfirmationStep),
         Arc::new(ApproveAndDepositStep),
     ]

@@ -183,7 +183,8 @@ test-e2e-full:
 	  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:15432/user-storage \
 	  KEYCLOAK_CLIENT_ID=test-client \
 	  KEYCLOAK_CLIENT_SECRET=some-secret \
-	  cargo test -p backend-e2e --features e2e-tests --test full -- --nocapture'
+	  cargo test -p backend-e2e --features e2e-tests --test flow_sdk -- --nocapture; \
+	  cargo test -p backend-e2e --features e2e-tests --test cucumber_full -- --nocapture'
 
 e2e-smoke:
 	just test-e2e-smoke

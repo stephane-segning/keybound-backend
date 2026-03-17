@@ -35,11 +35,6 @@ path = "tests/smoke.rs"
 required-features = ["e2e-tests"]
 
 [[test]]
-name = "full"
-path = "tests/full.rs"
-required-features = ["e2e-tests"]
-
-[[test]]
 name = "cucumber_smoke"
 path = "tests/cucumber_smoke.rs"
 harness = false
@@ -49,4 +44,9 @@ required-features = ["e2e-tests"]
 name = "cucumber_full"
 path = "tests/cucumber_full.rs"
 harness = false
+required-features = ["e2e-tests"]
+
+[[test]]
+name = "flow_sdk"
+path = "tests/flow_sdk.rs"
 required-features = ["e2e-tests"]

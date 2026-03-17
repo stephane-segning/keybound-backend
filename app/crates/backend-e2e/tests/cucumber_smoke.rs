@@ -2,7 +2,7 @@ mod world;
 
 pub use world::*;
 
-use cucumber::{given, then, when, World as _};
+use cucumber::{World as _, given, then, when};
 
 #[given("the e2e test environment is initialized")]
 async fn init_environment(world: &mut E2eWorld) {
@@ -84,13 +84,19 @@ async fn sms_reset_successful(world: &mut E2eWorld) {
     let response = match world.last_response.as_ref() {
         Some(r) => r,
         None => {
-            assert!(world.error.is_none(), "expected no error, got: {:?}", world.error);
+            assert!(
+                world.error.is_none(),
+                "expected no error, got: {:?}",
+                world.error
+            );
             return;
         }
     };
     assert_eq!(response.status, 200, "SMS reset failed: {}", response.text);
     assert_eq!(
-        response.body.as_ref()
+        response
+            .body
+            .as_ref()
             .and_then(|body| body.get("reset"))
             .and_then(serde_json::Value::as_bool),
         Some(true),

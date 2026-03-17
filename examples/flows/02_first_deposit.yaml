@@ -1,124 +1,104 @@
-apiVersion: flow.adorsys.kyc/v1
-kind: Flow
-metadata:
-  name: FIRST_DEPOSIT
-spec:
-  humanIdPrefix: first_deposit
-  overrideExisting: true
-  steps:
-    - id: initiate_deposit
-      actor: END_USER
-      config:
-        type: form_input
-        title: "Initiate First Deposit"
-        fields:
-          - name: phone_number
-            label: "Phone Number"
-            type: text
-            required: true
-          - name: amount
-            label: "Amount"
-            type: number
-            required: true
-          - name: currency
-            label: "Currency"
-            type: select
-            options: ["USD", "EUR"]
-            required: true
-          - name: provider
-            label: "Provider"
-            type: text
-            required: true
-      onSuccess: check_user_exists
-      onFailure: failed
+flow_type: first_deposit
+human_id_prefix: first_deposit
+initial_step: init_first_deposit
 
-    - id: check_user_exists
-      actor: SYSTEM
-      config:
-        type: check_user_exists
-        timeout_ms: 2000
-      onSuccess: validate_amount
-      onFailure: failed
+steps:
+  init_first_deposit:
+    action: WAIT
+    actor: END_USER
+    config:
+      actor: USER
+    next: get_user
 
-    - id: validate_amount
-      actor: SYSTEM
-      config:
-        type: validate_deposit
-        timeout_ms: 2000
-        rules:
-          max_amount: 20000
-          allowed_currencies: ["XAF"]
-      onSuccess: await_approval
-      onFailure: invalid_amount
+  get_user:
+    action: GET_USER
+    actor: SYSTEM
+    config:
+      save_to: session
+    next: await_admin_decision
 
-    - id: invalid_amount
-      actor: SYSTEM
-      config: {}
-      onSuccess: failed
+  await_admin_decision:
+    action: WAIT
+    actor: ADMIN
+    config:
+      actor: ADMIN
+    next: decide_admin
 
-    - id: await_approval
-      actor: STAFF
-      config:
-        type: manual_approval
-        timeout_hours: 24
-        required_fields:
-          - admin_decision
-        form_schema:
-          - name: admin_decision
-            label: "Decision"
-            type: select
-            options: ["APPROVED", "REJECTED"]
-          - name: notes
-            label: "Notes"
-            type: textarea
-      onSuccess: process_deposit
-      onFailure: timeout
+  decide_admin:
+    action: CONDITIONAL
+    actor: SYSTEM
+    config:
+      source: flow
+      pointer: /step_output/await_admin_decision/decision
+      cases:
+        APPROVED: approved
+        REJECTED: rejected
+      default_branch: rejected
+    branches:
+      approved: cuss_register_customer
+      rejected: close_session
+    fail: FAILED
 
-    - id: process_deposit
-      actor: SYSTEM
-      config:
-        type: webhook_http
-        url: "${DEPOSIT_PROCESSOR_URL}"
-        method: "POST"
-        timeout_ms: 10000
-        headers:
-          X-API-Key: "${DEPOSIT_PROCESSOR_API_KEY}"
-        retry_policy:
-          max_attempts: 3
-          backoff_ms: 5000
-      onSuccess: update_metadata
-      onFailure: retry_process
+  cuss_register_customer:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${CUSS_URL:-http://cuss:8080}/api/registration/register
+      method: POST
+      payload:
+        fullName: "{{session.full_name}}"
+        phone: "{{session.phone_number}}"
+        externalId: "{{session_id}}"
+      success_condition:
+        status_codes: [201]
+      extraction_rules:
+        - json_pointer: /fineractClientId
+          target_path: /fineractClientId
+          target_context: step_output
+        - json_pointer: /savingsAccountId
+          target_path: /savingsAccountId
+          target_context: step_output
+    next: cuss_approve_and_deposit
+    fail: FAILED
 
-    - id: retry_process
-      actor: SYSTEM
-      config:
-        type: delay
-        delay_ms: 10000
-      onSuccess: process_deposit
-      onFailure: failed
+  cuss_approve_and_deposit:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${CUSS_URL:-http://cuss:8080}/api/registration/approve-and-deposit
+      method: POST
+      payload:
+        savingsAccountId: "{{flow.context.step_output.cuss_register_customer.savingsAccountId}}"
+        depositAmount: "{{flow.context.step_output.init_first_deposit.amount}}"
+      success_condition:
+        status_codes: [200]
+      extraction_rules:
+        - json_pointer: /transactionId
+          target_path: /transactionId
+          target_context: step_output
+    next: update_deposit_metadata
+    fail: FAILED
 
-    - id: update_metadata
-      actor: SYSTEM
-      config:
-        type: persist_deposit_result
-      onSuccess: complete
-      onFailure: failed
+  update_deposit_metadata:
+    action: UPDATE_USER_METADATA
+    actor: SYSTEM
+    config:
+      mappings:
+        - target_path: /fineractId
+          source: flow
+          source_path: /step_output/cuss_register_customer/fineractClientId
+        - target_path: /savingsAccountId
+          source: flow
+          source_path: /step_output/cuss_register_customer/savingsAccountId
+    next: COMPLETE
 
-    - id: timeout
-      actor: SYSTEM
-      config: {}
-      onSuccess: failed
+  close_session:
+    action: CLOSE_SESSION
+    actor: SYSTEM
+    config:
+      reason: REJECTED_BY_ADMIN
+    next: CLOSED
 
-    - id: failed
-      actor: SYSTEM
-      config: {}
-      onSuccess: end
-
-    - id: complete
-      actor: SYSTEM
-      config: {}
-      onSuccess: end
-
-    - id: end
-      actor: SYSTEM
-      config: {}
+  COMPLETE:
+    action: NOOP
+    actor: SYSTEM

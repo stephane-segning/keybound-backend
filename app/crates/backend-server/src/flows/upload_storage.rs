@@ -4,15 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[allow(dead_code)]
-pub struct FlowStorageService {
-    storage: Arc<dyn crate::file_storage::MinioStorage>,
+pub struct FlowUploadStorage {
+    storage: Arc<dyn crate::object_storage::ObjectStorage>,
     bucket: String,
     url_expiry: Duration,
 }
 
-impl fmt::Debug for FlowStorageService {
+impl fmt::Debug for FlowUploadStorage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FlowStorageService")
+        f.debug_struct("FlowUploadStorage")
             .field("bucket", &self.bucket)
             .field("url_expiry", &self.url_expiry)
             .finish_non_exhaustive()
@@ -20,8 +20,8 @@ impl fmt::Debug for FlowStorageService {
 }
 
 #[allow(dead_code)]
-impl FlowStorageService {
-    pub fn new(storage: Arc<dyn crate::file_storage::MinioStorage>, bucket: String) -> Self {
+impl FlowUploadStorage {
+    pub fn new(storage: Arc<dyn crate::object_storage::ObjectStorage>, bucket: String) -> Self {
         Self {
             storage,
             bucket,
@@ -36,7 +36,7 @@ impl FlowStorageService {
 }
 
 #[async_trait::async_trait]
-impl StorageService for FlowStorageService {
+impl StorageService for FlowUploadStorage {
     async fn generate_upload_url(
         &self,
         document_type: &str,
@@ -50,7 +50,7 @@ impl StorageService for FlowStorageService {
                 &self.bucket,
                 &key,
                 "image/jpeg",
-                crate::file_storage::EncryptionMode::S3,
+                crate::object_storage::EncryptionMode::S3,
                 self.url_expiry,
             )
             .await

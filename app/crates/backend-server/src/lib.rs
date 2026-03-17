@@ -7,18 +7,16 @@
 
 pub(crate) mod api;
 pub(crate) mod auth_signature;
-pub(crate) mod bff_signature;
-pub(crate) mod file_storage;
-pub(crate) mod flow_executor;
-pub(crate) mod flow_logic;
-pub(crate) mod flow_storage;
-pub mod flow_registry;
+pub(crate) mod bff_auth;
+pub(crate) mod flows;
 pub(crate) mod health;
+pub(crate) mod object_storage;
 pub(crate) mod state;
 pub(crate) mod swagger;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub(crate) mod worker;
+pub use flows::registry as flow_registry;
 
 use axum::Router;
 use axum::body::Body;
@@ -205,10 +203,12 @@ fn build_router(
     // Mount BFF router if base path is provided
     let bff_base = config.bff.base_path.trim();
     if !bff_base.is_empty() && bff_base != "/" {
-        let bff_router =
-            api::bff_flow::router(api.clone()).layer(axum::middleware::from_fn_with_state(
+        let bff_router = Router::new()
+            .nest("/flow", api::bff_flow::router(api.clone()))
+            .merge(api::bff_uploads::router(api.clone()))
+            .layer(axum::middleware::from_fn_with_state(
                 api.state.clone(),
-                bff_signature::require_bff_signature,
+                bff_auth::require_bff_auth,
             ));
         router = router.nest(bff_base, bff_router);
     }
@@ -216,7 +216,7 @@ fn build_router(
     // Mount Staff router if base path is provided
     let staff_base = config.staff.base_path.trim();
     if !staff_base.is_empty() && staff_base != "/" {
-        let staff_router = gen_oas_server_staff::server::new(api.clone());
+        let staff_router = Router::new().nest("/flow", api::staff_flow::router(api.clone()));
         router = router.nest(staff_base, staff_router);
     }
 

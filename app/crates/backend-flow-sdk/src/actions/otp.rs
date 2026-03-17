@@ -253,10 +253,7 @@ impl Step for VerifyOtpAction {
                 let now = Utc::now().timestamp();
 
                 if now > expires {
-                    tracing::warn!(
-                        "[VERIFY_OTP] OTP expired for session={}",
-                        ctx.session_id
-                    );
+                    tracing::warn!("[VERIFY_OTP] OTP expired for session={}", ctx.session_id);
                     return Ok(StepOutcome::Failed {
                         error: "OTP_EXPIRED".to_string(),
                         retryable: false,
@@ -283,7 +280,8 @@ impl Step for VerifyOtpAction {
                         config.max_attempts
                     );
 
-                    return Ok(StepOutcome::Done {
+                    return Ok(StepOutcome::Branched {
+                        branch: "retry".to_owned(),
                         output: Some(json!({
                             "verified": false,
                             "attempts_remaining": config.max_attempts - new_attempts
@@ -302,7 +300,8 @@ impl Step for VerifyOtpAction {
                     ctx.session_id
                 );
 
-                Ok(StepOutcome::Done {
+                Ok(StepOutcome::Branched {
+                    branch: "verified".to_owned(),
                     output: Some(json!({ "verified": true })),
                     updates: Some(Box::new(ContextUpdates {
                         flow_context_patch: Some(json!({
@@ -337,6 +336,7 @@ mod tests {
     fn make_ctx(flow_context: serde_json::Value) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "otp-step".to_string(),
             input: json!({}),
@@ -352,6 +352,7 @@ mod tests {
     ) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "otp-step".to_string(),
             input: json!({}),
@@ -436,7 +437,12 @@ mod tests {
         let result = action.verify_input(&ctx, &input).await.unwrap();
 
         match result {
-            StepOutcome::Done { output, updates } => {
+            StepOutcome::Branched {
+                branch,
+                output,
+                updates,
+            } => {
+                assert_eq!(branch, "verified");
                 let output = output.unwrap();
                 assert_eq!(output["verified"], true);
 
@@ -444,7 +450,7 @@ mod tests {
                 let patch = updates.flow_context_patch.unwrap();
                 assert!(patch["otp"].is_null());
             }
-            _ => panic!("Expected Done outcome with verified=true"),
+            _ => panic!("Expected Branched outcome with verified=true"),
         }
     }
 
@@ -461,7 +467,12 @@ mod tests {
         let result = action.verify_input(&ctx, &input).await.unwrap();
 
         match result {
-            StepOutcome::Done { output, updates } => {
+            StepOutcome::Branched {
+                branch,
+                output,
+                updates,
+            } => {
+                assert_eq!(branch, "retry");
                 let output = output.unwrap();
                 assert_eq!(output["verified"], false);
                 assert_eq!(output["attempts_remaining"], 2);
@@ -470,7 +481,7 @@ mod tests {
                 let patch = updates.flow_context_patch.unwrap();
                 assert_eq!(patch["otp_attempts"], 1);
             }
-            _ => panic!("Expected Done outcome with verified=false"),
+            _ => panic!("Expected Branched outcome with verified=false"),
         }
     }
 

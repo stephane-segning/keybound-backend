@@ -4,10 +4,11 @@ use super::models::{
     UserResponse,
 };
 use crate::api::BackendApi;
-use crate::flow_registry::{actor_label, waiting_status};
+use crate::flows::registry::{actor_label, waiting_status};
+use crate::flows::runtime::{merge_json_value, merged_json, resolve_transition, step_services};
 use axum::http::HeaderMap;
 use backend_core::Error;
-use backend_flow_sdk::{Actor, Flow, FlowError, HumanReadableId, StepContext, StepOutcome, StepServices};
+use backend_flow_sdk::{Actor, Flow, FlowError, HumanReadableId, StepContext, StepOutcome};
 use backend_model::db::{FlowInstanceRow, FlowSessionRow};
 use backend_repository::{
     FlowInstanceCreateInput, FlowSessionCreateInput, FlowSessionFilter, FlowStepCreateInput,
@@ -20,6 +21,7 @@ use tracing::{debug, info, instrument};
 const FLOW_STATUS_RUNNING: &str = "RUNNING";
 const FLOW_STATUS_COMPLETED: &str = "COMPLETED";
 const FLOW_STATUS_FAILED: &str = "FAILED";
+const FLOW_STATUS_CLOSED: &str = "CLOSED";
 
 pub async fn require_user_id(api: &BackendApi, headers: &HeaderMap) -> Result<String, Error> {
     let claims = api.require_bff_claims(headers)?;
@@ -71,10 +73,10 @@ pub async fn create_session(
         .create_session(FlowSessionCreateInput {
             id: session_id,
             human_id,
-            user_id: Some(user_id),
+            user_id: Some(user_id.clone()),
             session_type: body.session_type,
             status: "OPEN".to_owned(),
-            context: object_context(body.context),
+            context: session_context_with_user_id(body.context, &user_id),
         })
         .await?;
 
@@ -299,12 +301,13 @@ pub async fn submit_step(
 
     let verify_context = StepContext {
         session_id: session.id.clone(),
+        session_user_id: session.user_id.clone(),
         flow_id: flow.id.clone(),
         step_id: step.id.clone(),
         input: body.input.clone(),
         session_context: session.context.clone(),
         flow_context: flow.context.clone(),
-        services: StepServices::default(),
+        services: step_services(api.state.user.clone()),
     };
 
     let verify_outcome = step_definition
@@ -312,33 +315,37 @@ pub async fn submit_step(
         .await
         .map_err(flow_error_to_http)?;
 
-    let (output_value, context_updates) = match verify_outcome {
-        StepOutcome::Done { output, updates } => {
-            (output.unwrap_or_else(|| json!({"verified": true})), updates)
-        }
+    let (output_value, context_updates, branch) = match verify_outcome {
+        StepOutcome::Done { output, updates } => (
+            output.unwrap_or_else(|| json!({"verified": true})),
+            updates,
+            None,
+        ),
+        StepOutcome::Branched {
+            branch,
+            output,
+            updates,
+        } => (
+            output.unwrap_or_else(|| json!({"verified": true})),
+            updates,
+            Some(branch),
+        ),
         StepOutcome::Failed {
             error,
             retryable: _,
         } => {
             return Err(Error::bad_request("VERIFICATION_FAILED", error));
         }
-        _ => (json!({"verified": true}), None),
+        _ => (json!({"verified": true}), None, None),
     };
 
     let mut updated_flow_context = flow.context.clone();
-    if let Some(updates) = context_updates
-        && let Some(patch) = updates.flow_context_patch
-            && let (Some(base_obj), Some(patch_obj)) =
-                (updated_flow_context.as_object_mut(), patch.as_object())
-            {
-                for (k, v) in patch_obj {
-                    if v.is_null() {
-                        base_obj.remove(k);
-                    } else {
-                        base_obj.insert(k.clone(), v.clone());
-                    }
-                }
-            }
+    if let Some(updates) = context_updates {
+        if let Some(patch) = updates.flow_context_patch.as_ref() {
+            updated_flow_context = merged_json(updated_flow_context, patch);
+        }
+        apply_context_updates(api, &session, updates).await?;
+    }
 
     let updated_step = api
         .state
@@ -361,12 +368,16 @@ pub async fn submit_step(
         .update_flow(&flow.id, None, None, None, Some(context))
         .await?;
 
-    if let Some(next_step) = next_transition(flow_definition, &updated_step.step_type) {
-        if has_flow_step(flow_definition, next_step) {
-            current_flow =
-                create_step_chain(api, &session, current_flow, next_step.to_owned(), None).await?;
+    if let Some(next_step) = resolve_transition(
+        flow_definition,
+        &updated_step.step_type,
+        branch.as_deref(),
+        false,
+    ) {
+        if has_flow_step(flow_definition, &next_step) {
+            current_flow = create_step_chain(api, &session, current_flow, next_step, None).await?;
         } else {
-            current_flow = finalize_flow(api, &current_flow, terminal_status(next_step)).await?;
+            current_flow = finalize_flow(api, &current_flow, terminal_status(&next_step)).await?;
         }
     } else {
         current_flow = finalize_flow(api, &current_flow, FLOW_STATUS_COMPLETED).await?;
@@ -377,7 +388,10 @@ pub async fn submit_step(
     Ok(updated_step.into())
 }
 
-fn get_flow_definition<'a>(api: &'a BackendApi, flow_type: &str) -> Result<&'a dyn Flow, Error> {
+pub(crate) fn get_flow_definition<'a>(
+    api: &'a BackendApi,
+    flow_type: &str,
+) -> Result<&'a dyn Flow, Error> {
     api.state.flow_registry.get_flow(flow_type).ok_or_else(|| {
         Error::bad_request(
             "UNKNOWN_FLOW_TYPE",
@@ -386,7 +400,7 @@ fn get_flow_definition<'a>(api: &'a BackendApi, flow_type: &str) -> Result<&'a d
     })
 }
 
-fn get_step_definition<'a>(
+pub(crate) fn get_step_definition<'a>(
     flow: &'a dyn Flow,
     step_type: &str,
 ) -> Result<&'a dyn backend_flow_sdk::Step, Error> {
@@ -405,7 +419,7 @@ fn get_step_definition<'a>(
         })
 }
 
-fn ensure_flow_step_exists(flow: &dyn Flow, step_type: &str) -> Result<(), Error> {
+pub(crate) fn ensure_flow_step_exists(flow: &dyn Flow, step_type: &str) -> Result<(), Error> {
     if has_flow_step(flow, step_type) {
         return Ok(());
     }
@@ -419,21 +433,17 @@ fn ensure_flow_step_exists(flow: &dyn Flow, step_type: &str) -> Result<(), Error
     ))
 }
 
-fn has_flow_step(flow: &dyn Flow, step_type: &str) -> bool {
+pub(crate) fn has_flow_step(flow: &dyn Flow, step_type: &str) -> bool {
     flow.steps()
         .iter()
         .any(|step| step.step_type() == step_type)
 }
 
-fn next_transition<'a>(flow: &'a dyn Flow, step_type: &str) -> Option<&'a str> {
-    flow.transitions()
-        .get(step_type)
-        .map(|transition| transition.on_success.as_str())
-}
-
-fn terminal_status(step_type: &str) -> &'static str {
+pub(crate) fn terminal_status(step_type: &str) -> &'static str {
     if step_type.eq_ignore_ascii_case("FAILED") {
         FLOW_STATUS_FAILED
+    } else if step_type.eq_ignore_ascii_case("CLOSED") {
+        FLOW_STATUS_CLOSED
     } else {
         FLOW_STATUS_COMPLETED
     }
@@ -467,7 +477,7 @@ fn validate_session_flow_compatibility(
 }
 
 #[instrument(skip(api, session, flow))]
-async fn create_step_chain(
+pub(crate) async fn create_step_chain(
     api: &BackendApi,
     session: &FlowSessionRow,
     mut flow: FlowInstanceRow,
@@ -544,12 +554,13 @@ async fn create_step_chain(
         let input_value = pending_input.clone().unwrap_or_else(|| json!({}));
         let context = StepContext {
             session_id: flow.session_id.clone(),
+            session_user_id: session.user_id.clone(),
             flow_id: flow.id.clone(),
             step_id,
             input: input_value.clone(),
             session_context: session.context.clone(),
             flow_context: flow.context.clone(),
-            services: StepServices::default(),
+            services: step_services(api.state.user.clone()),
         };
 
         match step_definition
@@ -558,88 +569,58 @@ async fn create_step_chain(
             .map_err(flow_error_to_http)?
         {
             StepOutcome::Done { output, updates } => {
-                debug!("Step completed: {}", step_type);
                 let actual_output = output.unwrap_or_else(|| json!({"result": "done"}));
-
-                api.state
-                    .flow
-                    .patch_step(
-                        &created_step.id,
-                        FlowStepPatch::new()
-                            .status(FLOW_STATUS_COMPLETED)
-                            .input(input_value.clone())
-                            .output(actual_output.clone())
-                            .clear_error()
-                            .finished_at(Utc::now()),
-                    )
-                    .await?;
-
-                let mut context =
-                    store_step_output(flow.context.clone(), &step_type, &actual_output);
-
-                if let Some(updates) = updates {
-                    if let Some(flow_patch) = updates.flow_context_patch {
-                        context = merge_json(context, flow_patch);
+                flow = handle_completed_step(
+                    api,
+                    session,
+                    flow,
+                    &created_step,
+                    &step_type,
+                    input_value.clone(),
+                    actual_output,
+                    updates,
+                    None,
+                )
+                .await?;
+                let next = resolve_transition(flow_definition, &step_type, None, false);
+                if let Some(next_step) = next {
+                    if !has_flow_step(flow_definition, &next_step) {
+                        return finalize_flow(api, &flow, terminal_status(&next_step)).await;
                     }
-                    if let Some(session_patch) = updates.session_context_patch {
-                        let current_session = api
-                            .state
-                            .flow
-                            .get_session(&flow.session_id)
-                            .await?
-                            .ok_or_else(|| {
-                            Error::internal("SESSION_NOT_FOUND", "Session not found")
-                        })?;
-                        let new_session_context =
-                            merge_json(current_session.context.clone(), session_patch);
-                        api.state
-                            .flow
-                            .update_session_context(&flow.session_id, new_session_context)
-                            .await?;
-                    }
-                    if let Some(metadata_patch) = updates.user_metadata_patch
-                        && let Some(user_id) = session.user_id.as_deref()
-                    {
-                        api.state
-                            .user
-                            .update_metadata(user_id, metadata_patch)
-                            .await?;
-                    }
-                    if let Some(notifications) = updates.notifications {
-                        for notification in notifications {
-                            match serde_json::from_value::<backend_core::NotificationJob>(
-                                notification.clone(),
-                            ) {
-                                Ok(job) => {
-                                    if let Err(e) = api.state.notification_queue.enqueue(job).await
-                                    {
-                                        tracing::warn!("Failed to enqueue notification: {}", e);
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to deserialize notification job: {}", e);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                flow = api
-                    .state
-                    .flow
-                    .update_flow(&flow.id, None, None, None, Some(context))
-                    .await?;
-
-                let Some(next) = next_transition(flow_definition, &step_type) else {
+                    step_type = next_step;
+                    pending_input = None;
+                } else {
                     return finalize_flow(api, &flow, FLOW_STATUS_COMPLETED).await;
-                };
-
-                if !has_flow_step(flow_definition, next) {
-                    return finalize_flow(api, &flow, terminal_status(next)).await;
                 }
-
-                step_type = next.to_owned();
-                pending_input = None;
+            }
+            StepOutcome::Branched {
+                branch,
+                output,
+                updates,
+            } => {
+                let actual_output = output.unwrap_or_else(|| json!({"result": "done"}));
+                flow = handle_completed_step(
+                    api,
+                    session,
+                    flow,
+                    &created_step,
+                    &step_type,
+                    input_value.clone(),
+                    actual_output,
+                    updates,
+                    Some(branch.clone()),
+                )
+                .await?;
+                let next = resolve_transition(flow_definition, &step_type, Some(&branch), false);
+                if let Some(next_step) = next {
+                    if !has_flow_step(flow_definition, &next_step) {
+                        return finalize_flow(api, &flow, terminal_status(&next_step)).await;
+                    }
+                    step_type = next_step;
+                    pending_input = None;
+                } else {
+                    return finalize_flow(api, &flow, FLOW_STATUS_COMPLETED).await;
+                }
             }
             StepOutcome::Waiting { .. } => {
                 debug!("Step waiting: {}", step_type);
@@ -665,6 +646,17 @@ async fn create_step_chain(
                     )
                     .await?;
 
+                if let Some(next_step) = resolve_transition(flow_definition, &step_type, None, true)
+                {
+                    if has_flow_step(flow_definition, &next_step) {
+                        step_type = next_step;
+                        pending_input = None;
+                        continue;
+                    }
+
+                    return finalize_flow(api, &flow, terminal_status(&next_step)).await;
+                }
+
                 return finalize_flow(api, &flow, FLOW_STATUS_FAILED).await;
             }
             StepOutcome::Retry { after } => {
@@ -687,7 +679,7 @@ async fn create_step_chain(
     }
 }
 
-async fn finalize_flow(
+pub(crate) async fn finalize_flow(
     api: &BackendApi,
     flow: &FlowInstanceRow,
     status: &str,
@@ -702,7 +694,10 @@ async fn finalize_flow(
     Ok(finalized)
 }
 
-async fn refresh_session_status(api: &BackendApi, session_id: &str) -> Result<(), Error> {
+pub(crate) async fn refresh_session_status(
+    api: &BackendApi,
+    session_id: &str,
+) -> Result<(), Error> {
     let flows = api.state.flow.list_flows_for_session(session_id).await?;
 
     if flows.is_empty() {
@@ -735,13 +730,21 @@ async fn refresh_session_status(api: &BackendApi, session_id: &str) -> Result<()
         return Ok(());
     }
 
-    if flows
-        .iter()
-        .all(|flow| flow.status.eq_ignore_ascii_case(FLOW_STATUS_COMPLETED))
-    {
+    if flows.iter().all(|flow| {
+        flow.status.eq_ignore_ascii_case(FLOW_STATUS_COMPLETED)
+            || flow.status.eq_ignore_ascii_case(FLOW_STATUS_CLOSED)
+    }) {
+        let status = if flows
+            .iter()
+            .any(|flow| flow.status.eq_ignore_ascii_case(FLOW_STATUS_CLOSED))
+        {
+            FLOW_STATUS_CLOSED
+        } else {
+            FLOW_STATUS_COMPLETED
+        };
         api.state
             .flow
-            .update_session_status(session_id, FLOW_STATUS_COMPLETED, Some(Utc::now()))
+            .update_session_status(session_id, status, Some(Utc::now()))
             .await?;
         return Ok(());
     }
@@ -803,7 +806,93 @@ fn append_step_id(step_ids: &Value, step_id: &str) -> Value {
     Value::Array(values)
 }
 
-fn store_step_output(mut context: Value, step_type: &str, input: &Value) -> Value {
+async fn handle_completed_step(
+    api: &BackendApi,
+    session: &FlowSessionRow,
+    flow: FlowInstanceRow,
+    created_step: &backend_model::db::FlowStepRow,
+    step_type: &str,
+    input_value: Value,
+    actual_output: Value,
+    updates: Option<Box<backend_flow_sdk::ContextUpdates>>,
+    branch: Option<String>,
+) -> Result<FlowInstanceRow, Error> {
+    debug!("Step completed: {} branch={:?}", step_type, branch);
+
+    api.state
+        .flow
+        .patch_step(
+            &created_step.id,
+            FlowStepPatch::new()
+                .status(FLOW_STATUS_COMPLETED)
+                .input(input_value)
+                .output(actual_output.clone())
+                .clear_error()
+                .finished_at(Utc::now()),
+        )
+        .await?;
+
+    let mut context = store_step_output(flow.context.clone(), step_type, &actual_output);
+    if let Some(updates) = updates {
+        if let Some(flow_patch) = updates.flow_context_patch.as_ref() {
+            context = merged_json(context, flow_patch);
+        }
+        apply_context_updates(api, session, updates).await?;
+    }
+
+    api.state
+        .flow
+        .update_flow(&flow.id, None, None, None, Some(context))
+        .await
+}
+
+pub(crate) async fn apply_context_updates(
+    api: &BackendApi,
+    session: &FlowSessionRow,
+    updates: Box<backend_flow_sdk::ContextUpdates>,
+) -> Result<(), Error> {
+    if let Some(session_patch) = updates.session_context_patch.as_ref() {
+        let current_session = api
+            .state
+            .flow
+            .get_session(&session.id)
+            .await?
+            .ok_or_else(|| Error::internal("SESSION_NOT_FOUND", "Session not found"))?;
+        let new_session_context = merged_json(current_session.context.clone(), session_patch);
+        api.state
+            .flow
+            .update_session_context(&session.id, new_session_context)
+            .await?;
+    }
+
+    if let Some(metadata_patch) = updates.user_metadata_patch
+        && let Some(user_id) = session.user_id.as_deref()
+    {
+        api.state
+            .user
+            .update_metadata(user_id, metadata_patch)
+            .await?;
+    }
+
+    if let Some(notifications) = updates.notifications {
+        for notification in notifications {
+            match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {
+                Ok(job) => {
+                    if let Err(error) = api.state.notification_queue.enqueue(job).await {
+                        tracing::warn!("Failed to enqueue notification: {}", error);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!("Failed to deserialize notification job: {}", error);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn store_step_output(mut context: Value, step_type: &str, input: &Value) -> Value {
     if !context.is_object() {
         context = json!({});
     }
@@ -825,21 +914,6 @@ fn store_step_output(mut context: Value, step_type: &str, input: &Value) -> Valu
     context
 }
 
-fn merge_json(mut base: Value, patch: Value) -> Value {
-    if let (Some(base_obj), Some(patch_obj)) = (base.as_object_mut(), patch.as_object()) {
-        for (k, v) in patch_obj {
-            if v.is_null() {
-                base_obj.remove(k);
-            } else {
-                base_obj.insert(k.clone(), v.clone());
-            }
-        }
-    } else if !patch.is_null() {
-        return patch;
-    }
-    base
-}
-
 fn normalize_or_default_human_id(value: Option<String>, fallback: String) -> Result<String, Error> {
     let candidate = value.unwrap_or(fallback);
     HumanReadableId::parse(candidate.clone()).map_err(flow_error_to_http)?;
@@ -851,7 +925,7 @@ fn object_context(context: Option<Value>) -> Value {
     if value.is_object() { value } else { json!({}) }
 }
 
-fn flow_error_to_http(error: FlowError) -> Error {
+pub(crate) fn flow_error_to_http(error: FlowError) -> Error {
     match error {
         FlowError::FeatureNotEnabled { feature, .. } => Error::bad_request(
             "FEATURE_NOT_ENABLED",
@@ -876,6 +950,12 @@ fn flow_error_to_http(error: FlowError) -> Error {
         FlowError::Serialization(reason) => Error::internal("FLOW_SERIALIZATION_ERROR", reason),
         FlowError::Io(error) => Error::internal("FLOW_IO_ERROR", error.to_string()),
     }
+}
+
+fn session_context_with_user_id(context: Option<Value>, user_id: &str) -> Value {
+    let mut context = object_context(context);
+    merge_json_value(&mut context, &json!({ "user_id": user_id }));
+    context
 }
 
 #[instrument(skip(api))]
@@ -928,13 +1008,13 @@ pub async fn get_kyc_level(
         for flow in flows {
             if flow.status == "COMPLETED" {
                 match flow.flow_type.as_str() {
-                    "PHONE_OTP" => {
+                    "PHONE_OTP" | "phone_otp" => {
                         phone_otp_verified = true;
                         if !level.contains(&KycLevel::PhoneOtpVerified) {
                             level.push(KycLevel::PhoneOtpVerified);
                         }
                     }
-                    "FIRST_DEPOSIT" => {
+                    "FIRST_DEPOSIT" | "first_deposit" => {
                         first_deposit_verified = true;
                         if !level.contains(&KycLevel::FirstDepositVerified) {
                             level.push(KycLevel::FirstDepositVerified);

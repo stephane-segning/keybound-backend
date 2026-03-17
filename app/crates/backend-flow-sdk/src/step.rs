@@ -17,6 +17,11 @@ pub enum StepOutcome {
         output: Option<Value>,
         updates: Option<Box<ContextUpdates>>,
     },
+    Branched {
+        branch: String,
+        output: Option<Value>,
+        updates: Option<Box<ContextUpdates>>,
+    },
     Waiting {
         actor: Actor,
     },

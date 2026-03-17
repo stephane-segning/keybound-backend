@@ -1,144 +1,70 @@
 openapi: 3.1.0
 info:
-  title: KYC Staff State Machine API
-  version: 1.0.0
-  description: Staff-only endpoints to observe, operate, retry, and report on KYC state machines.
+  title: KYC Staff Flow API
+  version: 1.0.1
+  description: Staff-only v2 flow operations for admin-managed steps.
 
 servers:
   - url: "https://api.example.com"
 
-tags:
-  - name: KYC State Machines
-    description: Observe and operate on KYC state machines.
-
 security:
   - BearerAuth: [ ]
 
+tags:
+  - name: staff-flow
+    description: Observe and operate on admin-managed flow steps.
+
 paths:
-  /api/kyc/instances:
+  /flow/steps:
     get:
-      operationId: staffKycInstancesGet
-      tags: [ KYC State Machines ]
-      summary: List state machine instances
-      security:
-        - BearerAuth: [ ]
+      operationId: staffFlowListSteps
+      tags: [ staff-flow ]
+      summary: List admin-managed flow steps
       parameters:
-        - $ref: "#/components/parameters/Kind"
-        - $ref: "#/components/parameters/Status"
-        - $ref: "#/components/parameters/UserId"
-        - $ref: "#/components/parameters/PhoneNumber"
-        - $ref: "#/components/parameters/CreatedFrom"
-        - $ref: "#/components/parameters/CreatedTo"
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: flowType
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
-          description: Page of instances
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KycInstancesResponse"
+          description: Matching admin steps
 
-  /api/kyc/instances/{instanceId}:
+  /flow/steps/{stepId}:
     get:
-      operationId: staffKycInstancesInstanceIdGet
-      tags: [ KYC State Machines ]
-      summary: Get instance details
-      security:
-        - BearerAuth: [ ]
+      operationId: staffFlowGetStep
+      tags: [ staff-flow ]
+      summary: Get an admin-managed flow step
       parameters:
-        - $ref: "#/components/parameters/InstanceId"
+        - $ref: "#/components/parameters/StepId"
       responses:
         "200":
-          description: Instance detail
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KycInstanceDetail"
-        "404":
-          description: Instance not found
-
-  /api/kyc/instances/{instanceId}/retry:
+          description: Step detail
     post:
-      operationId: staffKycInstancesInstanceIdRetryPost
-      tags: [ KYC State Machines ]
-      summary: Retry a step
-      security:
-        - BearerAuth: [ ]
+      operationId: staffFlowSubmitStep
+      tags: [ staff-flow ]
+      summary: Submit admin input for a flow step
       parameters:
-        - $ref: "#/components/parameters/InstanceId"
+        - $ref: "#/components/parameters/StepId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RetryRequest"
+              type: object
       responses:
         "200":
-          description: Retry accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RetryResponse"
-        "404":
-          description: Instance not found
-
-  /api/kyc/deposits/{instanceId}/confirm-payment:
-    post:
-      operationId: staffKycDepositsInstanceIdConfirmPaymentPost
-      tags: [ KYC State Machines ]
-      summary: Confirm deposit payment received
-      security:
-        - BearerAuth: [ ]
-      parameters:
-        - $ref: "#/components/parameters/InstanceId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ConfirmPaymentRequest"
-      responses:
-        "200":
-          description: Payment confirmation recorded
-        "404":
-          description: Instance not found
-
-  /api/kyc/deposits/{instanceId}/approve:
-    post:
-      operationId: staffKycDepositsInstanceIdApprovePost
-      tags: [ KYC State Machines ]
-      summary: Approve deposit KYC (starts provisioning)
-      security:
-        - BearerAuth: [ ]
-      parameters:
-        - $ref: "#/components/parameters/InstanceId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DepositApproveRequest"
-      responses:
-        "200":
-          description: Approval recorded
-        "404":
-          description: Instance not found
-
-  /api/kyc/reports/summary:
-    get:
-      operationId: staffKycReportsSummaryGet
-      tags: [ KYC State Machines ]
-      summary: Summary report
-      security:
-        - BearerAuth: [ ]
-      responses:
-        "200":
-          description: Summary report
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReportSummary"
+          description: Step updated
 
 components:
   securitySchemes:
@@ -148,252 +74,9 @@ components:
       bearerFormat: JWT
 
   parameters:
-    InstanceId:
-      name: instanceId
+    StepId:
+      name: stepId
       in: path
       required: true
       schema:
         type: string
-    Kind:
-      name: kind
-      in: query
-      required: false
-      schema:
-        $ref: "#/components/schemas/InstanceKind"
-    Status:
-      name: status
-      in: query
-      required: false
-      schema:
-        $ref: "#/components/schemas/InstanceStatus"
-    UserId:
-      name: userId
-      in: query
-      required: false
-      schema:
-        type: string
-    PhoneNumber:
-      name: phoneNumber
-      in: query
-      required: false
-      schema:
-        type: string
-    CreatedFrom:
-      name: createdFrom
-      in: query
-      required: false
-      schema:
-        type: string
-        format: date-time
-    CreatedTo:
-      name: createdTo
-      in: query
-      required: false
-      schema:
-        type: string
-        format: date-time
-    Page:
-      name: page
-      in: query
-      required: false
-      schema:
-        type: integer
-        minimum: 1
-        default: 1
-    Limit:
-      name: limit
-      in: query
-      required: false
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
-
-  schemas:
-    InstanceKind:
-      type: string
-      enum:
-        - KYC_PHONE_OTP
-        - KYC_EMAIL_MAGIC
-        - KYC_FIRST_DEPOSIT
-
-    InstanceStatus:
-      type: string
-      enum:
-        - ACTIVE
-        - WAITING_INPUT
-        - RUNNING
-        - COMPLETED
-        - FAILED
-        - CANCELLED
-
-    StepAttemptStatus:
-      type: string
-      enum:
-        - QUEUED
-        - RUNNING
-        - SUCCEEDED
-        - FAILED
-        - CANCELLED
-
-    KycInstanceSummary:
-      type: object
-      additionalProperties: false
-      properties:
-        instanceId: { type: string }
-        kind: { $ref: "#/components/schemas/InstanceKind" }
-        userId: { type: string, nullable: true }
-        status: { $ref: "#/components/schemas/InstanceStatus" }
-        currentStep: { type: string, nullable: true }
-        lastError:
-          type: object
-          nullable: true
-          additionalProperties: true
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [ instanceId, kind, status, createdAt, updatedAt ]
-
-    KycInstancesResponse:
-      type: object
-      additionalProperties: false
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/KycInstanceSummary" }
-        total: { type: integer }
-        page: { type: integer }
-        pageSize: { type: integer }
-      required: [ items, total, page, pageSize ]
-
-    KycEvent:
-      type: object
-      additionalProperties: false
-      properties:
-        id: { type: string }
-        kind: { type: string }
-        actorType: { type: string }
-        actorId: { type: string, nullable: true }
-        payload:
-          type: object
-          additionalProperties: true
-        createdAt: { type: string, format: date-time }
-      required: [ id, kind, actorType, payload, createdAt ]
-
-    StepAttempt:
-      type: object
-      additionalProperties: false
-      properties:
-        id: { type: string }
-        stepName: { type: string }
-        attemptNo: { type: integer }
-        status: { $ref: "#/components/schemas/StepAttemptStatus" }
-        externalRef: { type: string, nullable: true }
-        input:
-          type: object
-          additionalProperties: true
-        output:
-          type: object
-          nullable: true
-          additionalProperties: true
-        error:
-          type: object
-          nullable: true
-          additionalProperties: true
-        queuedAt: { type: string, format: date-time, nullable: true }
-        startedAt: { type: string, format: date-time, nullable: true }
-        finishedAt: { type: string, format: date-time, nullable: true }
-        nextRetryAt: { type: string, format: date-time, nullable: true }
-      required: [ id, stepName, attemptNo, status, input ]
-
-    StepState:
-      type: object
-      additionalProperties: false
-      properties:
-        stepName: { type: string }
-        latestAttempt: { $ref: "#/components/schemas/StepAttempt", nullable: true }
-        attempts:
-          type: array
-          items: { $ref: "#/components/schemas/StepAttempt" }
-      required: [ stepName, attempts ]
-
-    KycInstanceDetail:
-      type: object
-      additionalProperties: false
-      properties:
-        instanceId: { type: string }
-        kind: { $ref: "#/components/schemas/InstanceKind" }
-        userId: { type: string, nullable: true }
-        status: { $ref: "#/components/schemas/InstanceStatus" }
-        context:
-          type: object
-          additionalProperties: true
-        steps:
-          type: array
-          items: { $ref: "#/components/schemas/StepState" }
-        events:
-          type: array
-          items: { $ref: "#/components/schemas/KycEvent" }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-        completedAt: { type: string, format: date-time, nullable: true }
-      required: [ instanceId, kind, status, context, steps, events, createdAt, updatedAt ]
-
-    RetryMode:
-      type: string
-      enum:
-        - RESET_ATTEMPT
-        - NEW_ATTEMPT
-
-    RetryRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        stepName: { type: string }
-        mode: { $ref: "#/components/schemas/RetryMode" }
-      required: [ stepName, mode ]
-
-    RetryResponse:
-      type: object
-      additionalProperties: false
-      properties:
-        instanceId: { type: string }
-        stepName: { type: string }
-        attemptId: { type: string }
-      required: [ instanceId, stepName, attemptId ]
-
-    ConfirmPaymentRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        confirmedAt: { type: string, format: date-time, nullable: true }
-        note: { type: string, nullable: true }
-        providerTxnId: { type: string, nullable: true }
-      required: [ ]
-
-    DepositApproveRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        fullName:
-          type: string
-          description: Full name of the customer as confirmed by staff.
-        depositAmount:
-          type: number
-          minimum: 0.01
-      required: [ fullName, depositAmount ]
-
-    ReportSummary:
-      type: object
-      additionalProperties: false
-      properties:
-        byKind:
-          type: object
-          additionalProperties:
-            type: integer
-        byStatus:
-          type: object
-          additionalProperties:
-            type: integer
-        failuresLast24h: { type: integer }
-      required: [ byKind, byStatus, failuresLast24h ]

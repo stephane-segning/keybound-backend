@@ -1,5 +1,5 @@
-use crate::file_storage::{MinioStorage, S3CompatibleMinioStorage};
-use crate::flow_registry;
+use crate::flows::registry as flow_registry;
+use crate::object_storage::{ObjectStorage, S3ObjectStorage};
 use crate::worker::{NotificationQueue, RedisNotificationQueue};
 use backend_auth::{HttpClient, OidcState, SignatureState};
 use backend_core::Config;
@@ -19,7 +19,7 @@ pub struct AppState {
     pub user: Arc<dyn UserRepo>,
     pub device: Arc<dyn DeviceRepo>,
     pub notification_queue: Arc<dyn NotificationQueue>,
-    pub minio: Arc<dyn MinioStorage>,
+    pub object_storage: Arc<dyn ObjectStorage>,
     pub config: Config,
     pub oidc_state: Arc<OidcState>,
     pub signature_state: Arc<SignatureState>,
@@ -33,7 +33,7 @@ impl std::fmt::Debug for AppState {
             .field("flow_registry", &"<FlowRegistry>")
             .field("user", &"<UserRepository>")
             .field("device", &"<DeviceRepository>")
-            .field("minio", &"<MinioStorage>")
+            .field("object_storage", &"<ObjectStorage>")
             .field("config", &self.config)
             .field("oidc_state", &"<OidcState>")
             .field("signature_state", &"<SignatureState>")
@@ -49,7 +49,7 @@ impl AppState {
     ) -> backend_core::Result<Self> {
         info!("initializing application state and repositories");
 
-        let minio: Arc<dyn MinioStorage> = match cfg.storage.as_ref().map(|s| &s.r#type) {
+        let object_storage: Arc<dyn ObjectStorage> = match cfg.storage.as_ref().map(|s| &s.r#type) {
             Some(backend_core::StorageType::Minio) => {
                 let minio_cfg = cfg
                     .storage
@@ -75,9 +75,9 @@ impl AppState {
                 if minio_cfg.force_path_style.unwrap_or(true) {
                     builder = builder.force_path_style(true);
                 }
-                Arc::new(S3CompatibleMinioStorage::new(
-                    aws_sdk_s3::Client::from_conf(builder.build()),
-                ))
+                Arc::new(S3ObjectStorage::new(aws_sdk_s3::Client::from_conf(
+                    builder.build(),
+                )))
             }
             _ => {
                 let s3_client = {
@@ -104,7 +104,7 @@ impl AppState {
                     }
                     aws_sdk_s3::Client::from_conf(builder.build())
                 };
-                Arc::new(S3CompatibleMinioStorage::new(s3_client))
+                Arc::new(S3ObjectStorage::new(s3_client))
             }
         };
 
@@ -152,7 +152,7 @@ impl AppState {
             user,
             device,
             notification_queue,
-            minio,
+            object_storage,
             config: cfg.clone(),
             oidc_state,
             signature_state,

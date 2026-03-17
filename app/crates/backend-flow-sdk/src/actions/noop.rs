@@ -34,6 +34,7 @@ mod tests {
     fn make_ctx() -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "noop-step".to_string(),
             input: json!({}),

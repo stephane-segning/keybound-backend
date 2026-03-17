@@ -1,34 +1,103 @@
 flow_type: phone_otp
-human_id_prefix: po
+human_id_prefix: phone_otp
 feature: flow-phone-otp
-initial_step: generate
+initial_step: init_phone
 
 steps:
-  generate:
+  init_phone:
+    action: WAIT
+    actor: END_USER
+    config:
+      actor: USER
+    next: get_user
+
+  get_user:
+    action: GET_USER
+    actor: SYSTEM
+    config:
+      save_to: session
+    next: generate_otp
+
+  generate_otp:
     action: GENERATE_OTP
     actor: SYSTEM
     config:
       length: 6
       expiry_seconds: 300
-    retry:
-      max: 3
-      delay_ms: 1000
-    next: verify
+      save_to: flow
+    next: debug_generated_otp
 
-  verify:
+  debug_generated_otp:
+    action: DEBUG_LOG
+    actor: SYSTEM
+    config:
+      message: "Generated phone OTP"
+      flow_pointers:
+        - /otp
+        - /otp_expires_at
+    next: send_otp_webhook
+
+  send_otp_webhook:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${SMS_SINK_URL:-http://sms-sink:8081}/otp
+      method: POST
+      timeout_ms: 5000
+      payload:
+        phone: "{{flow.context.step_output.init_phone.phone_number}}"
+        otp: "{{flow.context.otp}}"
+      success_condition:
+        status_codes:
+          - 200
+    next: debug_sent_otp
+    fail: FAILED
+
+  debug_sent_otp:
+    action: DEBUG_LOG
+    actor: SYSTEM
+    config:
+      message: "OTP webhook sent"
+      flow_pointers:
+        - /step_output/send_otp_webhook
+    next: verify_otp
+
+  verify_otp:
     action: VERIFY_OTP
     actor: END_USER
     config:
+      input_field: code
+      stored_field: otp
       max_attempts: 3
-    retry:
-      max: 3
-      delay_ms: 1000
-    ok: complete
-    fail: generate
+      attempts_field: otp_attempts
+    branches:
+      verified: debug_verified_otp
+      retry: verify_otp
+    fail: FAILED
 
-  complete:
+  debug_verified_otp:
+    action: DEBUG_LOG
+    actor: SYSTEM
+    config:
+      message: "Phone OTP verified"
+      flow_pointers:
+        - /step_output/verify_otp
+    next: mark_phone_verified
+
+  mark_phone_verified:
+    action: UPDATE_USER_METADATA
+    actor: SYSTEM
+    config:
+      mappings:
+        - target_path: /phone/number
+          source: flow
+          source_path: /step_output/init_phone/phone_number
+        - target_path: /phone/verified
+          value: true
+        - target_path: /kyc/phoneOtpVerified
+          value: true
+    next: COMPLETE
+
+  COMPLETE:
     action: NOOP
     actor: SYSTEM
-    retry:
-      max: 1
-      delay_ms: 0

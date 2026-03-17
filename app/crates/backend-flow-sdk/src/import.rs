@@ -75,5 +75,29 @@ fn validate_flow_definition(definition: &FlowDefinition) -> Result<(), FlowError
         )));
     }
 
+    for (step_name, step) in &definition.steps {
+        for target in step
+            .next
+            .iter()
+            .chain(step.ok.iter())
+            .chain(step.fail.iter())
+            .chain(step.branches.values())
+        {
+            if !is_terminal_target(target) && !definition.steps.contains_key(target) {
+                return Err(FlowError::InvalidDefinition(format!(
+                    "step '{}' points to unknown target '{}'",
+                    step_name, target
+                )));
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn is_terminal_target(target: &str) -> bool {
+    matches!(
+        target.to_ascii_uppercase().as_str(),
+        "FAILED" | "END" | "COMPLETE" | "COMPLETED" | "CLOSED"
+    )
 }

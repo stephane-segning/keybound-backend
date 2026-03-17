@@ -1,13 +1,13 @@
 pub mod account_update;
 pub mod address_proof;
 pub mod admin_user_management;
-pub mod builtin_steps;
 pub mod device_enroll;
 pub mod email_magic;
 pub mod external_kyc;
 pub mod first_deposit;
 pub mod id_document;
 pub mod phone_otp;
+pub mod shared_steps;
 
 #[cfg(feature = "flow-cuss-integration")]
 pub mod cuss_integration;

@@ -1,6 +1,7 @@
+use super::runtime::{merge_json_value, resolve_transition, step_services};
 use crate::state::AppState;
 use backend_core::Error;
-use backend_flow_sdk::{RetryConfig, StepContext, StepOutcome, StepServices};
+use backend_flow_sdk::{RetryConfig, StepContext, StepOutcome};
 use backend_repository::FlowStepPatch;
 use chrono::Utc;
 use serde_json::Value;
@@ -51,7 +52,10 @@ impl FlowExecutor {
                 )
             })?;
 
-        let flow_definition = self.state.flow_registry.get_flow_definition(&flow.flow_type);
+        let flow_definition = self
+            .state
+            .flow_registry
+            .get_flow_definition(&flow.flow_type);
         let retry_config = flow_definition
             .map(|fd| fd.get_step_retry_config(&step.step_type))
             .unwrap_or_default();
@@ -69,12 +73,13 @@ impl FlowExecutor {
 
         let context = StepContext {
             session_id: session.id.clone(),
+            session_user_id: session.user_id.clone(),
             flow_id: flow.id.clone(),
             step_id: step.id.clone(),
             input: step.input.clone().unwrap_or_else(|| serde_json::json!({})),
             session_context: session.context.clone(),
             flow_context: flow.context.clone(),
-            services: StepServices::default(),
+            services: step_services(self.state.user.clone()),
         };
 
         let outcome = step_def
@@ -84,8 +89,24 @@ impl FlowExecutor {
 
         match outcome {
             StepOutcome::Done { output, updates } => {
-                self.handle_done(&step, &flow, &session, output, updates, flow_def)
+                self.handle_done(&step, &flow, &session, output, updates, flow_def, None)
                     .await?;
+            }
+            StepOutcome::Branched {
+                branch,
+                output,
+                updates,
+            } => {
+                self.handle_done(
+                    &step,
+                    &flow,
+                    &session,
+                    output,
+                    updates,
+                    flow_def,
+                    Some(branch),
+                )
+                .await?;
             }
             StepOutcome::Waiting { .. } => {
                 debug!("Step execution waiting: {}", step.step_type);
@@ -99,7 +120,8 @@ impl FlowExecutor {
                     .await?;
             }
             StepOutcome::Retry { after } => {
-                self.handle_retry(&step, &flow, after, &retry_config).await?;
+                self.handle_retry(&step, &flow, after, &retry_config)
+                    .await?;
             }
         }
 
@@ -114,6 +136,7 @@ impl FlowExecutor {
         output: Option<Value>,
         updates: Option<Box<backend_flow_sdk::ContextUpdates>>,
         flow_def: &dyn backend_flow_sdk::Flow,
+        branch: Option<String>,
     ) -> Result<(), Error> {
         debug!("Step execution done: {}", step.step_type);
         let actual_output = output.unwrap_or_else(|| serde_json::json!({"result": "done"}));
@@ -145,8 +168,16 @@ impl FlowExecutor {
                 .await?;
         }
 
-        self.advance_to_next_step(flow, session, step, flow_def, next_flow_context)
-            .await?;
+        self.advance_to_next_step(
+            flow,
+            session,
+            step,
+            flow_def,
+            next_flow_context,
+            branch.as_deref(),
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -156,32 +187,13 @@ impl FlowExecutor {
         next_flow_context: &mut Value,
         updates: backend_flow_sdk::ContextUpdates,
     ) -> Result<(), Error> {
-        if let Some(flow_patch) = updates.flow_context_patch
-            && let (Some(base_obj), Some(patch_obj)) =
-                (next_flow_context.as_object_mut(), flow_patch.as_object())
-            {
-                for (k, v) in patch_obj {
-                    if v.is_null() {
-                        base_obj.remove(k);
-                    } else {
-                        base_obj.insert(k.clone(), v.clone());
-                    }
-                }
-            }
+        if let Some(flow_patch) = updates.flow_context_patch {
+            merge_json_value(next_flow_context, &flow_patch);
+        }
 
         if let Some(session_patch) = updates.session_context_patch {
             let mut new_session_context = session.context.clone();
-            if let (Some(base_obj), Some(patch_obj)) =
-                (new_session_context.as_object_mut(), session_patch.as_object())
-            {
-                for (k, v) in patch_obj {
-                    if v.is_null() {
-                        base_obj.remove(k);
-                    } else {
-                        base_obj.insert(k.clone(), v.clone());
-                    }
-                }
-            }
+            merge_json_value(&mut new_session_context, &session_patch);
             self.state
                 .flow
                 .update_session_context(&session.id, new_session_context)
@@ -199,7 +211,8 @@ impl FlowExecutor {
 
         if let Some(notifications) = updates.notifications {
             for notification in notifications {
-                match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {
+                match serde_json::from_value::<backend_core::NotificationJob>(notification.clone())
+                {
                     Ok(job) => {
                         if let Err(e) = self.state.notification_queue.enqueue(job).await {
                             warn!("Failed to enqueue notification: {}", e);
@@ -221,9 +234,12 @@ impl FlowExecutor {
         step: &backend_model::db::FlowStepRow,
         flow_def: &dyn backend_flow_sdk::Flow,
         next_flow_context: Value,
+        branch: Option<&str>,
+        failed: bool,
     ) -> Result<(), Error> {
-        if let Some(next_step_type) = flow_def.find_next_step(&step.step_type) {
-            if next_step_type != "FAILED" && next_step_type != "END" {
+        if let Some(next_step_type) = resolve_transition(flow_def, &step.step_type, branch, failed)
+        {
+            if next_step_type != "FAILED" && next_step_type != "END" && next_step_type != "CLOSED" {
                 let next_step_def = flow_def
                     .steps()
                     .iter()
@@ -272,6 +288,8 @@ impl FlowExecutor {
             } else {
                 let final_status = if next_step_type.eq_ignore_ascii_case("FAILED") {
                     "FAILED"
+                } else if next_step_type.eq_ignore_ascii_case("CLOSED") {
+                    "CLOSED"
                 } else {
                     "COMPLETED"
                 };
@@ -279,7 +297,8 @@ impl FlowExecutor {
                     .await?;
             }
         } else {
-            self.finalize_flow(&flow.id, Some(&session.id), "COMPLETED")
+            let final_status = if failed { "FAILED" } else { "COMPLETED" };
+            self.finalize_flow(&flow.id, Some(&session.id), final_status)
                 .await?;
         }
         Ok(())
@@ -320,7 +339,21 @@ impl FlowExecutor {
                         .finished_at(Utc::now()),
                 )
                 .await?;
-            self.finalize_flow(&flow.id, Some(&session.id), "FAILED").await?;
+            let flow_def = self
+                .state
+                .flow_registry
+                .get_flow(&flow.flow_type)
+                .ok_or_else(|| Error::internal("UNKNOWN_FLOW_TYPE", "Flow not found"))?;
+            self.advance_to_next_step(
+                flow,
+                session,
+                step,
+                flow_def,
+                flow.context.clone(),
+                None,
+                true,
+            )
+            .await?;
         }
         Ok(())
     }

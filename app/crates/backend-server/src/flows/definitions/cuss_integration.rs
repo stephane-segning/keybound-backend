@@ -57,7 +57,11 @@ impl Step for CussRegisterStep {
 
         let external_id = ctx.session_id.clone();
 
-        let request = RegistrationRequest::new(full_name.to_string(), phone.to_string(), external_id.clone());
+        let request = RegistrationRequest::new(
+            full_name.to_string(),
+            phone.to_string(),
+            external_id.clone(),
+        );
 
         tracing::info!(
             "[CUSS_REGISTER] Registering customer: phone={}, name={}, external_id={}",
@@ -94,7 +98,7 @@ impl Step for CussRegisterStep {
                 })
             }
             Err(err) => {
-                let is_retryable = matches!(err, gen_oas_client_cuss::apis::Error::ResponseError(ref resp) 
+                let is_retryable = matches!(err, gen_oas_client_cuss::apis::Error::ResponseError(ref resp)
                     if resp.status.is_server_error());
                 Ok(StepOutcome::Failed {
                     error: format!("CUSS register failed: {}", err),
@@ -146,7 +150,11 @@ impl Step for CussApproveStep {
             .and_then(|v| v.get("CUSS_REGISTER_CUSTOMER"))
             .and_then(|v| v.get("savingsAccountId"))
             .and_then(|v| v.as_i64())
-            .ok_or_else(|| FlowError::InvalidDefinition("Missing savingsAccountId from registration".to_string()))?;
+            .ok_or_else(|| {
+                FlowError::InvalidDefinition(
+                    "Missing savingsAccountId from registration".to_string(),
+                )
+            })?;
 
         let deposit_amount = ctx
             .session_context
@@ -186,7 +194,7 @@ impl Step for CussApproveStep {
                 })
             }
             Err(err) => {
-                let is_retryable = matches!(err, gen_oas_client_cuss::apis::Error::ResponseError(ref resp) 
+                let is_retryable = matches!(err, gen_oas_client_cuss::apis::Error::ResponseError(ref resp)
                     if resp.status.is_server_error());
                 Ok(StepOutcome::Failed {
                     error: format!("CUSS approve failed: {}", err),

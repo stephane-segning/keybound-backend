@@ -21,7 +21,7 @@ const HEADER_NONCE: &str = "x-auth-nonce";
 const HEADER_USER_ID: &str = "x-auth-user-id";
 const HEADER_AUTHORIZATION: &str = "authorization";
 
-pub async fn require_bff_signature(
+pub async fn require_bff_auth(
     State(state): State<Arc<AppState>>,
     req: Request<Body>,
     next: Next,

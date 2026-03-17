@@ -29,6 +29,28 @@ impl UserRepository {
     }
 }
 
+fn merge_json_value(base: &mut serde_json::Value, patch: &serde_json::Value) {
+    match (base, patch) {
+        (serde_json::Value::Object(base_obj), serde_json::Value::Object(patch_obj)) => {
+            for (key, value) in patch_obj {
+                if value.is_null() {
+                    base_obj.remove(key);
+                    continue;
+                }
+
+                if let Some(existing) = base_obj.get_mut(key) {
+                    merge_json_value(existing, value);
+                } else {
+                    base_obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        (slot, value) => {
+            *slot = value.clone();
+        }
+    }
+}
+
 fn normalize_full_name(name: Option<String>) -> Option<String> {
     name.and_then(|value| {
         let trimmed = value.trim();
@@ -422,17 +444,8 @@ impl UserRepo for UserRepository {
             .await
             .optional()
             .map_err(Into::<backend_core::Error>::into)?
-            && let (Some(base_obj), Some(patch_obj)) =
-                (user.metadata.as_object_mut(), metadata_patch.as_object())
         {
-            for (k, v) in patch_obj {
-                if v.is_null() {
-                    base_obj.remove(k);
-                } else {
-                    base_obj.insert(k.clone(), v.clone());
-                }
-            }
-
+            merge_json_value(&mut user.metadata, &metadata_patch);
             diesel::update(app_user.filter(user_id.eq(user_id_val)))
                 .set((
                     metadata.eq(user.metadata),

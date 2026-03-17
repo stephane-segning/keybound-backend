@@ -1,6 +1,6 @@
 use crate::{
-    import_flow_definition, import_session_definition, FlowDefinition, FlowError, FlowRegistry,
-    ImportFormat, SessionDefinition,
+    FlowDefinition, FlowError, FlowRegistry, ImportFormat, SessionDefinition,
+    import_flow_definition, import_session_definition,
 };
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
@@ -195,13 +195,15 @@ impl FlowConfigLoader {
     }
 
     fn load_flow_file(&self, path: &std::path::Path) -> Result<FlowDefinition, FlowError> {
-        let content = std::fs::read_to_string(path)?;
+        let content = expand_env_vars(&std::fs::read_to_string(path)?)
+            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?;
         let format = ImportFormat::from_path(path);
         import_flow_definition(&content, format)
     }
 
     fn load_session_file(&self, path: &std::path::Path) -> Result<SessionDefinition, FlowError> {
-        let content = std::fs::read_to_string(path)?;
+        let content = expand_env_vars(&std::fs::read_to_string(path)?)
+            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?;
         let format = ImportFormat::from_path(path);
         import_session_definition(&content, format)
     }
@@ -303,6 +305,42 @@ impl FlowConfigLoader {
 
         registry.register_session(definition);
         Ok(())
+    }
+}
+
+fn expand_env_vars(content: &str) -> Result<String, String> {
+    let re = regex::Regex::new(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)(:-([^}]*))?\}")
+        .map_err(|e: regex::Error| e.to_string())?;
+    let mut missing_vars = Vec::new();
+
+    let result = re
+        .replace_all(content, |caps: &regex::Captures<'_>| {
+            let var_name = &caps[1];
+            let default_value = caps.get(3).map(|m: regex::Match<'_>| m.as_str());
+
+            match std::env::var(var_name) {
+                Ok(val) => val,
+                Err(_) => match default_value {
+                    Some(default) => default.to_owned(),
+                    None => {
+                        missing_vars.push(var_name.to_owned());
+                        caps[0].to_owned()
+                    }
+                },
+            }
+        })
+        .to_string();
+
+    missing_vars.sort_unstable();
+    missing_vars.dedup();
+
+    if missing_vars.is_empty() {
+        Ok(result)
+    } else {
+        Err(format!(
+            "Missing environment variables: {}",
+            missing_vars.join(", ")
+        ))
     }
 }
 

@@ -89,6 +89,7 @@ mod tests {
     fn make_ctx(config: HashMap<String, serde_json::Value>) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
+            session_user_id: None,
             flow_id: "test-flow".to_string(),
             step_id: "set-step".to_string(),
             input: json!({}),

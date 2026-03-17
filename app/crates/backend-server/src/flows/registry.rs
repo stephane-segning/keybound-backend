@@ -1,9 +1,10 @@
 use backend_flow_sdk::flow::StepRef;
-use backend_flow_sdk::{Actor, Flow, FlowConfigLoader, FlowError, FlowRegistry, LoadedConfigs, SessionDefinition, StepTransition};
+use backend_flow_sdk::{
+    Actor, Flow, FlowConfigLoader, FlowError, FlowRegistry, LoadedConfigs, SessionDefinition,
+    StepTransition,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use crate::flow_logic;
 
 use tracing::{debug, info, warn};
 
@@ -48,7 +49,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "phone_otp",
             Some("flow-phone-otp"),
             "ISSUE_PHONE_OTP",
-            flow_logic::phone_otp::steps(),
+            super::definitions::phone_otp::steps(),
             &[
                 ("ISSUE_PHONE_OTP", "VERIFY_PHONE_OTP", Some("FAILED")),
                 ("VERIFY_PHONE_OTP", "COMPLETE", Some("FAILED")),
@@ -65,7 +66,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "email_magic",
             Some("flow-email-magic"),
             "ISSUE_MAGIC_EMAIL",
-            flow_logic::email_magic::steps(),
+            super::definitions::email_magic::steps(),
             &[
                 ("ISSUE_MAGIC_EMAIL", "VERIFY_MAGIC_EMAIL", Some("FAILED")),
                 ("VERIFY_MAGIC_EMAIL", "COMPLETE", Some("FAILED")),
@@ -81,12 +82,12 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
         {
             if let Some(cuss_url) = imports.cuss_url.clone() {
                 let steps: Vec<StepRef> = vec![
-                    Arc::new(super::flow_logic::builtin_steps::CheckUserExistsStep),
-                    Arc::new(super::flow_logic::builtin_steps::ValidateDepositStep),
-                    Arc::new(super::flow_logic::first_deposit::AwaitPaymentConfirmationStep),
+                    Arc::new(super::definitions::shared_steps::CheckUserExistsStep),
+                    Arc::new(super::definitions::shared_steps::ValidateDepositStep),
+                    Arc::new(super::definitions::first_deposit::AwaitPaymentConfirmationStep),
                 ];
                 let mut all_steps = steps;
-                all_steps.extend(super::flow_logic::cuss_integration::steps(cuss_url));
+                all_steps.extend(super::definitions::cuss_integration::steps(cuss_url));
 
                 let mut transitions = HashMap::new();
                 transitions.insert(
@@ -140,7 +141,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
                     "first_deposit",
                     Some("flow-first-deposit"),
                     "check_user_exists",
-                    flow_logic::first_deposit::steps(),
+                    super::definitions::first_deposit::steps(),
                     &[
                         ("check_user_exists", "validate_deposit", Some("FAILED")),
                         (
@@ -167,7 +168,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
                 "first_deposit",
                 Some("flow-first-deposit"),
                 "check_user_exists",
-                flow_logic::first_deposit::steps(),
+                super::definitions::first_deposit::steps(),
                 &[
                     ("check_user_exists", "validate_deposit", Some("FAILED")),
                     (
@@ -195,7 +196,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "id_document",
             Some("flow-id-document"),
             "SUBMIT_ID_DOCUMENT",
-            flow_logic::id_document::steps(),
+            super::definitions::id_document::steps(),
             &[
                 ("SUBMIT_ID_DOCUMENT", "REVIEW_ID_DOCUMENT", Some("FAILED")),
                 ("REVIEW_ID_DOCUMENT", "COMPLETE", Some("FAILED")),
@@ -212,7 +213,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "address_proof",
             Some("flow-address-proof"),
             "SUBMIT_ADDRESS_PROOF",
-            flow_logic::address_proof::steps(),
+            super::definitions::address_proof::steps(),
             &[
                 (
                     "SUBMIT_ADDRESS_PROOF",
@@ -233,7 +234,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "external_kyc",
             Some("flow-external-kyc"),
             "WEBHOOK_HTTP",
-            flow_logic::external_kyc::steps(),
+            super::definitions::external_kyc::steps(),
             &[("WEBHOOK_HTTP", "COMPLETE", Some("FAILED"))],
         );
         register_flow_bundle(&mut registry, flow);
@@ -247,7 +248,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "device_enroll",
             Some("flow-device-enroll"),
             "BIND_DEVICE",
-            flow_logic::device_enroll::steps(),
+            super::definitions::device_enroll::steps(),
             &[
                 ("BIND_DEVICE", "ACTIVATE_DEVICE", Some("FAILED")),
                 ("ACTIVATE_DEVICE", "COMPLETE", Some("FAILED")),
@@ -264,7 +265,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "account_update",
             Some("flow-account-update"),
             "SUBMIT_ACCOUNT_UPDATE",
-            flow_logic::account_update::steps(),
+            super::definitions::account_update::steps(),
             &[
                 (
                     "SUBMIT_ACCOUNT_UPDATE",
@@ -285,7 +286,7 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
             "admin_user_management",
             Some("flow-admin-user-management"),
             "REVIEW_USER_ACCOUNT",
-            flow_logic::admin_user_management::steps(),
+            super::definitions::admin_user_management::steps(),
             &[
                 ("REVIEW_USER_ACCOUNT", "APPLY_USER_DECISION", Some("FAILED")),
                 ("APPLY_USER_DECISION", "COMPLETE", Some("FAILED")),
@@ -511,6 +512,7 @@ fn static_flow(
             StepTransition {
                 on_success: (*on_success).to_owned(),
                 on_failure: on_failure.map(ToOwned::to_owned),
+                branches: HashMap::new(),
             },
         );
     }
@@ -527,8 +529,10 @@ fn static_flow(
 
 fn register_builtin_actions(registry: &mut FlowRegistry) {
     use backend_flow_sdk::{
-        ErrorAction, GenerateOtpAction, NoopAction, RetryAction, ReviewDocumentAction, SetAction,
-        UploadDocumentAction, ValidateDepositAction, VerifyOtpAction, WaitAction, WebhookStep,
+        CloseSessionAction, ConditionalAction, DebugLogAction, ErrorAction, GenerateOtpAction,
+        GetUserAction, NoopAction, RetryAction, ReviewDocumentAction, SetAction,
+        UpdateUserMetadataAction, UploadDocumentAction, ValidateDepositAction, VerifyOtpAction,
+        WaitAction, WebhookStep,
     };
 
     debug!("Registering built-in action steps...");
@@ -540,12 +544,20 @@ fn register_builtin_actions(registry: &mut FlowRegistry) {
     registry.register_step(Arc::new(SetAction));
     registry.register_step(Arc::new(GenerateOtpAction));
     registry.register_step(Arc::new(VerifyOtpAction));
+    registry.register_step(Arc::new(GetUserAction));
+    registry.register_step(Arc::new(DebugLogAction));
+    registry.register_step(Arc::new(ConditionalAction));
+    registry.register_step(Arc::new(UpdateUserMetadataAction));
+    registry.register_step(Arc::new(CloseSessionAction));
     registry.register_step(Arc::new(UploadDocumentAction));
     registry.register_step(Arc::new(ReviewDocumentAction));
     registry.register_step(Arc::new(ValidateDepositAction));
     registry.register_step(Arc::new(WebhookStep::new()));
 
-    debug!("Registered {} built-in actions", registry.step_types().len());
+    debug!(
+        "Registered {} built-in actions",
+        registry.step_types().len()
+    );
 }
 
 fn load_yaml_configs(imports: &RegistryImports) -> LoadedConfigs {
@@ -606,23 +618,20 @@ fn register_flow_definition(
         });
         proxy_steps.push(proxy as StepRef);
 
-        if let Some(next) = &step_def.next {
-            transitions.insert(
-                step_name.clone(),
-                StepTransition {
-                    on_success: next.clone(),
-                    on_failure: step_def.fail.clone(),
-                },
-            );
-        } else if let Some(ok) = &step_def.ok {
-            transitions.insert(
-                step_name.clone(),
-                StepTransition {
-                    on_success: ok.clone(),
-                    on_failure: step_def.fail.clone(),
-                },
-            );
-        }
+        let on_success = step_def
+            .next
+            .clone()
+            .or_else(|| step_def.ok.clone())
+            .unwrap_or_else(|| "COMPLETED".to_owned());
+
+        transitions.insert(
+            step_name.clone(),
+            StepTransition {
+                on_success,
+                on_failure: step_def.fail.clone(),
+                branches: step_def.branches.clone(),
+            },
+        );
     }
 
     let dynamic_flow = Arc::new(DynamicFlow {
@@ -634,6 +643,7 @@ fn register_flow_definition(
         transitions,
     });
 
+    registry.register_flow_definition(definition);
     registry.register_flow(dynamic_flow);
 
     Ok(())

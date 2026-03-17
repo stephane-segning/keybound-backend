@@ -23,7 +23,10 @@ pub trait Flow: Send + Sync + 'static {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StepTransition {
     pub on_success: String,
+    #[serde(default)]
     pub on_failure: Option<String>,
+    #[serde(default)]
+    pub branches: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +53,8 @@ pub struct FlowStepDefinition {
     pub ok: Option<String>,
     #[serde(default)]
     pub fail: Option<String>,
+    #[serde(default)]
+    pub branches: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

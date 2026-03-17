@@ -81,7 +81,7 @@ impl BffTestFixture {
         )
     }
 
-    fn store_global(self) -> &'static Self {
+    pub fn store_global(self) -> &'static Self {
         BFF_FIXTURE.get_or_init(|| self)
     }
 }
@@ -545,11 +545,15 @@ impl E2eWorld {
     }
 
     pub fn env(&self) -> Result<&Env, anyhow::Error> {
-        self.env.as_ref().ok_or_else(|| anyhow!("env not initialized"))
+        self.env
+            .as_ref()
+            .ok_or_else(|| anyhow!("env not initialized"))
     }
 
     pub fn client(&self) -> Result<&reqwest::Client, anyhow::Error> {
-        self.client.as_ref().ok_or_else(|| anyhow!("client not initialized"))
+        self.client
+            .as_ref()
+            .ok_or_else(|| anyhow!("client not initialized"))
     }
 
     pub fn bff_base(&self) -> Result<String, anyhow::Error> {

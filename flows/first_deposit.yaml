@@ -1,74 +1,117 @@
 flow_type: first_deposit
-human_id_prefix: fd
+human_id_prefix: first_deposit
 feature: flow-first-deposit
-initial_step: check_user_exists
+initial_step: init_first_deposit
 
 steps:
-  check_user_exists:
-    action: SET
+  init_first_deposit:
+    action: WAIT
+    actor: END_USER
+    config:
+      actor: USER
+    next: get_user
+
+  get_user:
+    action: GET_USER
     actor: SYSTEM
     config:
-      to: flow
-      values:
-        user_checked: true
-    retry:
-      max: 3
-      delay_ms: 500
-    ok: validate_deposit
-    fail: error
+      save_to: session
+    next: await_admin_decision
 
-  validate_deposit:
-    action: VALIDATE_DEPOSIT
-    actor: SYSTEM
-    config:
-      min_amount: 1.0
-      max_amount: 100000.0
-      currencies:
-        - USD
-        - EUR
-        - XAF
-    retry:
-      max: 3
-      delay_ms: 1000
-    ok: await_payment
-    fail: error
-
-  await_payment:
+  await_admin_decision:
     action: WAIT
     actor: ADMIN
-    config: {}
-    retry:
-      max: 3
-      delay_ms: 5000
-    ok: approve
-    fail: error
+    config:
+      actor: ADMIN
+    next: decide_admin
 
-  approve:
+  decide_admin:
+    action: CONDITIONAL
+    actor: SYSTEM
+    config:
+      source: flow
+      pointer: /step_output/await_admin_decision/decision
+      cases:
+        APPROVED: approved
+        REJECTED: rejected
+      default_branch: rejected
+    branches:
+      approved: cuss_register_customer
+      rejected: close_session
+    fail: FAILED
+
+  cuss_register_customer:
     action: WEBHOOK_HTTP
     actor: SYSTEM
     config:
-      url: "${DEPOSIT_SERVICE_URL}/approve"
+      url: ${CUSS_URL:-http://cuss:8080}/api/registration/register
       method: POST
       timeout_ms: 10000
-    retry:
-      max: 5
-      delay_ms: 2000
-    ok: complete
-    fail: error
+      payload:
+        fullName: "{{session.full_name}}"
+        phone: "{{session.phone_number}}"
+        externalId: "{{session_id}}"
+      success_condition:
+        status_codes:
+          - 201
+      extraction_rules:
+        - json_pointer: /fineractClientId
+          target_path: /fineractClientId
+          target_context: step_output
+        - json_pointer: /savingsAccountId
+          target_path: /savingsAccountId
+          target_context: step_output
+    next: cuss_approve_and_deposit
+    fail: FAILED
 
-  error:
-    action: ERROR
+  cuss_approve_and_deposit:
+    action: WEBHOOK_HTTP
     actor: SYSTEM
     config:
-      message: "Deposit failed"
-      retryable: false
-    retry:
-      max: 1
-      delay_ms: 0
+      url: ${CUSS_URL:-http://cuss:8080}/api/registration/approve-and-deposit
+      method: POST
+      timeout_ms: 10000
+      payload:
+        savingsAccountId: "{{flow.context.step_output.cuss_register_customer.savingsAccountId}}"
+        depositAmount: "{{flow.context.step_output.init_first_deposit.amount}}"
+      success_condition:
+        status_codes:
+          - 200
+      extraction_rules:
+        - json_pointer: /transactionId
+          target_path: /transactionId
+          target_context: step_output
+        - json_pointer: /savingsAccountId
+          target_path: /savingsAccountId
+          target_context: step_output
+    next: update_deposit_metadata
+    fail: FAILED
 
-  complete:
+  update_deposit_metadata:
+    action: UPDATE_USER_METADATA
+    actor: SYSTEM
+    config:
+      mappings:
+        - target_path: /fineractId
+          source: flow
+          source_path: /step_output/cuss_register_customer/fineractClientId
+        - target_path: /savingsAccountId
+          source: flow
+          source_path: /step_output/cuss_register_customer/savingsAccountId
+        - target_path: /firstDeposit/transactionId
+          source: flow
+          source_path: /step_output/cuss_approve_and_deposit/transactionId
+        - target_path: /firstDeposit/status
+          value: APPROVED
+    next: COMPLETE
+
+  close_session:
+    action: CLOSE_SESSION
+    actor: SYSTEM
+    config:
+      reason: REJECTED_BY_ADMIN
+    next: CLOSED
+
+  COMPLETE:
     action: NOOP
     actor: SYSTEM
-    retry:
-      max: 1
-      delay_ms: 0

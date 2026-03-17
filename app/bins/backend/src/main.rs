@@ -129,12 +129,12 @@ fn load_imports(path: &Path) -> Result<backend_server::flow_registry::RegistryIm
             let path = entry.path();
             if path.is_file()
                 && let Some(ext) = path.extension().and_then(|s| s.to_str())
-                    && (ext.eq_ignore_ascii_case("json")
-                        || ext.eq_ignore_ascii_case("yaml")
-                        || ext.eq_ignore_ascii_case("yml"))
-                    {
-                        parse_import_file(&path, &mut imports)?;
-                    }
+                && (ext.eq_ignore_ascii_case("json")
+                    || ext.eq_ignore_ascii_case("yaml")
+                    || ext.eq_ignore_ascii_case("yml"))
+            {
+                parse_import_file(&path, &mut imports)?;
+            }
         }
     } else {
         parse_import_file(path, &mut imports)?;
@@ -185,11 +185,16 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
         if let Some(flow) = registry.get_flow(&flow_type) {
             let mut steps = std::collections::HashMap::new();
             for step in flow.steps() {
-                let (next, ok, fail) = if let Some(transition) = flow.transitions().get(step.step_type()) {
-                    (None, Some(transition.on_success.clone()), transition.on_failure.clone())
-                } else {
-                    (None, None, None)
-                };
+                let (next, ok, fail) =
+                    if let Some(transition) = flow.transitions().get(step.step_type()) {
+                        (
+                            None,
+                            Some(transition.on_success.clone()),
+                            transition.on_failure.clone(),
+                        )
+                    } else {
+                        (None, None, None)
+                    };
 
                 steps.insert(
                     step.step_type().to_owned(),
@@ -201,6 +206,7 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
                         next,
                         ok,
                         fail,
+                        branches: std::collections::HashMap::new(),
                     },
                 );
             }

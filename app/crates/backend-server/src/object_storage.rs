@@ -37,7 +37,7 @@ pub enum EncryptionMode {
 /// It provides methods for uploading, downloading, and generating presigned URLs.
 #[cfg_attr(any(test, feature = "test-utils"), mockall::automock)]
 #[backend_core::async_trait]
-pub trait MinioStorage: Send + Sync {
+pub trait ObjectStorage: Send + Sync {
     /// Checks if an object exists in the bucket.
     ///
     /// # Arguments
@@ -118,11 +118,11 @@ pub trait MinioStorage: Send + Sync {
 }
 
 /// S3-compatible storage implementation using the AWS SDK.
-pub struct S3CompatibleMinioStorage {
+pub struct S3ObjectStorage {
     client: aws_sdk_s3::Client,
 }
 
-impl S3CompatibleMinioStorage {
+impl S3ObjectStorage {
     /// Creates a new S3-compatible storage instance.
     ///
     /// # Arguments
@@ -133,7 +133,7 @@ impl S3CompatibleMinioStorage {
 }
 
 #[backend_core::async_trait]
-impl MinioStorage for S3CompatibleMinioStorage {
+impl ObjectStorage for S3ObjectStorage {
     async fn head_object(&self, bucket: &str, key: &str) -> Result<(), Error> {
         self.client
             .head_object()
@@ -155,7 +155,7 @@ impl MinioStorage for S3CompatibleMinioStorage {
     ) -> Result<(), Error> {
         Err(Error::bad_request(
             "STORAGE_UNSUPPORTED",
-            "upload is not supported by minio storage",
+            "direct upload is not supported by this object storage backend",
         ))
     }
 
@@ -209,7 +209,7 @@ impl MinioStorage for S3CompatibleMinioStorage {
     async fn download(&self, _bucket: &str, _key: &str) -> Result<Bytes, Error> {
         Err(Error::bad_request(
             "STORAGE_UNSUPPORTED",
-            "download is not supported by minio storage",
+            "direct download is not supported by this object storage backend",
         ))
     }
 

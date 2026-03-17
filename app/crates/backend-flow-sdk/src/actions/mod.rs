@@ -1,18 +1,28 @@
+mod close_session;
+mod conditional;
+mod debug;
 mod error;
+mod get_user;
 mod kyc;
 mod noop;
 mod otp;
 mod retry;
 mod set;
+mod update_user_metadata;
 mod wait;
 mod webhook;
 
+pub use close_session::CloseSessionAction;
+pub use conditional::ConditionalAction;
+pub use debug::DebugLogAction;
 pub use error::ErrorAction;
+pub use get_user::GetUserAction;
 pub use kyc::{DocumentType, ReviewDocumentAction, UploadDocumentAction, ValidateDepositAction};
 pub use noop::NoopAction;
 pub use otp::{GenerateOtpAction, VerifyOtpAction};
 pub use retry::RetryAction;
 pub use set::SetAction;
+pub use update_user_metadata::UpdateUserMetadataAction;
 pub use wait::WaitAction;
 
 pub use webhook::{

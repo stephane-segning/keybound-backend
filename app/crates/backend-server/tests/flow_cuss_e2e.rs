@@ -1,6 +1,9 @@
 use backend_flow_sdk::step::ContextUpdates;
-use backend_flow_sdk::{Actor, Flow, FlowError, FlowRegistry, SessionDefinition, Step, StepContext, StepOutcome, StepTransition};
-use serde_json::{json, Value};
+use backend_flow_sdk::{
+    Actor, Flow, FlowError, FlowRegistry, SessionDefinition, Step, StepContext, StepOutcome,
+    StepTransition,
+};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -128,7 +131,10 @@ impl Step for CussApproveStep {
 
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("{}/api/registration/approve-and-deposit", self.cuss_url))
+            .post(format!(
+                "{}/api/registration/approve-and-deposit",
+                self.cuss_url
+            ))
             .json(&json!({
                 "savingsAccountId": savings_account_id,
                 "depositAmount": deposit_amount
@@ -197,7 +203,9 @@ impl Step for AwaitApprovalStep {
     }
 
     async fn execute(&self, _ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        Ok(StepOutcome::Waiting { actor: Actor::Admin })
+        Ok(StepOutcome::Waiting {
+            actor: Actor::Admin,
+        })
     }
 }
 
@@ -290,7 +298,9 @@ impl CussDepositFlow {
             Arc::new(CheckUserStep),
             Arc::new(ValidateDepositStep),
             Arc::new(AwaitApprovalStep),
-            Arc::new(CussRegisterStep { cuss_url: cuss_url.clone() }),
+            Arc::new(CussRegisterStep {
+                cuss_url: cuss_url.clone(),
+            }),
             Arc::new(CussApproveStep { cuss_url }),
         ];
 
@@ -389,13 +399,12 @@ impl MockUserRepo {
     fn update_metadata(&mut self, user_id: &str, patch: Value) {
         if let Some(user) = self.users.get_mut(user_id)
             && let Some(meta) = user.get_mut("metadata")
-                && let (Some(meta_obj), Some(patch_obj)) =
-                    (meta.as_object_mut(), patch.as_object())
-                {
-                    for (k, v) in patch_obj {
-                        meta_obj.insert(k.clone(), v.clone());
-                    }
-                }
+            && let (Some(meta_obj), Some(patch_obj)) = (meta.as_object_mut(), patch.as_object())
+        {
+            for (k, v) in patch_obj {
+                meta_obj.insert(k.clone(), v.clone());
+            }
+        }
     }
 }
 
@@ -464,6 +473,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
 
     let ctx = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some(test_user_id.to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_001".to_string(),
         input: json!({}),
@@ -477,9 +487,10 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         StepOutcome::Done { output, updates } => {
             assert!(output.is_some());
             if let Some(updates) = updates
-                && let Some(metadata_patch) = updates.user_metadata_patch {
-                    user_repo.update_metadata(test_user_id, metadata_patch);
-                }
+                && let Some(metadata_patch) = updates.user_metadata_patch
+            {
+                user_repo.update_metadata(test_user_id, metadata_patch);
+            }
         }
         _ => panic!("Expected Done outcome"),
     }
@@ -492,6 +503,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
 
     let ctx2 = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some(test_user_id.to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_002".to_string(),
         input: json!({}),
@@ -504,7 +516,12 @@ async fn test_flow_cuss_deposit_saves_metadata() {
     match outcome2 {
         StepOutcome::Done { output, .. } => {
             let output = output.expect("output");
-            assert!(output.get("valid").and_then(|v| v.as_bool()).unwrap_or(false));
+            assert!(
+                output
+                    .get("valid")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            );
         }
         _ => panic!("Expected Done outcome for validate"),
     }
@@ -517,6 +534,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
 
     let ctx3 = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some(test_user_id.to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_003".to_string(),
         input: json!({}),
@@ -529,13 +547,17 @@ async fn test_flow_cuss_deposit_saves_metadata() {
     match outcome3 {
         StepOutcome::Done { output, updates } => {
             let output = output.expect("output");
-            let client_id = output.get("fineractClientId").and_then(|v| v.as_i64()).expect("fineractClientId");
+            let client_id = output
+                .get("fineractClientId")
+                .and_then(|v| v.as_i64())
+                .expect("fineractClientId");
             assert_eq!(client_id, 12345);
 
             if let Some(updates) = updates
-                && let Some(metadata_patch) = updates.user_metadata_patch {
-                    user_repo.update_metadata(test_user_id, metadata_patch);
-                }
+                && let Some(metadata_patch) = updates.user_metadata_patch
+            {
+                user_repo.update_metadata(test_user_id, metadata_patch);
+            }
         }
         StepOutcome::Failed { error, .. } => {
             panic!("Register step failed: {}", error);
@@ -551,6 +573,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
 
     let ctx4 = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some(test_user_id.to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_004".to_string(),
         input: json!({}),
@@ -569,15 +592,22 @@ async fn test_flow_cuss_deposit_saves_metadata() {
     match outcome4 {
         StepOutcome::Done { output, updates } => {
             let output = output.expect("output");
-            let tx_id = output.get("transactionId").and_then(|v| v.as_i64()).expect("transactionId");
+            let tx_id = output
+                .get("transactionId")
+                .and_then(|v| v.as_i64())
+                .expect("transactionId");
             assert_eq!(tx_id, 99999);
-            let savings_id = output.get("savingsAccountId").and_then(|v| v.as_i64()).expect("savingsAccountId");
+            let savings_id = output
+                .get("savingsAccountId")
+                .and_then(|v| v.as_i64())
+                .expect("savingsAccountId");
             assert_eq!(savings_id, 67890);
 
             if let Some(updates) = updates
-                && let Some(metadata_patch) = updates.user_metadata_patch {
-                    user_repo.update_metadata(test_user_id, metadata_patch);
-                }
+                && let Some(metadata_patch) = updates.user_metadata_patch
+            {
+                user_repo.update_metadata(test_user_id, metadata_patch);
+            }
         }
         StepOutcome::Failed { error, .. } => {
             panic!("Approve step failed: {}", error);
@@ -595,15 +625,21 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         Some(67890)
     );
     assert_eq!(
-        metadata.get("deposit_transaction_id").and_then(|v| v.as_i64()),
+        metadata
+            .get("deposit_transaction_id")
+            .and_then(|v| v.as_i64()),
         Some(99999)
     );
     assert_eq!(
-        metadata.get("cuss_registration_status").and_then(|v| v.as_str()),
+        metadata
+            .get("cuss_registration_status")
+            .and_then(|v| v.as_str()),
         Some("COMPLETED")
     );
     assert_eq!(
-        metadata.get("cuss_approval_status").and_then(|v| v.as_str()),
+        metadata
+            .get("cuss_approval_status")
+            .and_then(|v| v.as_str()),
         Some("COMPLETED")
     );
 }
@@ -626,6 +662,7 @@ async fn test_flow_cuss_register_retryable_on_5xx() {
 
     let ctx = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some("usr_001".to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_001".to_string(),
         input: json!({}),
@@ -665,6 +702,7 @@ async fn test_flow_cuss_register_non_retryable_on_4xx() {
 
     let ctx = StepContext {
         session_id: "sess_001".to_string(),
+        session_user_id: Some("usr_001".to_string()),
         flow_id: "flow_001".to_string(),
         step_id: "step_001".to_string(),
         input: json!({}),
