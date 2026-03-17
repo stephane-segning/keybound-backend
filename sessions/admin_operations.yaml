@@ -1,0 +1,5 @@
+session_type: admin_operations
+human_id_prefix: ao
+
+allowed_flows:
+  - admin_user_management

@@ -14,7 +14,7 @@ Located in `.opencode/agents/`
 | flow-architect | kimi-k2-thinking | Architecture & patterns |
 | flow-otp-master | deepseek-v3p2 | Phone OTP flow |
 | flow-email-wizard | cogito-671b-v2-p1 | Email magic flow |
-| flow-deposit-builder | kimi-k2-instruct | First deposit flow |
+| flow-deposit-builder | kimi-k2-instruct-0905 | First deposit flow |
 | integration-specialist | gemini-2.5-flash | Document flows |
 | test-engineer | qwen3-vl-30b-a3b-thinking | Testing & QA |
 | project-closer | minimax-m2p2 | Final polish |

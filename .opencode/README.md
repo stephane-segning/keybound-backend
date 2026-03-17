@@ -36,7 +36,7 @@ opencode run check-workspace
 ### Flow Implementation
 - **flow-otp-master** (deepseek-v3p2): Phone OTP flow implementation
 - **flow-email-wizard** (cogito-671b-v2-p1): Email Magic flow implementation
-- **flow-deposit-builder** (kimi-k2-instruct): First Deposit flow implementation
+- **flow-deposit-builder** (kimi-k2-instruct-0905): First Deposit flow implementation
 - **integration-specialist** (gemini-2.5-flash): Document verification flows
 
 ### Testing

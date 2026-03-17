@@ -35,6 +35,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     ports:
       - '3002:3000'
     depends_on:
@@ -78,6 +80,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     ports:
       - '3003:3000'
     depends_on:
@@ -121,6 +125,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     ports:
       - '3004:3000'
     depends_on:
@@ -164,6 +170,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     ports:
       - '3005:3000'
     depends_on:
@@ -207,6 +215,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     ports:
       - '3006:3000'
     depends_on:
@@ -249,6 +259,8 @@ services:
       RUST_LOG: info
     volumes:
       - ../../config:/app/config
+      - ../../flows:/app/flows
+      - ../../sessions:/app/sessions
     depends_on:
       redis:
         condition: service_healthy

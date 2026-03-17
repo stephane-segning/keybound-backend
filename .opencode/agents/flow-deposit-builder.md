@@ -1,7 +1,7 @@
 ---
 description: Implement First Deposit flow with payment processing, staff approval workflow, and CUSS integration
 mode: primary
-model: kimi-k2-instruct
+model: kimi-k2-instruct-0905
 temperature: 0.2
 color: "#4ADE80"
 tools:

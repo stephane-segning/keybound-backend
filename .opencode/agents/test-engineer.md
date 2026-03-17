@@ -1,7 +1,7 @@
 ---
 description: Write comprehensive unit, integration, and E2E tests to achieve >80% coverage
 mode: primary
-model: qwen3-vl-30b-a3b-thinking
+model: qwen3-vl-30b-a3b-instruct
 temperature: 0.1
 color: "#9333EA"
 tools:

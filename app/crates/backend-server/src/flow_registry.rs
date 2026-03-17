@@ -1,11 +1,14 @@
 use backend_flow_sdk::flow::StepRef;
-use backend_flow_sdk::{Actor, Flow, FlowError, FlowRegistry, SessionDefinition, StepTransition};
+use backend_flow_sdk::{
+    Actor, Flow, FlowConfigLoader, FlowError, FlowRegistry, LoadedConfigs, SessionDefinition,
+    StepTransition,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::flow_logic;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub const SESSION_TYPE_KYC_FULL: &str = "KYC_FULL";
 pub const SESSION_TYPE_ACCOUNT_MANAGEMENT: &str = "ACCOUNT_MANAGEMENT";
@@ -17,11 +20,26 @@ pub struct RegistryImports {
     pub sessions: Vec<backend_flow_sdk::SessionDefinition>,
     #[cfg(feature = "flow-cuss-integration")]
     pub cuss_url: Option<String>,
+    pub flows_dir: Option<String>,
+    pub sessions_dir: Option<String>,
 }
 
 pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowError> {
     info!("Building flow registry...");
     let mut registry = FlowRegistry::new();
+
+    register_builtin_actions(&mut registry);
+
+    let yaml_configs = load_yaml_configs(&imports);
+    for flow_def in &yaml_configs.flows {
+        debug!("Registering YAML flow: {}", flow_def.flow_type);
+        register_flow_definition(&mut registry, flow_def.clone())?;
+    }
+    for session_def in &yaml_configs.sessions {
+        debug!("Registering YAML session: {}", session_def.session_type);
+        registry.register_session(session_def.clone());
+    }
+
     let mut kyc_allowed_flows = Vec::new();
     let mut account_allowed_flows = Vec::new();
     let mut admin_allowed_flows = Vec::new();
@@ -285,7 +303,6 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
         human_id_prefix: "kyc".to_owned(),
         feature: None,
         allowed_flows: kyc_allowed_flows,
-        override_existing: None,
     });
 
     registry.register_session(SessionDefinition {
@@ -293,7 +310,6 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
         human_id_prefix: "auth".to_owned(),
         feature: None,
         allowed_flows: account_allowed_flows,
-        override_existing: None,
     });
 
     registry.register_session(SessionDefinition {
@@ -301,11 +317,10 @@ pub fn build_registry(imports: RegistryImports) -> Result<FlowRegistry, FlowErro
         human_id_prefix: "admin".to_owned(),
         feature: None,
         allowed_flows: admin_allowed_flows,
-        override_existing: None,
     });
 
     for flow_def in imports.flows {
-        debug!("Importing flow: {}", flow_def.metadata.flow_type);
+        debug!("Importing flow: {}", flow_def.flow_type);
         apply_flow_import(&mut registry, flow_def)?;
     }
 
@@ -321,97 +336,16 @@ pub fn apply_flow_import(
     registry: &mut FlowRegistry,
     definition: backend_flow_sdk::flow::FlowDefinition,
 ) -> Result<(), FlowError> {
-    let flow_type = definition.metadata.flow_type.clone();
-
-    if registry.get_flow(&flow_type).is_some()
-        && !definition.metadata.override_existing.unwrap_or(false)
-    {
-        return Err(FlowError::InvalidDefinition(format!(
-            "Flow '{}' already exists in registry and override_existing is false or missing",
-            flow_type
-        )));
-    }
-
-    let mut proxy_steps = Vec::new();
-    let mut transitions = HashMap::new();
-
-    let initial_step = definition
-        .spec
-        .steps
-        .first()
-        .map(|s| s.step_type.clone())
-        .ok_or_else(|| {
-            FlowError::InvalidDefinition(format!("Flow '{}' has no steps", flow_type))
-        })?;
-
-    for step_def in definition.spec.steps {
-        let _base_step = registry.get_step(&step_def.step_type).ok_or_else(|| {
-            FlowError::InvalidDefinition(format!(
-                "Flow '{}' references unknown step '{}'",
-                flow_type, step_def.step_type
-            ))
-        })?;
-
-        // Extract a cloned Arc for the base step by relying on the fact that `FlowRegistry`
-        // allows cloning step implementations when accessed properly. Wait, `get_step` returns `&dyn Step`.
-        // If we can't get an Arc directly, we might need a workaround. But wait, we can just look up the steps
-        // from the definitions. Wait! `get_step` returns a reference. How do we get the Arc?
-        // We will need to change `FlowRegistry` to expose `get_step_arc`.
-        // Let's assume we'll add `get_step_arc` to `FlowRegistry` next.
-        let base_step_arc = registry.get_step_arc(&step_def.step_type).unwrap();
-
-        let proxy = Arc::new(ProxyStep {
-            step_type: step_def.step_type.clone(),
-            actor: step_def.actor,
-            human_id: step_def.human_id.clone(),
-            feature: step_def.feature.clone(),
-            inner: base_step_arc,
-        });
-        proxy_steps.push(proxy as StepRef);
-
-        if let Some(on_success) = step_def.on_success {
-            transitions.insert(
-                step_def.step_type.clone(),
-                StepTransition {
-                    on_success,
-                    on_failure: step_def.on_failure,
-                },
-            );
-        } else if step_def.on_failure.is_some() {
-            // on_failure without on_success doesn't make much sense in our model unless implicit COMPLETE
-            transitions.insert(
-                step_def.step_type.clone(),
-                StepTransition {
-                    on_success: "COMPLETE".to_owned(),
-                    on_failure: step_def.on_failure,
-                },
-            );
-        }
-    }
-
-    let dynamic_flow = Arc::new(DynamicFlow {
-        flow_type: flow_type.clone(),
-        human_id: definition.metadata.human_id_prefix.clone(),
-        feature: definition.metadata.feature.clone(),
-        steps: proxy_steps,
-        initial_step,
-        transitions,
-    });
-
-    registry.register_flow(dynamic_flow);
-
-    Ok(())
+    register_flow_definition(registry, definition)
 }
 
 pub fn apply_session_import(
     registry: &mut FlowRegistry,
     definition: backend_flow_sdk::SessionDefinition,
 ) -> Result<(), FlowError> {
-    if registry.get_session(&definition.session_type).is_some()
-        && !definition.override_existing.unwrap_or(false)
-    {
+    if registry.get_session(&definition.session_type).is_some() {
         return Err(FlowError::InvalidDefinition(format!(
-            "Session '{}' already exists in registry and override_existing is false or missing",
+            "Session '{}' already exists in registry",
             definition.session_type
         )));
     }
@@ -576,4 +510,116 @@ fn static_flow(
         initial_step,
         transitions: map,
     })
+}
+
+fn register_builtin_actions(registry: &mut FlowRegistry) {
+    use backend_flow_sdk::{
+        ErrorAction, GenerateOtpAction, NoopAction, RetryAction, ReviewDocumentAction, SetAction,
+        UploadDocumentAction, ValidateDepositAction, VerifyOtpAction, WaitAction,
+    };
+
+    debug!("Registering built-in action steps...");
+
+    registry.register_step(Arc::new(NoopAction));
+    registry.register_step(Arc::new(ErrorAction));
+    registry.register_step(Arc::new(RetryAction));
+    registry.register_step(Arc::new(WaitAction));
+    registry.register_step(Arc::new(SetAction));
+    registry.register_step(Arc::new(GenerateOtpAction));
+    registry.register_step(Arc::new(VerifyOtpAction));
+    registry.register_step(Arc::new(UploadDocumentAction));
+    registry.register_step(Arc::new(ReviewDocumentAction));
+    registry.register_step(Arc::new(ValidateDepositAction));
+
+    debug!("Registered {} built-in actions", registry.step_types().len());
+}
+
+fn load_yaml_configs(imports: &RegistryImports) -> LoadedConfigs {
+    let flows_dir = imports.flows_dir.as_deref().unwrap_or("flows");
+    let sessions_dir = imports.sessions_dir.as_deref().unwrap_or("sessions");
+
+    let loader = FlowConfigLoader::new(flows_dir, sessions_dir);
+
+    match loader.load_from_fs() {
+        Ok(configs) => {
+            info!(
+                "Loaded {} flows and {} sessions from YAML files",
+                configs.flows.len(),
+                configs.sessions.len()
+            );
+            configs
+        }
+        Err(e) => {
+            warn!("Failed to load YAML configs, using defaults: {}", e);
+            LoadedConfigs::default()
+        }
+    }
+}
+
+fn register_flow_definition(
+    registry: &mut FlowRegistry,
+    definition: backend_flow_sdk::flow::FlowDefinition,
+) -> Result<(), FlowError> {
+    let flow_type = definition.flow_type.clone();
+
+    if registry.get_flow(&flow_type).is_some() {
+        return Err(FlowError::InvalidDefinition(format!(
+            "Flow '{}' already exists in registry",
+            flow_type
+        )));
+    }
+
+    let mut proxy_steps = Vec::new();
+    let mut transitions = HashMap::new();
+
+    let initial_step = definition.initial_step.clone();
+
+    for (step_name, step_def) in &definition.steps {
+        let base_step_arc = registry.get_step_arc(&step_def.action).ok_or_else(|| {
+            FlowError::InvalidDefinition(format!(
+                "Flow '{}' references unknown action '{}'",
+                flow_type, step_def.action
+            ))
+        })?;
+
+        let proxy = Arc::new(ProxyStep {
+            step_type: step_name.clone(),
+            actor: step_def.actor,
+            human_id: step_name.clone(),
+            feature: None,
+            inner: base_step_arc,
+        });
+        proxy_steps.push(proxy as StepRef);
+
+        if let Some(next) = &step_def.next {
+            transitions.insert(
+                step_name.clone(),
+                StepTransition {
+                    on_success: next.clone(),
+                    on_failure: step_def.fail.clone(),
+                },
+            );
+        } else if let Some(ok) = &step_def.ok {
+            transitions.insert(
+                step_name.clone(),
+                StepTransition {
+                    on_success: ok.clone(),
+                    on_failure: step_def.fail.clone(),
+                },
+            );
+        }
+    }
+
+    let dynamic_flow = Arc::new(DynamicFlow {
+        flow_type: flow_type.clone(),
+        human_id: definition.human_id_prefix.clone(),
+        feature: definition.feature.clone(),
+        steps: proxy_steps,
+        initial_step,
+        transitions,
+    });
+
+    registry.register_flow(dynamic_flow);
+
+    Ok(())
 }

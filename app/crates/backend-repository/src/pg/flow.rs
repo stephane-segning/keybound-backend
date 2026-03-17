@@ -388,6 +388,7 @@ impl FlowRepo for FlowRepository {
 
         let updated = db::FlowStepRow {
             status: patch.status.unwrap_or_else(|| current.status.clone()),
+            attempt_no: patch.attempt_no.unwrap_or(current.attempt_no),
             input: patch.input.unwrap_or_else(|| current.input.clone()),
             output: patch.output.unwrap_or_else(|| current.output.clone()),
             error: patch.error.unwrap_or_else(|| current.error.clone()),
@@ -400,6 +401,7 @@ impl FlowRepo for FlowRepository {
         diesel::update(flow_step::table.filter(flow_step::id.eq(step_id)))
             .set((
                 flow_step::status.eq(&updated.status),
+                flow_step::attempt_no.eq(&updated.attempt_no),
                 flow_step::input.eq(&updated.input),
                 flow_step::output.eq(&updated.output),
                 flow_step::error.eq(&updated.error),

@@ -1,7 +1,7 @@
 ---
 description: Implement Email Magic flow with secure link generation and verification
 mode: primary
-model: cogito-671b-v2-p1
+model: kimi-k2-thinking
 temperature: 0.2
 color: "#FBBF24"
 tools:

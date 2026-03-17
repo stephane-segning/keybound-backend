@@ -1,7 +1,7 @@
 ---
 description: Implement Phone OTP flow with SMS integration, rate limiting, and verification logic
 mode: primary
-model: deepseek-v3p2
+model: kimi-k2-thinking
 temperature: 0.2
 color: "#34D399"
 tools:

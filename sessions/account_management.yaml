@@ -1,0 +1,6 @@
+session_type: account_management
+human_id_prefix: am
+
+allowed_flows:
+  - device_enroll
+  - account_update

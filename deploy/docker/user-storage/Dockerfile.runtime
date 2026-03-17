@@ -15,6 +15,11 @@ COPY backend /app/server
 COPY sms-gateway /app/sms-gateway
 COPY healthcheck /app/healthcheck
 
+COPY flows/ /app/flows/
+COPY sessions/ /app/sessions/
+
+VOLUME ["/app/flows", "/app/sessions"]
+
 USER nonroot:nonroot
 
 EXPOSE $PORT

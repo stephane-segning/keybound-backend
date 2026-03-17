@@ -1,4 +1,4 @@
-use crate::{Flow, FlowError, SessionDefinition, Step};
+use crate::{Flow, FlowDefinition, FlowError, SessionDefinition, Step};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::debug;
@@ -7,6 +7,7 @@ use tracing::debug;
 pub struct FlowRegistry {
     steps: HashMap<String, Arc<dyn Step>>,
     flows: HashMap<String, Arc<dyn Flow>>,
+    flow_definitions: HashMap<String, FlowDefinition>,
     sessions: HashMap<String, SessionDefinition>,
 }
 
@@ -30,6 +31,11 @@ impl FlowRegistry {
         self.sessions.insert(session.session_type.clone(), session);
     }
 
+    pub fn register_flow_definition(&mut self, definition: FlowDefinition) {
+        debug!("Registering flow definition: {}", definition.flow_type);
+        self.flow_definitions.insert(definition.flow_type.clone(), definition);
+    }
+
     pub fn get_step(&self, step_type: &str) -> Option<&dyn Step> {
         self.steps.get(step_type).map(Arc::as_ref)
     }
@@ -44,6 +50,16 @@ impl FlowRegistry {
 
     pub fn get_session(&self, session_type: &str) -> Option<&SessionDefinition> {
         self.sessions.get(session_type)
+    }
+
+    pub fn get_flow_definition(&self, flow_type: &str) -> Option<&FlowDefinition> {
+        self.flow_definitions.get(flow_type)
+    }
+
+    pub fn flow_definitions(&self) -> Vec<&FlowDefinition> {
+        let mut values: Vec<_> = self.flow_definitions.values().collect();
+        values.sort_by(|a, b| a.flow_type.cmp(&b.flow_type));
+        values
     }
 
     pub fn validate_features(&self, enabled_features: &[&str]) -> Result<(), FlowError> {

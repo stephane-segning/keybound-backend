@@ -85,7 +85,7 @@ opencode run --agent test-engineer test-flow phone_otp
 | **flow-architect** | subagent | kimi-k2-thinking | Design integration traits |
 | **flow-otp-master** | primary | deepseek-v3p2 | Implement Phone OTP flow |
 | **flow-email-wizard** | primary | cogito-671b-v2-p1 | Implement Email Magic flow |
-| **flow-deposit-builder** | primary | kimi-k2-instruct | Implement First Deposit flow |
+| **flow-deposit-builder** | primary | kimi-k2-instruct-0905 | Implement First Deposit flow |
 | **integration-specialist** | subagent | gemini-2.5-flash | Document verification flows |
 | **test-engineer** | primary | qwen3-vl-30b-a3b-thinking | Write comprehensive tests |
 | **project-closer** | subagent | minimax-m2p2 | Final polish and delivery |

@@ -96,6 +96,11 @@ COPY --from=builder /app/backend /app/server
 COPY --from=builder /app/sms-gateway /app/sms-gateway
 COPY --from=builder /app/healthcheck /app/healthcheck
 
+COPY flows/ /app/flows/
+COPY sessions/ /app/sessions/
+
+VOLUME ["/app/flows", "/app/sessions"]
+
 USER nonroot:nonroot
 
 EXPOSE $PORT
@@ -118,6 +123,11 @@ WORKDIR /app
 COPY --from=builder-prod /app/backend /app/server
 COPY --from=builder-prod /app/sms-gateway /app/sms-gateway
 COPY --from=builder-prod /app/healthcheck /app/healthcheck
+
+COPY flows/ /app/flows/
+COPY sessions/ /app/sessions/
+
+VOLUME ["/app/flows", "/app/sessions"]
 
 USER nonroot:nonroot
 

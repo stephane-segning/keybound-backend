@@ -11,6 +11,7 @@ pub(crate) mod bff_signature;
 pub(crate) mod file_storage;
 pub(crate) mod flow_executor;
 pub(crate) mod flow_logic;
+pub(crate) mod flow_storage;
 pub mod flow_registry;
 pub(crate) mod health;
 pub(crate) mod state;

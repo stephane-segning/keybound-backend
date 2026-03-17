@@ -166,6 +166,32 @@ pub struct SmsApi {
     pub auth_token: Option<String>,
 }
 
+/// Flow configuration for YAML-based flow and session definitions.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FlowConfig {
+    #[serde(default = "default_flows_dir")]
+    pub flows_dir: String,
+    #[serde(default = "default_sessions_dir")]
+    pub sessions_dir: String,
+}
+
+fn default_flows_dir() -> String {
+    "flows".to_owned()
+}
+
+fn default_sessions_dir() -> String {
+    "sessions".to_owned()
+}
+
+impl Default for FlowConfig {
+    fn default() -> Self {
+        Self {
+            flows_dir: default_flows_dir(),
+            sessions_dir: default_sessions_dir(),
+        }
+    }
+}
+
 /// Main application configuration containing all sub-systems.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -190,6 +216,8 @@ pub struct Config {
     pub auth: AuthApi,
     pub deposit_flow: Option<DepositFlow>,
     pub cuss: Cuss,
+    #[serde(default)]
+    pub flow: FlowConfig,
 }
 
 /// TLS certificate configuration for HTTPS.

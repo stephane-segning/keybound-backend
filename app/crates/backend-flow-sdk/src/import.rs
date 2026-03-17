@@ -48,28 +48,31 @@ pub fn import_session_definition(
 }
 
 fn validate_flow_definition(definition: &FlowDefinition) -> Result<(), FlowError> {
-    if definition.metadata.flow_type.trim().is_empty() {
+    if definition.flow_type.trim().is_empty() {
         return Err(FlowError::InvalidDefinition(
-            "metadata.flow_type cannot be empty".to_owned(),
+            "flow_type cannot be empty".to_owned(),
         ));
     }
-    if definition.spec.steps.is_empty() {
+    if definition.steps.is_empty() {
         return Err(FlowError::InvalidDefinition(
-            "spec.steps cannot be empty".to_owned(),
+            "steps cannot be empty".to_owned(),
         ));
     }
 
-    for step in &definition.spec.steps {
-        if step.step_type.trim().is_empty() {
-            return Err(FlowError::InvalidDefinition(
-                "step_type cannot be empty".to_owned(),
-            ));
+    for (step_name, step) in &definition.steps {
+        if step.action.trim().is_empty() {
+            return Err(FlowError::InvalidDefinition(format!(
+                "step '{}' action cannot be empty",
+                step_name
+            )));
         }
-        if step.human_id.trim().is_empty() {
-            return Err(FlowError::InvalidDefinition(
-                "human_id cannot be empty".to_owned(),
-            ));
-        }
+    }
+
+    if !definition.steps.contains_key(&definition.initial_step) {
+        return Err(FlowError::InvalidDefinition(format!(
+            "initial_step '{}' not found in steps",
+            definition.initial_step
+        )));
     }
 
     Ok(())

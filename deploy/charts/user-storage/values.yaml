@@ -58,6 +58,24 @@ controllers:
           - name: http
             containerPort: 3000
 
+        volumeMounts:
+          - name: flows-config
+            mountPath: /app/flows
+            readOnly: true
+          - name: sessions-config
+            mountPath: /app/sessions
+            readOnly: true
+
+    volumes:
+      - name: flows-config
+        configMap:
+          name: user-storage-flows
+          optional: true
+      - name: sessions-config
+        configMap:
+          name: user-storage-sessions
+          optional: true
+
 service:
   user-storage:
     enabled: true

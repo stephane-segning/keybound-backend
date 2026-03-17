@@ -28,38 +28,60 @@ pub struct StepTransition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowDefinition {
-    pub api_version: String,
-    pub kind: String,
-    pub metadata: FlowMetadata,
-    pub spec: FlowSpec,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowMetadata {
     pub flow_type: String,
     pub human_id_prefix: String,
     #[serde(default)]
     pub feature: Option<String>,
-    #[serde(default)]
-    pub override_existing: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowSpec {
-    pub steps: Vec<FlowStepDefinition>,
+    pub initial_step: String,
+    pub steps: HashMap<String, FlowStepDefinition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowStepDefinition {
-    pub step_type: String,
+    pub action: String,
     pub actor: crate::Actor,
-    pub human_id: String,
-    #[serde(default)]
-    pub feature: Option<String>,
     #[serde(default)]
     pub config: Option<serde_json::Value>,
     #[serde(default)]
-    pub on_success: Option<String>,
+    pub retry: Option<RetryConfig>,
     #[serde(default)]
-    pub on_failure: Option<String>,
+    pub next: Option<String>,
+    #[serde(default)]
+    pub ok: Option<String>,
+    #[serde(default)]
+    pub fail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryConfig {
+    #[serde(default = "default_max_retries")]
+    pub max: i32,
+    #[serde(default = "default_delay_ms")]
+    pub delay_ms: u64,
+}
+
+fn default_max_retries() -> i32 {
+    3
+}
+
+fn default_delay_ms() -> u64 {
+    1000
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max: default_max_retries(),
+            delay_ms: default_delay_ms(),
+        }
+    }
+}
+
+impl FlowDefinition {
+    pub fn get_step_retry_config(&self, step_name: &str) -> RetryConfig {
+        self.steps
+            .get(step_name)
+            .and_then(|s| s.retry.clone())
+            .unwrap_or_default()
+    }
 }

@@ -1,0 +1,45 @@
+flow_type: device_enroll
+human_id_prefix: de
+feature: flow-device-enroll
+initial_step: bind
+
+steps:
+  bind:
+    action: WAIT
+    actor: END_USER
+    config: {}
+    retry:
+      max: 3
+      delay_ms: 1000
+    ok: activate
+    fail: error
+
+  activate:
+    action: SET
+    actor: SYSTEM
+    config:
+      to: user
+      values:
+        device_bound: true
+    retry:
+      max: 3
+      delay_ms: 500
+    ok: complete
+    fail: error
+
+  error:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Device binding failed"
+      retryable: false
+    retry:
+      max: 1
+      delay_ms: 0
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0

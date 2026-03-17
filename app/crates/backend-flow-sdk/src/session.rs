@@ -6,8 +6,5 @@ pub struct SessionDefinition {
     pub human_id_prefix: String,
     #[serde(default)]
     pub feature: Option<String>,
-    #[serde(default)]
     pub allowed_flows: Vec<String>,
-    #[serde(default)]
-    pub override_existing: Option<bool>,
 }

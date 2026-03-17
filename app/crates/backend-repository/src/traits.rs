@@ -103,6 +103,7 @@ pub struct FlowStepCreateInput {
 #[derive(Debug, Clone, Default)]
 pub struct FlowStepPatch {
     pub status: Option<String>,
+    pub attempt_no: Option<i32>,
     pub input: Option<Option<Value>>,
     pub output: Option<Option<Value>>,
     pub error: Option<Option<Value>>,
@@ -117,6 +118,11 @@ impl FlowStepPatch {
 
     pub fn status(mut self, status: impl Into<String>) -> Self {
         self.status = Some(status.into());
+        self
+    }
+
+    pub fn attempt_no(mut self, attempt_no: i32) -> Self {
+        self.attempt_no = Some(attempt_no);
         self
     }
 

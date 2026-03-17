@@ -1,0 +1,51 @@
+flow_type: address_proof
+human_id_prefix: ap
+feature: flow-address-proof
+initial_step: submit
+
+steps:
+  submit:
+    action: UPLOAD_DOCUMENT
+    actor: END_USER
+    config:
+      document_type: address
+      allowed_types:
+        - utility_bill
+        - bank_statement
+        - government_letter
+      max_size_mb: 10
+      max_age_months: 3
+    retry:
+      max: 3
+      delay_ms: 1000
+    ok: review
+    fail: error
+
+  review:
+    action: REVIEW_DOCUMENT
+    actor: ADMIN
+    config:
+      document_type: address
+      timeout_seconds: 604800
+    retry:
+      max: 3
+      delay_ms: 5000
+    ok: complete
+    fail: submit
+
+  error:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Address proof upload failed"
+      retryable: false
+    retry:
+      max: 1
+      delay_ms: 0
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0

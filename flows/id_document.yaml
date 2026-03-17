@@ -1,0 +1,51 @@
+flow_type: id_document
+human_id_prefix: id
+feature: flow-id-document
+initial_step: submit
+
+steps:
+  submit:
+    action: UPLOAD_DOCUMENT
+    actor: END_USER
+    config:
+      document_type: id
+      allowed_types:
+        - passport
+        - national_id
+        - drivers_license
+      max_size_mb: 10
+      require_selfie: true
+    retry:
+      max: 3
+      delay_ms: 1000
+    ok: review
+    fail: error
+
+  review:
+    action: REVIEW_DOCUMENT
+    actor: ADMIN
+    config:
+      document_type: id
+      timeout_seconds: 604800
+    retry:
+      max: 3
+      delay_ms: 5000
+    ok: complete
+    fail: submit
+
+  error:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Document upload failed"
+      retryable: false
+    retry:
+      max: 1
+      delay_ms: 0
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0

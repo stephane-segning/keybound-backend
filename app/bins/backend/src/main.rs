@@ -6,7 +6,7 @@ use openssl_sys as _;
 
 use backend_core::{Cli, Commands, Result, RuntimeMode, init_tracing, load_from_path};
 use backend_flow_sdk::export::{export_flow_definition, export_session_definition};
-use backend_flow_sdk::flow::{FlowDefinition, FlowMetadata, FlowSpec, FlowStepDefinition};
+use backend_flow_sdk::flow::{FlowDefinition, FlowStepDefinition};
 use backend_flow_sdk::{ExportFormat, ImportFormat, SessionDefinition, import_flow_definition};
 use backend_server::{run_worker, serve};
 use branding::banner::BANNER;
@@ -88,13 +88,15 @@ async fn run_runtime(config_path: &str, mode: RuntimeMode, import: Option<&Path>
     config.runtime.mode = mode;
     init_tracing(&config.logging);
 
-    let imports = if let Some(path) = import {
+    let mut imports = if let Some(path) = import {
         let loaded = load_imports(path)?;
         info!(path = %path.display(), flows = loaded.flows.len(), sessions = loaded.sessions.len(), "validated startup import definitions");
         loaded
     } else {
         backend_server::flow_registry::RegistryImports::default()
     };
+    imports.flows_dir = Some(config.flow.flows_dir.clone());
+    imports.sessions_dir = Some(config.flow.sessions_dir.clone());
 
     match config.runtime.mode {
         RuntimeMode::Server => {
@@ -155,23 +157,18 @@ fn parse_import_file(
             .map_err(|error| backend_core::Error::Server(error.to_string()))?,
     };
 
-    let kind = parsed
-        .get("kind")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-
-    if kind.eq_ignore_ascii_case("flow") {
+    if parsed.get("flow_type").is_some() {
         let definition = import_flow_definition(&content, format)
             .map_err(|error| backend_core::Error::Server(error.to_string()))?;
         imports.flows.push(definition);
-    } else if kind.eq_ignore_ascii_case("session") {
+    } else if parsed.get("session_type").is_some() {
         let definition = backend_flow_sdk::import_session_definition(&content, format)
             .map_err(|error| backend_core::Error::Server(error.to_string()))?;
         imports.sessions.push(definition);
     } else {
         return Err(backend_core::Error::bad_request(
-            "UNSUPPORTED_IMPORT_KIND",
-            "Only Flow and Session definitions are supported",
+            "UNSUPPORTED_IMPORT_FORMAT",
+            "Expected flow_type or session_type field",
         ));
     }
 
@@ -186,36 +183,34 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
     let mut flow_definitions = Vec::new();
     for flow_type in registry.flow_types() {
         if let Some(flow) = registry.get_flow(&flow_type) {
-            let mut steps = Vec::new();
+            let mut steps = std::collections::HashMap::new();
             for step in flow.steps() {
-                let mut on_success = None;
-                let mut on_failure = None;
-                if let Some(transition) = flow.transitions().get(step.step_type()) {
-                    on_success = Some(transition.on_success.clone());
-                    on_failure = transition.on_failure.clone();
-                }
+                let (next, ok, fail) = if let Some(transition) = flow.transitions().get(step.step_type()) {
+                    (None, Some(transition.on_success.clone()), transition.on_failure.clone())
+                } else {
+                    (None, None, None)
+                };
 
-                steps.push(FlowStepDefinition {
-                    step_type: step.step_type().to_owned(),
-                    actor: step.actor(),
-                    human_id: step.human_id().to_owned(),
-                    feature: step.feature().map(|f| f.to_owned()),
-                    config: Some(serde_json::json!({})),
-                    on_success,
-                    on_failure,
-                });
+                steps.insert(
+                    step.step_type().to_owned(),
+                    FlowStepDefinition {
+                        action: step.step_type().to_owned(),
+                        actor: step.actor(),
+                        config: None,
+                        retry: None,
+                        next,
+                        ok,
+                        fail,
+                    },
+                );
             }
 
             flow_definitions.push(FlowDefinition {
-                api_version: "flow/v1".to_owned(),
-                kind: "Flow".to_owned(),
-                metadata: FlowMetadata {
-                    flow_type: flow.flow_type().to_owned(),
-                    human_id_prefix: flow.human_id().to_owned(),
-                    feature: flow.feature().map(|f| f.to_owned()),
-                    override_existing: None,
-                },
-                spec: FlowSpec { steps },
+                flow_type: flow.flow_type().to_owned(),
+                human_id_prefix: flow.human_id().to_owned(),
+                feature: flow.feature().map(|f| f.to_owned()),
+                initial_step: flow.initial_step().to_owned(),
+                steps,
             });
         }
     }
@@ -228,7 +223,6 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
             human_id_prefix: s.human_id_prefix.clone(),
             feature: s.feature.clone(),
             allowed_flows: s.allowed_flows.clone(),
-            override_existing: None,
         })
         .collect();
 
@@ -238,7 +232,7 @@ fn run_export(target: Option<&str>, all: bool, output: Option<&Path>) -> Result<
         let target_val = target.unwrap_or_default();
         let flows: Vec<FlowDefinition> = flow_definitions
             .into_iter()
-            .filter(|d| d.metadata.flow_type.eq_ignore_ascii_case(target_val))
+            .filter(|d| d.flow_type.eq_ignore_ascii_case(target_val))
             .collect();
         let sessions: Vec<SessionDefinition> = session_definitions
             .into_iter()

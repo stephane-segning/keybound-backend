@@ -1,0 +1,74 @@
+flow_type: first_deposit
+human_id_prefix: fd
+feature: flow-first-deposit
+initial_step: check_user_exists
+
+steps:
+  check_user_exists:
+    action: SET
+    actor: SYSTEM
+    config:
+      to: flow
+      values:
+        user_checked: true
+    retry:
+      max: 3
+      delay_ms: 500
+    ok: validate_deposit
+    fail: error
+
+  validate_deposit:
+    action: VALIDATE_DEPOSIT
+    actor: SYSTEM
+    config:
+      min_amount: 1.0
+      max_amount: 100000.0
+      currencies:
+        - USD
+        - EUR
+        - XAF
+    retry:
+      max: 3
+      delay_ms: 1000
+    ok: await_payment
+    fail: error
+
+  await_payment:
+    action: WAIT
+    actor: ADMIN
+    config: {}
+    retry:
+      max: 3
+      delay_ms: 5000
+    ok: approve
+    fail: error
+
+  approve:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: "${DEPOSIT_SERVICE_URL}/approve"
+      method: POST
+      timeout_ms: 10000
+    retry:
+      max: 5
+      delay_ms: 2000
+    ok: complete
+    fail: error
+
+  error:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Deposit failed"
+      retryable: false
+    retry:
+      max: 1
+      delay_ms: 0
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0

@@ -1,0 +1,35 @@
+flow_type: phone_otp
+human_id_prefix: po
+feature: flow-phone-otp
+initial_step: generate
+
+steps:
+  generate:
+    action: GENERATE_OTP
+    actor: SYSTEM
+    config:
+      length: 6
+      expires_in_seconds: 300
+      channel: sms
+    retry:
+      max: 3
+      delay_ms: 1000
+    next: verify
+
+  verify:
+    action: VERIFY_OTP
+    actor: END_USER
+    config:
+      max_attempts: 3
+    retry:
+      max: 3
+      delay_ms: 1000
+    ok: complete
+    fail: generate
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0

@@ -7,7 +7,7 @@ use crate::api::BackendApi;
 use crate::flow_registry::{actor_label, waiting_status};
 use axum::http::HeaderMap;
 use backend_core::Error;
-use backend_flow_sdk::{Actor, Flow, FlowError, HumanReadableId, StepContext, StepOutcome};
+use backend_flow_sdk::{Actor, Flow, FlowError, HumanReadableId, StepContext, StepOutcome, StepServices};
 use backend_model::db::{FlowInstanceRow, FlowSessionRow};
 use backend_repository::{
     FlowInstanceCreateInput, FlowSessionCreateInput, FlowSessionFilter, FlowStepCreateInput,
@@ -304,6 +304,7 @@ pub async fn submit_step(
         input: body.input.clone(),
         session_context: session.context.clone(),
         flow_context: flow.context.clone(),
+        services: StepServices::default(),
     };
 
     let verify_outcome = step_definition
@@ -548,6 +549,7 @@ async fn create_step_chain(
             input: input_value.clone(),
             session_context: session.context.clone(),
             flow_context: flow.context.clone(),
+            services: StepServices::default(),
         };
 
         match step_definition

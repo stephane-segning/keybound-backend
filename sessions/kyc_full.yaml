@@ -1,0 +1,9 @@
+session_type: kyc_full
+human_id_prefix: kf
+
+allowed_flows:
+  - phone_otp
+  - email_magic
+  - first_deposit
+  - id_document
+  - address_proof

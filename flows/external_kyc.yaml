@@ -1,0 +1,47 @@
+flow_type: external_kyc
+human_id_prefix: ek
+feature: flow-external-kyc
+initial_step: call_provider
+
+steps:
+  call_provider:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: "${KYC_PROVIDER_URL}/verify"
+      method: POST
+      timeout_ms: 30000
+      behavior: wait_and_save
+      extraction_rules:
+        - json_pointer: /status
+          target_path: /kyc_status
+          target_context: session_context
+        - json_pointer: /score
+          target_path: /kyc_score
+          target_context: user_metadata
+      success_condition:
+        status_codes: [200]
+        json_pointer: /status
+        expected_value: "verified"
+    retry:
+      max: 5
+      delay_ms: 2000
+    ok: complete
+    fail: error
+
+  error:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "External KYC verification failed"
+      retryable: false
+    retry:
+      max: 1
+      delay_ms: 0
+
+  complete:
+    action: NOOP
+    actor: SYSTEM
+    retry:
+      max: 1
+      delay_ms: 0
