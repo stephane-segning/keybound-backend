@@ -142,7 +142,6 @@ pub struct SigningKeyRow {
 }
 
 /// State machine instance - represents a single KYC flow execution.
-
 impl diesel::associations::HasTable for UserRow {
     type Table = crate::schema::app_user::table;
 

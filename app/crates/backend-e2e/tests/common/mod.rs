@@ -80,7 +80,7 @@ impl BffTestFixture {
         )
     }
 
-    fn store_global(self) -> &'static Self {
+    pub fn store_global(self) -> &'static Self {
         BFF_FIXTURE.get_or_init(|| self)
     }
 }
@@ -203,6 +203,7 @@ pub async fn send_json_with_bff(
 
     let should_sign = should_sign_bff_request(&request_path);
     if should_sign {
+        #[allow(clippy::redundant_closure)]
         let fixture = bff_fixture.or_else(|| BffTestFixture::get());
 
         if let Some(fixture) = fixture {

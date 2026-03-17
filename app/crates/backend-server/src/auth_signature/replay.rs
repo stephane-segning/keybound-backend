@@ -150,6 +150,7 @@ pub mod in_memory {
     }
 
     /// Thread-safe wrapper for the in-memory replay guard.
+    #[allow(dead_code)]
     pub type SharedInMemoryReplayGuard = Arc<InMemoryReplayGuard>;
 }
 

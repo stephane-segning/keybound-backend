@@ -58,14 +58,14 @@ impl Step for IssuePhoneOtpStep {
 
         Ok(StepOutcome::Done {
             output: Some(json!({"otpSent": true, "phoneNumber": phone_number})),
-            updates: Some(ContextUpdates {
+            updates: Some(Box::new(ContextUpdates {
                 flow_context_patch: Some(json!({
                     "otp": otp,
                     "otpExpiresAt": chrono::Utc::now().timestamp() + 300
                 })),
                 notifications: Some(vec![notification]),
                 ..Default::default()
-            }),
+            })),
         })
     }
 }
@@ -146,14 +146,14 @@ impl Step for VerifyPhoneOtpStep {
                 info!("OTP verified successfully for step {}", ctx.step_id);
                 Ok(StepOutcome::Done {
                     output: Some(json!({"verified": true})),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         flow_context_patch: Some(json!({
                             "otp": null,
                             "otpExpiresAt": null,
                             "phoneVerified": true
                         })),
                         ..Default::default()
-                    }),
+                    })),
                 })
             }
             _ => {

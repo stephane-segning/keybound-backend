@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[allow(dead_code)]
 pub struct FlowStorageService {
     storage: Arc<dyn crate::file_storage::MinioStorage>,
     bucket: String,
@@ -18,6 +19,7 @@ impl fmt::Debug for FlowStorageService {
     }
 }
 
+#[allow(dead_code)]
 impl FlowStorageService {
     pub fn new(storage: Arc<dyn crate::file_storage::MinioStorage>, bucket: String) -> Self {
         Self {

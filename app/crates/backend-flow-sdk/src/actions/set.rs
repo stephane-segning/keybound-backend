@@ -4,18 +4,30 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SetTarget {
     Session,
+    #[default]
     Flow,
     User,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SetConfig {
+    #[serde(default)]
     pub to: SetTarget,
+    #[serde(default)]
     pub values: Map<String, Value>,
+}
+
+impl Default for SetConfig {
+    fn default() -> Self {
+        Self {
+            to: SetTarget::Flow,
+            values: Map::new(),
+        }
+    }
 }
 
 pub struct SetAction;
@@ -35,7 +47,7 @@ impl Step for SetAction {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: SetConfig = super::parse_config(ctx, "set_config")?;
+        let config: SetConfig = super::parse_step_config(ctx)?;
 
         let values = Value::Object(config.values);
 
@@ -62,7 +74,7 @@ impl Step for SetAction {
 
         Ok(StepOutcome::Done {
             output: None,
-            updates: Some(updates),
+            updates: Some(Box::new(updates)),
         })
     }
 }
@@ -70,32 +82,38 @@ impl Step for SetAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StepServices;
     use serde_json::json;
+    use std::collections::HashMap;
 
-    fn make_ctx(flow_context: serde_json::Value) -> StepContext {
+    fn make_ctx(config: HashMap<String, serde_json::Value>) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
             flow_id: "test-flow".to_string(),
             step_id: "set-step".to_string(),
             input: json!({}),
             session_context: json!({}),
-            flow_context,
-            services: Default::default(),
+            flow_context: json!({}),
+            services: StepServices {
+                config: Some(config),
+                ..Default::default()
+            },
         }
     }
 
     #[tokio::test]
     async fn set_updates_session_context() {
         let action = SetAction;
-        let ctx = make_ctx(json!({
-            "set_config": {
-                "to": "session",
-                "values": {
-                    "key1": "value1",
-                    "key2": 42
-                }
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("to".to_string(), json!("session"));
+        config.insert(
+            "values".to_string(),
+            json!({
+                "key1": "value1",
+                "key2": 42
+            }),
+        );
+        let ctx = make_ctx(config);
 
         let result = action.execute(&ctx).await.unwrap();
 
@@ -114,12 +132,10 @@ mod tests {
     #[tokio::test]
     async fn set_updates_flow_context() {
         let action = SetAction;
-        let ctx = make_ctx(json!({
-            "set_config": {
-                "to": "flow",
-                "values": { "status": "processing" }
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("to".to_string(), json!("flow"));
+        config.insert("values".to_string(), json!({ "status": "processing" }));
+        let ctx = make_ctx(config);
 
         let result = action.execute(&ctx).await.unwrap();
 
@@ -136,12 +152,13 @@ mod tests {
     #[tokio::test]
     async fn set_updates_user_metadata() {
         let action = SetAction;
-        let ctx = make_ctx(json!({
-            "set_config": {
-                "to": "user",
-                "values": { "preferences": { "theme": "dark" } }
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("to".to_string(), json!("user"));
+        config.insert(
+            "values".to_string(),
+            json!({ "preferences": { "theme": "dark" } }),
+        );
+        let ctx = make_ctx(config);
 
         let result = action.execute(&ctx).await.unwrap();
 

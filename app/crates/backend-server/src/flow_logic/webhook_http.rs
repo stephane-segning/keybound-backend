@@ -277,7 +277,7 @@ impl Step for WebhookHttpStep {
                             if is_success {
                                 return Ok(StepOutcome::Done {
                                     output: Some(Value::Object(step_output)),
-                                    updates: Some(updates),
+                                    updates: Some(Box::new(updates)),
                                 });
                             }
                         }

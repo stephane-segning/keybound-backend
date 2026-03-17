@@ -20,7 +20,6 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use openssl::rsa::Rsa;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::Digest;
 use std::collections::{BTreeMap, HashMap};
 use tracing::{debug, instrument};
 use utoipa::{OpenApi, ToSchema};
@@ -64,6 +63,7 @@ const HEADER_USER_ID: &str = "x-auth-user-id";
         (name = "Auth", description = "Authentication APIs")
     )
 )]
+#[allow(dead_code)]
 pub struct AuthOpenApi;
 
 pub fn router(api: BackendApi) -> Router {
@@ -828,6 +828,7 @@ fn canonicalize_jwk_value(value: &Value) -> Result<String, Error> {
         .map_err(|error| Error::bad_request("INVALID_JWK", error.to_string()))
 }
 
+#[allow(dead_code)]
 fn canonicalize_jwk_str(raw: &str) -> Result<String, Error> {
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|error| Error::bad_request("INVALID_JWK", error.to_string()))?;

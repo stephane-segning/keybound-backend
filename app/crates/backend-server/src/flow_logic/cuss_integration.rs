@@ -77,7 +77,7 @@ impl Step for CussRegisterStep {
                         "savingsAccountId": savings_account_id,
                         "success": true
                     })),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         user_metadata_patch: Some(json!({
                             "fineractClientId": fineract_client_id,
                             "savingsAccountId": savings_account_id,
@@ -90,7 +90,7 @@ impl Step for CussRegisterStep {
                         })),
                         flow_context_patch: None,
                         notifications: None,
-                    }),
+                    })),
                 })
             }
             Err(err) => {
@@ -173,7 +173,7 @@ impl Step for CussApproveStep {
                         "savingsAccountId": savings_account_id,
                         "success": true
                     })),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         user_metadata_patch: Some(json!({
                             "deposit_transaction_id": transaction_id,
                             "cuss_approval_status": "COMPLETED",
@@ -182,7 +182,7 @@ impl Step for CussApproveStep {
                         session_context_patch: None,
                         flow_context_patch: None,
                         notifications: None,
-                    }),
+                    })),
                 })
             }
             Err(err) => {

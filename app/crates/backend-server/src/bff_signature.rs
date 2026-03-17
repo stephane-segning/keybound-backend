@@ -1,6 +1,6 @@
 use crate::api::{BFF_AUTH_DEVICE_ID_HEADER, BFF_AUTH_USER_ID_HEADER};
 use crate::auth_signature::{
-    ReplayGuard, canonicalize_device_auth_payload, validate_public_key_match, validate_timestamp,
+    canonicalize_device_auth_payload, validate_public_key_match, validate_timestamp,
     validate_user_id_hint, verify_signature,
 };
 use crate::state::AppState;

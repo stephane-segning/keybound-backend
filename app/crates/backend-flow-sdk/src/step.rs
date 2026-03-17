@@ -15,7 +15,7 @@ pub struct ContextUpdates {
 pub enum StepOutcome {
     Done {
         output: Option<Value>,
-        updates: Option<ContextUpdates>,
+        updates: Option<Box<ContextUpdates>>,
     },
     Waiting {
         actor: Actor,

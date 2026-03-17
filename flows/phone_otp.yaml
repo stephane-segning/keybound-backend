@@ -9,8 +9,7 @@ steps:
     actor: SYSTEM
     config:
       length: 6
-      expires_in_seconds: 300
-      channel: sms
+      expiry_seconds: 300
     retry:
       max: 3
       delay_ms: 1000

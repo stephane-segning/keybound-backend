@@ -74,6 +74,22 @@ fn default_behavior() -> WebhookBehavior {
     WebhookBehavior::WaitForResponse
 }
 
+impl Default for WebhookHttpConfig {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            method: default_method(),
+            headers: HashMap::new(),
+            payload: None,
+            timeout_ms: default_timeout(),
+            behavior: default_behavior(),
+            extraction_rules: Vec::new(),
+            retry_policy: None,
+            success_condition: None,
+        }
+    }
+}
+
 pub struct WebhookStep {
     client: reqwest::Client,
 }
@@ -107,7 +123,7 @@ impl Step for WebhookStep {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: WebhookHttpConfig = super::parse_config(ctx, "webhook_config")?;
+        let config: WebhookHttpConfig = super::parse_step_config(ctx)?;
 
         let method = reqwest::Method::from_str(&config.method).map_err(|_| {
             FlowError::InvalidDefinition(format!("Invalid HTTP method: {}", config.method))
@@ -200,7 +216,7 @@ impl Step for WebhookStep {
                             if is_success {
                                 return Ok(StepOutcome::Done {
                                     output: Some(Value::Object(step_output)),
-                                    updates: Some(updates),
+                                    updates: Some(Box::new(updates)),
                                 });
                             }
                         }

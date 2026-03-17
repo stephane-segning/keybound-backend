@@ -112,7 +112,7 @@ impl FlowExecutor {
         flow: &backend_model::db::FlowInstanceRow,
         session: &backend_model::db::FlowSessionRow,
         output: Option<Value>,
-        updates: Option<backend_flow_sdk::ContextUpdates>,
+        updates: Option<Box<backend_flow_sdk::ContextUpdates>>,
         flow_def: &dyn backend_flow_sdk::Flow,
     ) -> Result<(), Error> {
         debug!("Step execution done: {}", step.step_type);
@@ -141,7 +141,7 @@ impl FlowExecutor {
         }
 
         if let Some(updates) = updates {
-            self.apply_updates(&session, &mut next_flow_context, updates)
+            self.apply_updates(session, &mut next_flow_context, *updates)
                 .await?;
         }
 
@@ -156,8 +156,8 @@ impl FlowExecutor {
         next_flow_context: &mut Value,
         updates: backend_flow_sdk::ContextUpdates,
     ) -> Result<(), Error> {
-        if let Some(flow_patch) = updates.flow_context_patch {
-            if let (Some(base_obj), Some(patch_obj)) =
+        if let Some(flow_patch) = updates.flow_context_patch
+            && let (Some(base_obj), Some(patch_obj)) =
                 (next_flow_context.as_object_mut(), flow_patch.as_object())
             {
                 for (k, v) in patch_obj {
@@ -168,7 +168,7 @@ impl FlowExecutor {
                     }
                 }
             }
-        }
+
         if let Some(session_patch) = updates.session_context_patch {
             let mut new_session_context = session.context.clone();
             if let (Some(base_obj), Some(patch_obj)) =
@@ -187,14 +187,16 @@ impl FlowExecutor {
                 .update_session_context(&session.id, new_session_context)
                 .await?;
         }
-        if let Some(metadata_patch) = updates.user_metadata_patch {
-            if let Some(user_id) = session.user_id.as_deref() {
-                self.state
-                    .user
-                    .update_metadata(user_id, metadata_patch)
-                    .await?;
-            }
+
+        if let Some(metadata_patch) = updates.user_metadata_patch
+            && let Some(user_id) = session.user_id.as_deref()
+        {
+            self.state
+                .user
+                .update_metadata(user_id, metadata_patch)
+                .await?;
         }
+
         if let Some(notifications) = updates.notifications {
             for notification in notifications {
                 match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {

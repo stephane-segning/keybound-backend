@@ -96,13 +96,7 @@ impl Step for GenerateOtpAction {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: GenerateOtpConfig = ctx
-            .flow_config("otp_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .unwrap_or_default();
+        let config: GenerateOtpConfig = super::parse_step_config(ctx)?;
 
         let otp = generate_otp(config.length, &config.otp_type);
         let expires_at = Utc::now().timestamp() + config.expiry_seconds as i64;
@@ -137,9 +131,10 @@ impl Step for GenerateOtpAction {
         Ok(StepOutcome::Done {
             output: Some(json!({
                 "generated": true,
-                "expires_at": expires_at
+                "expires_at": expires_at,
+                "otp": otp
             })),
-            updates: Some(updates),
+            updates: Some(Box::new(updates)),
         })
     }
 }
@@ -226,13 +221,7 @@ impl Step for VerifyOtpAction {
         ctx: &StepContext,
         input: &serde_json::Value,
     ) -> Result<StepOutcome, FlowError> {
-        let config: VerifyOtpConfig = ctx
-            .flow_config("otp_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .unwrap_or_default();
+        let config: VerifyOtpConfig = super::parse_step_config(ctx)?;
 
         let submitted = input
             .get(&config.input_field)
@@ -299,12 +288,12 @@ impl Step for VerifyOtpAction {
                             "verified": false,
                             "attempts_remaining": config.max_attempts - new_attempts
                         })),
-                        updates: Some(ContextUpdates {
+                        updates: Some(Box::new(ContextUpdates {
                             flow_context_patch: Some(json!({
                                 attempts_key: new_attempts
                             })),
                             ..Default::default()
-                        }),
+                        })),
                     });
                 }
 
@@ -315,14 +304,14 @@ impl Step for VerifyOtpAction {
 
                 Ok(StepOutcome::Done {
                     output: Some(json!({ "verified": true })),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         flow_context_patch: Some(json!({
                             "otp": null,
                             "otp_expires_at": null,
                             attempts_key: null
                         })),
                         ..Default::default()
-                    }),
+                    })),
                 })
             }
             _ => {
@@ -343,6 +332,7 @@ impl Step for VerifyOtpAction {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
 
     fn make_ctx(flow_context: serde_json::Value) -> StepContext {
         StepContext {
@@ -356,16 +346,33 @@ mod tests {
         }
     }
 
+    fn make_ctx_with_config(
+        flow_context: serde_json::Value,
+        config: HashMap<String, serde_json::Value>,
+    ) -> StepContext {
+        StepContext {
+            session_id: "test".to_string(),
+            flow_id: "test-flow".to_string(),
+            step_id: "otp-step".to_string(),
+            input: json!({}),
+            session_context: json!({}),
+            flow_context,
+            services: StepServices {
+                config: Some(config),
+                ..Default::default()
+            },
+        }
+    }
+
     #[tokio::test]
     async fn generate_otp_creates_numeric_code() {
         let action = GenerateOtpAction;
-        let ctx = make_ctx(json!({
-            "otp_config": {
-                "length": 6,
-                "otp_type": "numeric",
-                "expiry_seconds": 300
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("length".to_string(), json!(6));
+        config.insert("otp_type".to_string(), json!("numeric"));
+        config.insert("expiry_seconds".to_string(), json!(300));
+
+        let ctx = make_ctx_with_config(json!({}), config);
 
         let result = action.execute(&ctx).await.unwrap();
 
@@ -387,7 +394,7 @@ mod tests {
     #[tokio::test]
     async fn generate_otp_uses_defaults() {
         let action = GenerateOtpAction;
-        let ctx = make_ctx(json!({}));
+        let ctx = make_ctx_with_config(json!({}), HashMap::new());
 
         let result = action.execute(&ctx).await.unwrap();
 

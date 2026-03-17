@@ -358,6 +358,7 @@ struct ProxyStep {
     actor: Actor,
     human_id: String,
     feature: Option<String>,
+    config: Option<serde_json::Value>,
     inner: StepRef,
 }
 
@@ -383,7 +384,22 @@ impl backend_flow_sdk::Step for ProxyStep {
         &self,
         ctx: &backend_flow_sdk::StepContext,
     ) -> Result<backend_flow_sdk::StepOutcome, FlowError> {
-        self.inner.execute(ctx).await
+        let ctx_with_config = if let Some(config) = &self.config {
+            let mut services = ctx.services.clone();
+            services.config = Some(
+                config
+                    .as_object()
+                    .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default(),
+            );
+            backend_flow_sdk::StepContext {
+                services,
+                ..ctx.clone()
+            }
+        } else {
+            ctx.clone()
+        };
+        self.inner.execute(&ctx_with_config).await
     }
 
     async fn validate_input(&self, input: &serde_json::Value) -> Result<(), FlowError> {
@@ -587,6 +603,7 @@ fn register_flow_definition(
             actor: step_def.actor,
             human_id: step_name.clone(),
             feature: None,
+            config: step_def.config.clone(),
             inner: base_step_arc,
         });
         proxy_steps.push(proxy as StepRef);

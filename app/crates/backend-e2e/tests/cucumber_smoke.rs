@@ -3,9 +3,6 @@ mod world;
 pub use world::*;
 
 use cucumber::{given, then, when, World as _};
-use reqwest::Method;
-use serde_json::json;
-use std::time::Duration;
 
 #[given("the e2e test environment is initialized")]
 async fn init_environment(world: &mut E2eWorld) {

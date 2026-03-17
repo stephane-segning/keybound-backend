@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 /// {"deviceId":"...","publicKey":"...","ts":"...","nonce":"..."}
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct DeviceSignaturePayload {
     device_id: String,
     public_key: String,
@@ -17,6 +18,7 @@ struct DeviceSignaturePayload {
 
 /// Canonical payload format for signature auth:
 /// timestamp\nnonce\nMETHOD\nPATH\nBODY\nPUBLIC_KEY\nDEVICE_ID\nUSER_ID_HINT
+#[allow(clippy::too_many_arguments)]
 pub fn canonicalize_payload(
     timestamp: i64,
     nonce: &str,

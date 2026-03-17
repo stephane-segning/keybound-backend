@@ -113,7 +113,7 @@ impl Step for CheckUserExistsStep {
                     "phoneNumber": r.phone_number
                 })).unwrap_or(serde_json::Value::Null)
             })),
-            updates: Some(updates),
+            updates: Some(Box::new(updates)),
         })
     }
 }
@@ -202,6 +202,7 @@ impl Step for ValidateDepositStep {
 }
 
 /// Persists deposit result to user metadata via context updates
+#[allow(dead_code)]
 pub struct PersistDepositResultStep;
 
 #[async_trait]
@@ -238,7 +239,7 @@ impl Step for PersistDepositResultStep {
 
         Ok(StepOutcome::Done {
             output: Some(json!({ "persisted": true })),
-            updates: Some(updates),
+            updates: Some(Box::new(updates)),
         })
     }
 }

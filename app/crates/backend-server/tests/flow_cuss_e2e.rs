@@ -63,7 +63,7 @@ impl Step for CussRegisterStep {
                         "fineractClientId": fineract_client_id,
                         "success": true
                     })),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         user_metadata_patch: Some(json!({
                             "fineractClientId": fineract_client_id,
                             "cuss_registration_status": "COMPLETED",
@@ -74,7 +74,7 @@ impl Step for CussRegisterStep {
                         })),
                         flow_context_patch: None,
                         notifications: None,
-                    }),
+                    })),
                 })
             }
             Ok(res) => {
@@ -151,7 +151,7 @@ impl Step for CussApproveStep {
                         "savingsAccountId": savings_account_id,
                         "success": true
                     })),
-                    updates: Some(ContextUpdates {
+                    updates: Some(Box::new(ContextUpdates {
                         user_metadata_patch: Some(json!({
                             "savingsAccountId": savings_account_id,
                             "deposit_transaction_id": transaction_id,
@@ -161,7 +161,7 @@ impl Step for CussApproveStep {
                         session_context_patch: None,
                         flow_context_patch: None,
                         notifications: None,
-                    }),
+                    })),
                 })
             }
             Ok(res) => {
@@ -230,14 +230,14 @@ impl Step for CheckUserStep {
                 "userExists": user_id.is_some(),
                 "phone": phone
             })),
-            updates: Some(ContextUpdates {
+            updates: Some(Box::new(ContextUpdates {
                 flow_context_patch: Some(json!({
                     "user_exists": user_id.is_some()
                 })),
                 session_context_patch: None,
                 user_metadata_patch: None,
                 notifications: None,
-            }),
+            })),
         })
     }
 }
@@ -442,7 +442,6 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         human_id_prefix: "kyc".to_string(),
         feature: None,
         allowed_flows: vec!["CUSS_DEPOSIT".to_string()],
-        override_existing: None,
     });
 
     let mut user_repo = MockUserRepo::new();
@@ -470,6 +469,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         input: json!({}),
         session_context: session_context.clone(),
         flow_context: json!({}),
+        services: Default::default(),
     };
 
     let outcome = step_def.execute(&ctx).await.expect("check user step");
@@ -497,6 +497,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         input: json!({}),
         session_context: session_context.clone(),
         flow_context: json!({ "user_exists": true }),
+        services: Default::default(),
     };
 
     let outcome2 = validate_step.execute(&ctx2).await.expect("validate step");
@@ -521,6 +522,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
         input: json!({}),
         session_context: session_context.clone(),
         flow_context: json!({ "step_output": {} }),
+        services: Default::default(),
     };
 
     let outcome3 = register_step.execute(&ctx3).await.expect("register step");
@@ -560,6 +562,7 @@ async fn test_flow_cuss_deposit_saves_metadata() {
                 }
             }
         }),
+        services: Default::default(),
     };
 
     let outcome4 = approve_step.execute(&ctx4).await.expect("approve step");
@@ -631,6 +634,7 @@ async fn test_flow_cuss_register_retryable_on_5xx() {
             "full_name": "Test User"
         }),
         flow_context: json!({}),
+        services: Default::default(),
     };
 
     let outcome = register_step.execute(&ctx).await.expect("step execution");
@@ -669,6 +673,7 @@ async fn test_flow_cuss_register_non_retryable_on_4xx() {
             "full_name": "Test User"
         }),
         flow_context: json!({}),
+        services: Default::default(),
     };
 
     let outcome = register_step.execute(&ctx).await.expect("step execution");

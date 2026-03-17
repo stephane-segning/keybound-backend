@@ -25,14 +25,19 @@ pub use webhook::{
 
 use crate::FlowError;
 
-fn parse_config<T: serde::de::DeserializeOwned>(
+fn parse_step_config<T: serde::de::DeserializeOwned + Default>(
     ctx: &crate::StepContext,
-    key: &str,
 ) -> Result<T, FlowError> {
     let val = ctx
-        .flow_config(key)
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+        .services
+        .config
+        .as_ref()
+        .map(|c| serde_json::to_value(c).unwrap_or_default())
+        .unwrap_or_default();
 
-    serde_json::from_value(val).map_err(|e| FlowError::InvalidDefinition(e.to_string()))
+    if val.is_null() || val.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+        Ok(T::default())
+    } else {
+        serde_json::from_value(val).map_err(|e| FlowError::InvalidDefinition(e.to_string()))
+    }
 }

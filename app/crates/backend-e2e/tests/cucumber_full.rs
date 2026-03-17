@@ -471,10 +471,9 @@ async fn create_phone_otp_step(world: &mut FullE2eWorld) {
             if let Some(step_id) = response.body.as_ref()
                 .and_then(|b| b.get("id"))
                 .and_then(Value::as_str)
+                && let Some(ref mut session) = world.stored_session
             {
-                if let Some(ref mut session) = world.stored_session {
-                    session.step_id = step_id.to_string();
-                }
+                session.step_id = step_id.to_string();
             }
             world.last_response = Some(response);
         }
@@ -536,10 +535,9 @@ async fn issue_otp_to_phone(world: &mut FullE2eWorld, msisdn: String) {
             if let Some(otp_ref) = response.body.as_ref()
                 .and_then(|b| b.get("otpRef"))
                 .and_then(Value::as_str)
+                && let Some(ref mut stored) = world.stored_session
             {
-                if let Some(ref mut stored) = world.stored_session {
-                    stored.otp_ref = otp_ref.to_string();
-                }
+                stored.otp_ref = otp_ref.to_string();
             }
             world.last_response = Some(response);
         }

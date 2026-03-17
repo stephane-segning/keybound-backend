@@ -76,6 +76,7 @@ impl BackendApi {
     }
 
     #[instrument(skip(context))]
+    #[allow(dead_code)]
     pub(crate) fn require_user_id(context: &JwtToken) -> AppResult<String> {
         Ok(context.user_id().to_owned())
     }

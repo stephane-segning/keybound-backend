@@ -4,23 +4,25 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentType {
+    #[default]
     Id,
     Address,
     Selfie,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[allow(dead_code)]
 pub struct UploadDocumentConfig {
+    #[serde(default)]
     pub document_type: DocumentType,
 
     #[serde(default = "default_bucket")]
     pub bucket: String,
 
-    #[serde(default = "default_expiry")]
+    #[serde(default = "default_url_expiry")]
     pub url_expiry_seconds: u64,
 }
 
@@ -28,7 +30,7 @@ fn default_bucket() -> String {
     "kyc-documents".to_string()
 }
 
-fn default_expiry() -> u64 {
+fn default_url_expiry() -> u64 {
     3600
 }
 
@@ -49,19 +51,7 @@ impl Step for UploadDocumentAction {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: UploadDocumentConfig = ctx
-            .flow_config("upload_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .unwrap_or_else(||
-                UploadDocumentConfig {
-                    document_type: DocumentType::Id,
-                    bucket: default_bucket(),
-                    url_expiry_seconds: default_expiry(),
-                }
-            );
+        let config: UploadDocumentConfig = super::parse_step_config(ctx)?;
 
         let doc_type_str = match config.document_type {
             DocumentType::Id => "id",
@@ -105,19 +95,7 @@ impl Step for UploadDocumentAction {
         ctx: &StepContext,
         input: &serde_json::Value,
     ) -> Result<StepOutcome, FlowError> {
-        let config: UploadDocumentConfig = ctx
-            .flow_config("upload_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .unwrap_or_else(||
-                UploadDocumentConfig {
-                    document_type: DocumentType::Id,
-                    bucket: default_bucket(),
-                    url_expiry_seconds: default_expiry(),
-                }
-            );
+        let config: UploadDocumentConfig = super::parse_step_config(ctx)?;
 
         let doc_type_str = match config.document_type {
             DocumentType::Id => "id",
@@ -141,14 +119,14 @@ impl Step for UploadDocumentAction {
                     "document_type": doc_type_str,
                     "upload_key": key
                 })),
-                updates: Some(ContextUpdates {
+                updates: Some(Box::new(ContextUpdates {
                     flow_context_patch: Some(json!({
                         "document_uploaded": true,
                         "document_type": doc_type_str,
                         "upload_key": key
                     })),
                     ..Default::default()
-                }),
+                })),
             });
         }
 
@@ -162,6 +140,7 @@ impl Step for UploadDocumentAction {
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct ReviewDocumentConfig {
+    #[serde(default)]
     pub document_type: String,
 
     #[serde(default)]
@@ -169,6 +148,16 @@ pub struct ReviewDocumentConfig {
 
     #[serde(default)]
     pub on_reject: Option<String>,
+}
+
+impl Default for ReviewDocumentConfig {
+    fn default() -> Self {
+        Self {
+            document_type: "id".to_string(),
+            on_approve: None,
+            on_reject: None,
+        }
+    }
 }
 
 pub struct ReviewDocumentAction;
@@ -188,15 +177,7 @@ impl Step for ReviewDocumentAction {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: ReviewDocumentConfig = ctx
-            .flow_config("review_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .ok_or_else(|| {
-                FlowError::InvalidDefinition("Missing review_config in flow context".to_string())
-            })?;
+        let config: ReviewDocumentConfig = super::parse_step_config(ctx)?;
 
         tracing::info!(
             "[REVIEW_DOCUMENT] Waiting for admin review: type={}, session={}",
@@ -223,15 +204,7 @@ impl Step for ReviewDocumentAction {
         ctx: &StepContext,
         input: &serde_json::Value,
     ) -> Result<StepOutcome, FlowError> {
-        let config: ReviewDocumentConfig = ctx
-            .flow_config("review_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .ok_or_else(|| {
-                FlowError::InvalidDefinition("Missing review_config in flow context".to_string())
-            })?;
+        let config: ReviewDocumentConfig = super::parse_step_config(ctx)?;
 
         let approved = input
             .get("approved")
@@ -278,7 +251,7 @@ impl Step for ReviewDocumentAction {
                 "approved": approved,
                 "document_type": config.document_type
             })),
-            updates: Some(updates),
+            updates: Some(Box::new(updates)),
         })
     }
 }
@@ -334,13 +307,7 @@ impl Step for ValidateDepositAction {
     }
 
     async fn execute(&self, ctx: &StepContext) -> Result<StepOutcome, FlowError> {
-        let config: ValidateDepositConfig = ctx
-            .flow_config("deposit_config")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| FlowError::InvalidDefinition(e.to_string()))?
-            .unwrap_or_default();
+        let config: ValidateDepositConfig = super::parse_step_config(ctx)?;
 
         let amount = ctx
             .input
@@ -409,39 +376,47 @@ mod tests {
     use super::*;
     use crate::StepServices;
     use serde_json::json;
+    use std::collections::HashMap;
 
-    fn make_ctx(flow_context: serde_json::Value) -> StepContext {
+    fn make_ctx(config: HashMap<String, serde_json::Value>) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
             flow_id: "test-flow".to_string(),
             step_id: "kyc-step".to_string(),
             input: json!({}),
             session_context: json!({}),
-            flow_context,
-            services: StepServices::default(),
+            flow_context: json!({}),
+            services: StepServices {
+                config: Some(config),
+                ..Default::default()
+            },
         }
     }
 
-    fn make_ctx_with_input(flow_context: serde_json::Value, input: serde_json::Value) -> StepContext {
+    fn make_ctx_with_input(
+        config: HashMap<String, serde_json::Value>,
+        input: serde_json::Value,
+    ) -> StepContext {
         StepContext {
             session_id: "test".to_string(),
             flow_id: "test-flow".to_string(),
             step_id: "kyc-step".to_string(),
             input,
             session_context: json!({}),
-            flow_context,
-            services: StepServices::default(),
+            flow_context: json!({}),
+            services: StepServices {
+                config: Some(config),
+                ..Default::default()
+            },
         }
     }
 
     #[tokio::test]
     async fn upload_document_waits_for_user() {
         let action = UploadDocumentAction;
-        let ctx = make_ctx(json!({
-            "upload_config": {
-                "document_type": "id"
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("document_type".to_string(), json!("id"));
+        let ctx = make_ctx(config);
 
         let result = action.execute(&ctx).await.unwrap();
 
@@ -456,13 +431,11 @@ mod tests {
     #[tokio::test]
     async fn review_document_waits_for_admin() {
         let action = ReviewDocumentAction;
-        let ctx = make_ctx(json!({
-            "review_config": {
-                "document_type": "id",
-                "on_approve": "next_step",
-                "on_reject": "failed"
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("document_type".to_string(), json!("id"));
+        config.insert("on_approve".to_string(), json!("next_step"));
+        config.insert("on_reject".to_string(), json!("failed"));
+        let ctx = make_ctx(config);
 
         let result = action.execute(&ctx).await.unwrap();
 
@@ -477,11 +450,9 @@ mod tests {
     #[tokio::test]
     async fn review_document_approves() {
         let action = ReviewDocumentAction;
-        let ctx = make_ctx(json!({
-            "review_config": {
-                "document_type": "id"
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("document_type".to_string(), json!("id"));
+        let ctx = make_ctx(config);
 
         let input = json!({
             "approved": true,
@@ -506,11 +477,9 @@ mod tests {
     #[tokio::test]
     async fn review_document_rejects() {
         let action = ReviewDocumentAction;
-        let ctx = make_ctx(json!({
-            "review_config": {
-                "document_type": "address"
-            }
-        }));
+        let mut config = HashMap::new();
+        config.insert("document_type".to_string(), json!("address"));
+        let ctx = make_ctx(config);
 
         let input = json!({
             "approved": false,
@@ -535,14 +504,13 @@ mod tests {
     #[tokio::test]
     async fn validate_deposit_accepts_valid() {
         let action = ValidateDepositAction;
+        let mut config = HashMap::new();
+        config.insert("min_amount".to_string(), json!(1.0));
+        config.insert("max_amount".to_string(), json!(100000.0));
+        config.insert("currencies".to_string(), json!(["USD", "EUR", "XAF"]));
+
         let ctx = make_ctx_with_input(
-            json!({
-                "deposit_config": {
-                    "min_amount": 1.0,
-                    "max_amount": 100000.0,
-                    "currencies": ["USD", "EUR", "XAF"]
-                }
-            }),
+            config,
             json!({
                 "amount": 100.0,
                 "currency": "USD"
@@ -566,7 +534,7 @@ mod tests {
     async fn validate_deposit_rejects_below_min() {
         let action = ValidateDepositAction;
         let ctx = make_ctx_with_input(
-            json!({}),
+            HashMap::new(),
             json!({
                 "amount": 0.50,
                 "currency": "USD"
@@ -588,7 +556,7 @@ mod tests {
     async fn validate_deposit_rejects_invalid_currency() {
         let action = ValidateDepositAction;
         let ctx = make_ctx_with_input(
-            json!({}),
+            HashMap::new(),
             json!({
                 "amount": 100.0,
                 "currency": "GBP"
@@ -609,7 +577,7 @@ mod tests {
     async fn validate_deposit_uses_defaults() {
         let action = ValidateDepositAction;
         let ctx = make_ctx_with_input(
-            json!({}),
+            HashMap::new(),
             json!({
                 "amount": 50.0,
                 "currency": "EUR"
