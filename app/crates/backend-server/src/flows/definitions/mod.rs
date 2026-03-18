@@ -6,7 +6,6 @@ pub mod email_magic;
 pub mod external_kyc;
 pub mod first_deposit;
 pub mod id_document;
-pub mod phone_otp;
 pub mod shared_steps;
 
 #[cfg(feature = "flow-cuss-integration")]

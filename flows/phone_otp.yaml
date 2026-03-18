@@ -1,15 +1,15 @@
 flow_type: phone_otp
 human_id_prefix: phone_otp
 feature: flow-phone-otp
-initial_step: init_phone
+initial_step: get_user
 
 steps:
-  init_phone:
-    action: WAIT
-    actor: END_USER
-    config:
-      actor: USER
-    next: get_user
+  #init_phone:
+  #  action: WAIT
+  #  actor: END_USER
+  #  config:
+  #    actor: USER
+  #  next: get_user
 
   get_user:
     action: GET_USER
@@ -33,8 +33,8 @@ steps:
     config:
       message: "Generated phone OTP"
       flow_pointers:
-        - /otp
-        - /otp_expires_at
+      - /otp
+      - /otp_expires_at
     next: send_otp_webhook
 
   send_otp_webhook:
@@ -49,7 +49,7 @@ steps:
         otp: "{{flow.context.otp}}"
       success_condition:
         status_codes:
-          - 200
+        - 200
     next: debug_sent_otp
     fail: FAILED
 
@@ -59,7 +59,7 @@ steps:
     config:
       message: "OTP webhook sent"
       flow_pointers:
-        - /step_output/send_otp_webhook
+      - /step_output/send_otp_webhook
     next: verify_otp
 
   verify_otp:
@@ -81,7 +81,7 @@ steps:
     config:
       message: "Phone OTP verified"
       flow_pointers:
-        - /step_output/verify_otp
+      - /step_output/verify_otp
     next: mark_phone_verified
 
   mark_phone_verified:
@@ -89,13 +89,13 @@ steps:
     actor: SYSTEM
     config:
       mappings:
-        - target_path: /phone/number
-          source: flow
-          source_path: /step_output/init_phone/phone_number
-        - target_path: /phone/verified
-          value: true
-        - target_path: /kyc/phoneOtpVerified
-          value: true
+      - target_path: /phone/number
+        source: flow
+        source_path: /step_output/init_phone/phone_number
+      - target_path: /phone/verified
+        value: true
+      - target_path: /kyc/phoneOtpVerified
+        value: true
     next: COMPLETE
 
   COMPLETE:

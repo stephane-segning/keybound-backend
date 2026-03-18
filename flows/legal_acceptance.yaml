@@ -1,0 +1,24 @@
+flow_type: legal_acceptance
+human_id_prefix: legal_acceptance
+feature: flow-legal-acceptance
+initial_step: accept_legal
+
+steps:
+  accept_legal:
+    action: UPDATE_USER_METADATA
+    actor: SYSTEM
+    config:
+      mappings:
+        - target_path: /legal/terms
+          value: accepted
+        - target_path: /legal/risk
+          value: accepted
+        - target_path: /legal/aml
+          value: accepted
+        - target_path: /legal/mentions
+          value: accepted
+    next: COMPLETE
+
+  COMPLETE:
+    action: NOOP
+    actor: SYSTEM

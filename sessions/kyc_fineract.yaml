@@ -1,0 +1,7 @@
+session_type: kyc_fineract
+human_id_prefix: kf
+
+allowed_flows:
+- phone_otp
+- legal_acceptance
+- first_deposit

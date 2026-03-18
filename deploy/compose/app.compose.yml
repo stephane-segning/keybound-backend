@@ -7,6 +7,7 @@ x-env: &env
   MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-minioadmin}"
   MINIO_BUCKET: "${MINIO_BUCKET:-user-storage-dev}"
   RUST_LOG: debug
+  SMS_SINK_URL: http://sms-gateway:3000
 
 services:
   app:
