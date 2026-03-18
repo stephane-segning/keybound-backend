@@ -1,7 +1,7 @@
 use super::runtime::{merge_json_value, resolve_transition, step_services};
 use crate::state::AppState;
 use backend_core::Error;
-use backend_flow_sdk::{RetryConfig, StepContext, StepOutcome};
+use backend_flow_sdk::{Actor, RetryConfig, StepContext, StepOutcome};
 use backend_repository::FlowStepPatch;
 use chrono::Utc;
 use serde_json::Value;
@@ -270,7 +270,11 @@ impl FlowExecutor {
                         input: None,
                         output: None,
                         error: None,
-                        next_retry_at: None,
+                        next_retry_at: if matches!(next_step_def.actor(), Actor::System) {
+                            Some(Utc::now())
+                        } else {
+                            None
+                        },
                         finished_at: None,
                     })
                     .await?;
@@ -409,7 +413,7 @@ impl FlowExecutor {
             .patch_step(
                 step_id,
                 FlowStepPatch::new()
-                    .status("RETRY")
+                    .status("WAITING")
                     .attempt_no(next_attempt)
                     .next_retry_at(next_retry_at),
             )

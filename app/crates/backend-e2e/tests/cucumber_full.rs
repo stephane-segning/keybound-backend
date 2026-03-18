@@ -1243,11 +1243,7 @@ async fn cuss_payloads_match_first_deposit(world: &mut FullE2eWorld) {
     let requests = cuss_requests(world)
         .await
         .expect("cuss requests should load");
-    let session_id = world
-        .flow
-        .session_id
-        .clone()
-        .expect("session id should be set");
+    let subject = world.subject().expect("subject should be set").to_owned();
     let deposit_amount = world
         .flow
         .deposit_amount
@@ -1264,7 +1260,7 @@ async fn cuss_payloads_match_first_deposit(world: &mut FullE2eWorld) {
 
     assert_eq!(
         register_request.pointer("/payload/externalId"),
-        Some(&json!(session_id))
+        Some(&json!(subject))
     );
     assert_eq!(
         register_request.pointer("/payload/fullName"),

@@ -569,7 +569,7 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
 
     assert_eq!(
         register_request.pointer("/payload/externalId"),
-        Some(&json!(session_id))
+        Some(&json!(user_id))
     );
     assert_eq!(
         approve_request.pointer("/payload/depositAmount"),

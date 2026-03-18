@@ -490,7 +490,10 @@ pub(crate) async fn create_step_chain(
 
     loop {
         let flow_definition = get_flow_definition(api, &flow.flow_type)?;
+        let flow_config = api.state.flow_registry.get_flow_definition(&flow.flow_type);
         let step_definition = get_step_definition(flow_definition, &step_type)?;
+        let step_runs_async = matches!(step_definition.actor(), Actor::System)
+            && is_async_step(flow_config, &step_type);
         debug!(
             "Processing step: {} (actor={:?})",
             step_type,
@@ -525,12 +528,20 @@ pub(crate) async fn create_step_chain(
                 flow_id: flow.id.clone(),
                 step_type: step_type.clone(),
                 actor: actor_label(step_definition.actor()).to_owned(),
-                status: waiting_status(step_definition.actor()).to_owned(),
+                status: if step_runs_async {
+                    "WAITING".to_owned()
+                } else {
+                    waiting_status(step_definition.actor()).to_owned()
+                },
                 attempt_no,
                 input: pending_input.clone(),
                 output: None,
                 error: None,
-                next_retry_at: None,
+                next_retry_at: if step_runs_async {
+                    Some(Utc::now())
+                } else {
+                    None
+                },
                 finished_at: None,
             })
             .await?;
@@ -547,6 +558,11 @@ pub(crate) async fn create_step_chain(
                 None,
             )
             .await?;
+
+        if step_runs_async {
+            debug!("Queued async system step: {}", step_type);
+            return Ok(flow);
+        }
 
         if !matches!(step_definition.actor(), Actor::System) {
             return Ok(flow);
@@ -678,6 +694,18 @@ pub(crate) async fn create_step_chain(
             }
         }
     }
+}
+
+fn is_async_step(
+    flow_definition: Option<&backend_flow_sdk::flow::FlowDefinition>,
+    step_type: &str,
+) -> bool {
+    flow_definition
+        .and_then(|definition| definition.steps.get(step_type))
+        .and_then(|step| step.config.as_ref())
+        .and_then(|config| config.get("async"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 pub(crate) async fn finalize_flow(

@@ -16,6 +16,11 @@ steps:
     actor: SYSTEM
     config:
       save_to: session
+    next: resolve_recipient
+
+  resolve_recipient:
+    action: check_user_exists
+    actor: SYSTEM
     next: await_admin_decision
 
   await_admin_decision:
@@ -44,13 +49,14 @@ steps:
     action: WEBHOOK_HTTP
     actor: SYSTEM
     config:
+      async: true
       url: ${CUSS_URL}/api/registration/register
       method: POST
       timeout_ms: 10000
       payload:
         fullName: "{{session.full_name}}"
         phone: "{{session.phone_number}}"
-        externalId: "{{session_id}}"
+        externalId: "{{session.user_id}}"
       success_condition:
         status_codes:
           - 201

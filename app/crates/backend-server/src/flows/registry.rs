@@ -213,6 +213,9 @@ fn register_builtin_actions(registry: &mut FlowRegistry) {
     registry.register_step(Arc::new(UploadDocumentAction));
     registry.register_step(Arc::new(ReviewDocumentAction));
     registry.register_step(Arc::new(ValidateDepositAction));
+    registry.register_step(Arc::new(
+        crate::flows::definitions::shared_steps::CheckUserExistsStep,
+    ));
     registry.register_step(Arc::new(WebhookStep::new()));
 
     debug!(

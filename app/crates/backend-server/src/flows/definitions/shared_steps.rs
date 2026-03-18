@@ -60,8 +60,16 @@ impl Step for CheckUserExistsStep {
         );
 
         // Resolve user from context (set by previous flow steps or session creation)
-        let user_id = ctx.session_context.get("userId").and_then(|v| v.as_str());
-        let fullname = ctx.session_context.get("fullname").and_then(|v| v.as_str());
+        let user_id = ctx
+            .session_context
+            .get("user_id")
+            .or_else(|| ctx.session_context.get("userId"))
+            .and_then(|v| v.as_str());
+        let fullname = ctx
+            .session_context
+            .get("full_name")
+            .or_else(|| ctx.session_context.get("fullname"))
+            .and_then(|v| v.as_str());
 
         let (user_exists, user_info) = if let Some(uid) = user_id {
             (
