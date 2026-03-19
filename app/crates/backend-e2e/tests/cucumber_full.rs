@@ -1014,13 +1014,13 @@ async fn get_current_user(world: &mut FullE2eWorld) {
     }
 }
 
-#[when("I get the KYC level")]
-async fn get_kyc_level(world: &mut FullE2eWorld) {
+#[when("I get completed KYC")]
+async fn get_completed_kyc(world: &mut FullE2eWorld) {
     match send_json(
         world.client().unwrap(),
         Method::GET,
         &format!(
-            "{}/flow/users/{}/kyc-level",
+            "{}/flow/users/{}/completed-kyc",
             world.bff_base().unwrap(),
             world.subject().unwrap()
         ),
@@ -1058,76 +1058,58 @@ async fn response_contains_correct_user_id(world: &mut FullE2eWorld) {
     assert_eq!(user_id, Some(subject));
 }
 
-fn require_levels(body: &Option<Value>) -> Vec<String> {
+fn require_completed_kyc(body: &Option<Value>) -> Value {
     body.as_ref()
-        .and_then(|value| value.get("level"))
-        .and_then(Value::as_array)
+        .and_then(|value| value.get("completedKyc"))
         .cloned()
-        .unwrap_or_default()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}))
+}
+
+fn completed_kyc_contains_flow(body: &Option<Value>, flow_type: &str) -> bool {
+    let completed_kyc = require_completed_kyc(body);
+    completed_kyc
+        .as_object()
         .into_iter()
-        .filter_map(|entry| entry.as_str().map(str::to_owned))
-        .collect()
+        .flatten()
+        .any(|(_, flows)| {
+            flows
+                .as_object()
+                .and_then(|entries| entries.get(flow_type))
+                .and_then(Value::as_object)
+                .and_then(|details| details.get("completed"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
 }
 
-#[then(regex = "^the KYC level is \"([^\"]+)\"$")]
-async fn kyc_level_is(world: &mut FullE2eWorld, expected: String) {
+#[then("completed KYC is empty")]
+async fn completed_kyc_is_empty(world: &mut FullE2eWorld) {
+    let completed_kyc = require_completed_kyc(&world.last_response.as_ref().unwrap().body);
     assert_eq!(
-        require_levels(&world.last_response.as_ref().unwrap().body),
-        vec![expected]
+        completed_kyc
+            .as_object()
+            .map(|obj| obj.len())
+            .unwrap_or_default(),
+        0
     );
 }
 
-#[then(regex = "^the KYC level contains \"([^\"]+)\"$")]
-async fn kyc_level_contains(world: &mut FullE2eWorld, expected: String) {
-    let levels = require_levels(&world.last_response.as_ref().unwrap().body);
-    assert!(levels.contains(&expected), "levels={levels:?}");
+#[then(regex = "^completed KYC contains flow \"([^\"]+)\"$")]
+async fn completed_kyc_contains(world: &mut FullE2eWorld, flow_type: String) {
+    let has_flow =
+        completed_kyc_contains_flow(&world.last_response.as_ref().unwrap().body, &flow_type);
+    assert!(has_flow, "completedKyc does not contain flow `{flow_type}`");
 }
 
-#[then("phoneOtpVerified is false")]
-async fn phone_otp_verified_false(world: &mut FullE2eWorld) {
-    let value = world
-        .last_response
-        .as_ref()
-        .and_then(|response| response.body.as_ref())
-        .and_then(|body| body.get("phoneOtpVerified"))
-        .and_then(Value::as_bool);
-    assert_eq!(value, Some(false));
-}
-
-#[then("phoneOtpVerified is true")]
-async fn phone_otp_verified_true(world: &mut FullE2eWorld) {
-    let value = world
-        .last_response
-        .as_ref()
-        .and_then(|response| response.body.as_ref())
-        .and_then(|body| body.get("phoneOtpVerified"))
-        .and_then(Value::as_bool);
-    assert_eq!(value, Some(true));
-}
-
-#[then("firstDepositVerified is false")]
-async fn first_deposit_verified_false(world: &mut FullE2eWorld) {
-    let value = world
-        .last_response
-        .as_ref()
-        .and_then(|response| response.body.as_ref())
-        .and_then(|body| body.get("firstDepositVerified"))
-        .and_then(Value::as_bool);
+#[then(regex = "^completed KYC does not contain flow \"([^\"]+)\"$")]
+async fn completed_kyc_not_contains(world: &mut FullE2eWorld, flow_type: String) {
+    let has_flow =
+        completed_kyc_contains_flow(&world.last_response.as_ref().unwrap().body, &flow_type);
     assert!(
-        value.is_none() || value == Some(false),
-        "expected firstDepositVerified to be false or absent, got {value:?}"
+        !has_flow,
+        "completedKyc unexpectedly contains flow `{flow_type}`"
     );
-}
-
-#[then("firstDepositVerified is true")]
-async fn first_deposit_verified_true(world: &mut FullE2eWorld) {
-    let value = world
-        .last_response
-        .as_ref()
-        .and_then(|response| response.body.as_ref())
-        .and_then(|body| body.get("firstDepositVerified"))
-        .and_then(Value::as_bool);
-    assert_eq!(value, Some(true));
 }
 
 #[then("the first deposit metadata is persisted")]

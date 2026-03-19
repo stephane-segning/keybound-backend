@@ -12,7 +12,7 @@ pub use models::*;
 #[openapi(
     paths(
         handlers::get_user,
-        handlers::get_kyc_level,
+        handlers::get_completed_kyc,
         handlers::list_sessions,
         handlers::create_session,
         handlers::get_session,
@@ -24,9 +24,8 @@ pub use models::*;
         handlers::submit_step,
     ),
     components(schemas(
-        KycLevel,
         UserResponse,
-        KycLevelResponse,
+        CompletedKycResponse,
         CreateSessionRequest,
         AddFlowRequest,
         SubmitStepRequest,
@@ -37,7 +36,7 @@ pub use models::*;
         StepResponse,
     )),
     tags(
-        (name = "users", description = "User profile and KYC level endpoints"),
+        (name = "users", description = "User profile and completed KYC endpoints"),
         (name = "sessions", description = "Session management endpoints"),
         (name = "flows", description = "Flow execution endpoints"),
         (name = "steps", description = "Step submission endpoints"),
@@ -48,7 +47,10 @@ pub struct BffFlowOpenApi;
 pub fn router(api: BackendApi) -> Router {
     Router::new()
         .route("/users/{user_id}", get(handlers::get_user))
-        .route("/users/{user_id}/kyc-level", get(handlers::get_kyc_level))
+        .route(
+            "/users/{user_id}/completed-kyc",
+            get(handlers::get_completed_kyc),
+        )
         .route(
             "/sessions",
             get(handlers::list_sessions).post(handlers::create_session),

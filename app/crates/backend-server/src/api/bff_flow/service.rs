@@ -1,7 +1,6 @@
 use super::models::{
-    AddFlowRequest, CreateSessionRequest, FlowDetailResponse, FlowResponse, KycLevel,
-    KycLevelResponse, SessionDetailResponse, SessionResponse, StepResponse, SubmitStepRequest,
-    UserResponse,
+    AddFlowRequest, CompletedKycResponse, CreateSessionRequest, FlowDetailResponse, FlowResponse,
+    SessionDetailResponse, SessionResponse, StepResponse, SubmitStepRequest, UserResponse,
 };
 use crate::api::BackendApi;
 use crate::flows::registry::{actor_label, waiting_status};
@@ -719,8 +718,48 @@ pub(crate) async fn finalize_flow(
         .update_flow(&flow.id, Some(status.to_owned()), Some(None), None, None)
         .await?;
 
+    if status.eq_ignore_ascii_case(FLOW_STATUS_COMPLETED) {
+        write_completed_kyc_metadata(api, &finalized).await?;
+    }
+
     refresh_session_status(api, &finalized.session_id).await?;
     Ok(finalized)
+}
+
+async fn write_completed_kyc_metadata(
+    api: &BackendApi,
+    flow: &FlowInstanceRow,
+) -> Result<(), Error> {
+    let session = api.state.flow.get_session(&flow.session_id).await?;
+    let Some(session) = session else {
+        return Ok(());
+    };
+    let Some(user_id) = session.user_id.as_deref() else {
+        return Ok(());
+    };
+    let session_type = session.session_type.clone();
+    let flow_type = flow.flow_type.clone();
+    let session_id = session.id.clone();
+    let flow_id = flow.id.clone();
+
+    api.state
+        .user
+        .update_metadata(
+            user_id,
+            json!({
+                "kyc": {
+                    session_type: {
+                        flow_type: {
+                            "completed": true,
+                            "completed_at": Utc::now().to_rfc3339(),
+                            "flow_id": flow_id,
+                            "session_id": session_id
+                        }
+                    }
+                }
+            }),
+        )
+        .await
 }
 
 pub(crate) async fn refresh_session_status(
@@ -1008,58 +1047,32 @@ pub async fn get_user(
 }
 
 #[instrument(skip(api))]
-pub async fn get_kyc_level(
+pub async fn get_completed_kyc(
     api: &BackendApi,
     user_id: String,
     caller_id: String,
-) -> Result<KycLevelResponse, Error> {
-    debug!("Will get kyc level");
+) -> Result<CompletedKycResponse, Error> {
+    debug!("Will get completed kyc");
     if user_id != caller_id {
         return Err(Error::unauthorized("Cannot access other users' data"));
     }
 
-    let filter = backend_repository::FlowSessionFilter {
-        user_id: Some(user_id.clone()),
-        user_ids: None,
-        session_type: None,
-        status: None,
-        page: 1,
-        limit: 100,
-    };
+    let user = api
+        .state
+        .user
+        .get_user(&user_id)
+        .await?
+        .ok_or_else(|| Error::not_found("USER_NOT_FOUND", "User not found"))?;
 
-    let (sessions, _) = api.state.flow.list_sessions(filter.normalized()).await?;
+    let completed_kyc = user
+        .metadata
+        .get("kyc")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
 
-    let mut level = vec![KycLevel::None];
-    let mut phone_otp_verified = false;
-    let mut first_deposit_verified = false;
-
-    for session in sessions {
-        let flows = api.state.flow.list_flows_for_session(&session.id).await?;
-        for flow in flows {
-            if flow.status == "COMPLETED" {
-                match flow.flow_type.as_str() {
-                    "phone_otp" => {
-                        phone_otp_verified = true;
-                        if !level.contains(&KycLevel::PhoneOtpVerified) {
-                            level.push(KycLevel::PhoneOtpVerified);
-                        }
-                    }
-                    "first_deposit" => {
-                        first_deposit_verified = true;
-                        if !level.contains(&KycLevel::FirstDepositVerified) {
-                            level.push(KycLevel::FirstDepositVerified);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    Ok(KycLevelResponse {
+    Ok(CompletedKycResponse {
         user_id,
-        level,
-        phone_otp_verified,
-        first_deposit_verified,
+        completed_kyc,
     })
 }

@@ -3,14 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum KycLevel {
-    None,
-    PhoneOtpVerified,
-    FirstDepositVerified,
-}
-
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
@@ -58,11 +50,9 @@ pub struct UserResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct KycLevelResponse {
+pub struct CompletedKycResponse {
     pub user_id: String,
-    pub level: Vec<KycLevel>,
-    pub phone_otp_verified: bool,
-    pub first_deposit_verified: bool,
+    pub completed_kyc: Value,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

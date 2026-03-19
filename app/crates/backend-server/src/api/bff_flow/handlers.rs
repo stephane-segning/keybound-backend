@@ -8,7 +8,7 @@ use tracing::instrument;
 use crate::api::BackendApi;
 
 use super::models::{
-    AddFlowRequest, CreateSessionRequest, FlowDetailResponse, FlowResponse, KycLevelResponse,
+    AddFlowRequest, CompletedKycResponse, CreateSessionRequest, FlowDetailResponse, FlowResponse,
     SessionDetailResponse, SessionResponse, StepResponse, SubmitStepRequest, UserResponse,
 };
 use super::service;
@@ -33,20 +33,20 @@ pub async fn get_user(
 
 #[utoipa::path(
     get,
-    path = "/flow/users/{userId}/kyc-level",
+    path = "/flow/users/{userId}/completed-kyc",
     tag = "users",
     params(("userId" = String, Path)),
-    responses((status = 200, body = KycLevelResponse))
+    responses((status = 200, body = CompletedKycResponse))
 )]
 #[instrument(skip(api, headers))]
-pub async fn get_kyc_level(
+pub async fn get_completed_kyc(
     State(api): State<BackendApi>,
     Path(user_id): Path<String>,
     headers: HeaderMap,
-) -> Result<Json<KycLevelResponse>, Error> {
+) -> Result<Json<CompletedKycResponse>, Error> {
     let caller_id = service::require_user_id(&api, &headers).await?;
-    let kyc_level = service::get_kyc_level(&api, user_id, caller_id).await?;
-    Ok(Json(kyc_level))
+    let completed_kyc = service::get_completed_kyc(&api, user_id, caller_id).await?;
+    Ok(Json(completed_kyc))
 }
 
 #[utoipa::path(

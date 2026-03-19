@@ -239,7 +239,7 @@ impl FlowExecutor {
     ) -> Result<(), Error> {
         if let Some(next_step_type) = resolve_transition(flow_def, &step.step_type, branch, failed)
         {
-            if next_step_type != "FAILED" && next_step_type != "END" && next_step_type != "CLOSED" {
+            if !Self::is_terminal_step(&next_step_type) {
                 let next_step_def = flow_def
                     .steps()
                     .iter()
@@ -306,13 +306,7 @@ impl FlowExecutor {
                     )
                     .await?;
             } else {
-                let final_status = if next_step_type.eq_ignore_ascii_case("FAILED") {
-                    "FAILED"
-                } else if next_step_type.eq_ignore_ascii_case("CLOSED") {
-                    "CLOSED"
-                } else {
-                    "COMPLETED"
-                };
+                let final_status = Self::terminal_status_for(&next_step_type);
                 self.finalize_flow(&flow.id, Some(&session.id), final_status)
                     .await?;
             }
@@ -322,6 +316,24 @@ impl FlowExecutor {
                 .await?;
         }
         Ok(())
+    }
+
+    fn is_terminal_step(step_type: &str) -> bool {
+        step_type.eq_ignore_ascii_case("FAILED")
+            || step_type.eq_ignore_ascii_case("END")
+            || step_type.eq_ignore_ascii_case("COMPLETE")
+            || step_type.eq_ignore_ascii_case("COMPLETED")
+            || step_type.eq_ignore_ascii_case("CLOSED")
+    }
+
+    fn terminal_status_for(step_type: &str) -> &'static str {
+        if step_type.eq_ignore_ascii_case("FAILED") {
+            "FAILED"
+        } else if step_type.eq_ignore_ascii_case("CLOSED") {
+            "CLOSED"
+        } else {
+            "COMPLETED"
+        }
     }
 
     async fn handle_failed(
@@ -443,10 +455,22 @@ impl FlowExecutor {
         session_id: Option<&str>,
         status: &str,
     ) -> Result<(), Error> {
+        let flow = self
+            .state
+            .flow
+            .get_flow(flow_id)
+            .await?
+            .ok_or_else(|| Error::internal("FLOW_NOT_FOUND", "Flow not found"))?;
+
         self.state
             .flow
             .update_flow(flow_id, Some(status.to_owned()), Some(None), None, None)
             .await?;
+
+        if status.eq_ignore_ascii_case("COMPLETED") {
+            self.write_completed_kyc_metadata(&flow).await?;
+        }
+
         if let Some(sid) = session_id {
             self.state
                 .flow
@@ -454,5 +478,41 @@ impl FlowExecutor {
                 .await?;
         }
         Ok(())
+    }
+
+    async fn write_completed_kyc_metadata(
+        &self,
+        flow: &backend_model::db::FlowInstanceRow,
+    ) -> Result<(), Error> {
+        let session = self.state.flow.get_session(&flow.session_id).await?;
+        let Some(session) = session else {
+            return Ok(());
+        };
+        let Some(user_id) = session.user_id.as_deref() else {
+            return Ok(());
+        };
+        let session_type = session.session_type.clone();
+        let flow_type = flow.flow_type.clone();
+        let session_id = session.id.clone();
+        let flow_id = flow.id.clone();
+
+        self.state
+            .user
+            .update_metadata(
+                user_id,
+                serde_json::json!({
+                    "kyc": {
+                        session_type: {
+                            flow_type: {
+                                "completed": true,
+                                "completed_at": Utc::now().to_rfc3339(),
+                                "flow_id": flow_id,
+                                "session_id": session_id
+                            }
+                        }
+                    }
+                }),
+            )
+            .await
     }
 }

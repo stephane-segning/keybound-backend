@@ -615,11 +615,11 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
         Some(&json!(20))
     );
 
-    println!("=== Step 15: Get KYC level ===");
-    let kyc_level_response = send_json_with_bff(
+    println!("=== Step 15: Get completed KYC ===");
+    let completed_kyc_response = send_json_with_bff(
         &client,
         Method::GET,
-        &format!("{}/flow/users/{}/kyc-level", bff_base, user_id),
+        &format!("{}/flow/users/{}/completed-kyc", bff_base, user_id),
         None,
         None,
         Some(&fixture),
@@ -627,23 +627,31 @@ async fn flow_sdk_session_with_phone_otp_and_first_deposit() -> Result<()> {
     .await?;
 
     assert_eq!(
-        kyc_level_response.status, 200,
-        "Get KYC level failed: {}",
-        kyc_level_response.text
+        completed_kyc_response.status, 200,
+        "Get completed KYC failed: {}",
+        completed_kyc_response.text
     );
 
-    let levels = kyc_level_response
+    let completed_kyc = completed_kyc_response
         .body
         .as_ref()
-        .and_then(|b| b.get("level"))
-        .and_then(Value::as_array)
+        .and_then(|b| b.get("completedKyc"))
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or(json!({}));
 
-    assert!(levels.iter().any(|value| value == "PHONE_OTP_VERIFIED"));
-    assert!(levels.iter().any(|value| value == "FIRST_DEPOSIT_VERIFIED"));
+    assert_eq!(
+        completed_kyc.pointer("/kyc_full/phone_otp/completed"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        completed_kyc.pointer("/kyc_full/first_deposit/completed"),
+        Some(&json!(true))
+    );
 
-    println!("KYC levels: {:?}", levels);
+    println!(
+        "Completed KYC: {}",
+        serde_json::to_string_pretty(&completed_kyc)?
+    );
 
     println!("=== E2E Flow SDK test completed successfully ===");
 

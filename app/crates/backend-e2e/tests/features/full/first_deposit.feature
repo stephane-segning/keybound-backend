@@ -9,7 +9,7 @@ Feature: First Deposit Flow
     And the CUSS sink is reset
 
   @serial
-  Scenario: Approved first deposit updates KYC level and metadata
+  Scenario: Approved first deposit updates completed KYC and metadata
     Given I complete phone OTP verification
     Then no error occurred
     Given I start a first deposit flow for 5000 XAF
@@ -22,11 +22,10 @@ Feature: First Deposit Flow
     And CUSS register and approve requests were recorded
     And the CUSS payloads match the first deposit flow
     And the first deposit metadata is persisted
-    When I get the KYC level
+    When I get completed KYC
     Then the response status is 200
-    And the KYC level contains "PHONE_OTP_VERIFIED"
-    And the KYC level contains "FIRST_DEPOSIT_VERIFIED"
-    And firstDepositVerified is true
+    And completed KYC contains flow "phone_otp"
+    And completed KYC contains flow "first_deposit"
 
   @serial
   Scenario: Rejected first deposit closes the session without CUSS activity
@@ -39,9 +38,9 @@ Feature: First Deposit Flow
     And the staff flow detail shows the rejected deposit path
     And the reject path closes the session with reason REJECTED_BY_ADMIN
     And no CUSS request was recorded
-    When I get the current user
+    When I get completed KYC
     Then the response status is 200
-    And firstDepositVerified is false
+    And completed KYC does not contain flow "first_deposit"
     And the first deposit metadata is not persisted
 
   @serial

@@ -1,30 +1,27 @@
 Feature: Flow User Endpoints
-  Verify user reads and KYC level behavior on the v2 flow surface
+  Verify user reads and completed KYC behavior on the v2 flow surface
 
-  Background:
+Background:
     Given the e2e test environment is initialized
     And I have a valid authentication token
     And the database fixtures are set up
     And the SMS sink is reset
 
-  @serial
-  Scenario: Get user returns the authenticated subject
+@serial
+Scenario: Get user returns the authenticated subject
     When I get the current user
     Then the response status is 200
     And the response contains the correct user ID
 
-  @serial
-  Scenario: Initial KYC level is NONE
-    When I get the KYC level
+@serial
+Scenario: Initial completed KYC is empty
+    When I get completed KYC
     Then the response status is 200
-    And the KYC level is "NONE"
-    And phoneOtpVerified is false
-    And firstDepositVerified is false
+    And completed KYC is empty
 
-  @serial
-  Scenario: Phone OTP verification updates KYC level
+@serial
+Scenario: Phone OTP verification updates completed KYC
     Given I complete phone OTP verification
-    When I get the KYC level
+    When I get completed KYC
     Then the response status is 200
-    And the KYC level contains "PHONE_OTP_VERIFIED"
-    And phoneOtpVerified is true
+    And completed KYC contains flow "phone_otp"

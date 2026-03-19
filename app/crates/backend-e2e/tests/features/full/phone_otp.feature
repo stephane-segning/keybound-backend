@@ -8,13 +8,12 @@ Feature: Phone OTP Flow
     And the SMS sink is reset
 
   @serial
-  Scenario: Phone OTP verification completes and updates user KYC
+  Scenario: Phone OTP verification completes and updates completed KYC
     Given I complete phone OTP verification
     Then the response status is 200
     And no error occurred
     When I get the current user
     Then the response status is 200
-    When I get the KYC level
+    When I get completed KYC
     Then the response status is 200
-    And phoneOtpVerified is true
-    And the KYC level contains "PHONE_OTP_VERIFIED"
+    And completed KYC contains flow "phone_otp"
