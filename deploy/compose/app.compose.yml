@@ -8,6 +8,7 @@ x-env: &env
   MINIO_BUCKET: "${MINIO_BUCKET:-user-storage-dev}"
   RUST_LOG: debug
   SMS_SINK_URL: "http://sms-gateway:3000"
+  CUSS_URL: "http://cuss-wiremock:8080"
 
 services:
   app:
@@ -41,6 +42,8 @@ services:
         condition: service_completed_successfully
       sms-gateway:
         condition: service_healthy
+      cuss-wiremock:
+        condition: service_started
 
   app-worker:
     image: user-storage-app
@@ -72,6 +75,8 @@ services:
         condition: service_completed_successfully
       sms-gateway:
         condition: service_healthy
+      cuss-wiremock:
+        condition: service_started
 
   sms-gateway:
     image: user-storage-app
@@ -96,3 +101,17 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+
+  cuss-wiremock:
+    image: wiremock/wiremock:3.13.1
+    command:
+      - --disable-banner
+      - --verbose
+      - --global-response-templating
+    volumes:
+      - ../../.docker/wiremock/cuss/mappings:/home/wiremock/mappings:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/__admin/mappings >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

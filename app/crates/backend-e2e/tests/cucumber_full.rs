@@ -111,6 +111,40 @@ async fn reset_cuss(client: &reqwest::Client, env: &Env) -> Result<()> {
     Ok(())
 }
 
+async fn set_cuss_fault(
+    client: &reqwest::Client,
+    env: &Env,
+    endpoint: &str,
+    status: u16,
+    count: u32,
+) -> Result<()> {
+    let response = send_json(
+        client,
+        Method::POST,
+        &format!("{}/__admin/faults", env.cuss_url),
+        None,
+        Some(json!({
+            "endpoint": endpoint,
+            "status": status,
+            "count": count,
+            "body": {
+                "error": format!("forced_{endpoint}_failure")
+            }
+        })),
+    )
+    .await?;
+
+    if response.status != 200 {
+        return Err(anyhow!(
+            "cuss fault update failed ({}): {}",
+            response.status,
+            response.text
+        ));
+    }
+
+    Ok(())
+}
+
 async fn list_flow_steps(world: &FullE2eWorld, flow_id: &str) -> Result<Vec<Value>> {
     let response = send_json(
         world.client()?,
@@ -391,6 +425,36 @@ async fn given_reset_sms(world: &mut FullE2eWorld) {
 #[given("the CUSS sink is reset")]
 async fn given_reset_cuss(world: &mut FullE2eWorld) {
     if let Err(error) = reset_cuss(world.client().unwrap(), world.env().unwrap()).await {
+        world.error = Some(error.to_string());
+    }
+}
+
+#[given("the CUSS register endpoint fails with 500 for 3 attempts")]
+async fn given_cuss_register_fault(world: &mut FullE2eWorld) {
+    if let Err(error) = set_cuss_fault(
+        world.client().unwrap(),
+        world.env().unwrap(),
+        "register",
+        500,
+        3,
+    )
+    .await
+    {
+        world.error = Some(error.to_string());
+    }
+}
+
+#[given("the CUSS approve endpoint fails with 500 for 3 attempts")]
+async fn given_cuss_approve_fault(world: &mut FullE2eWorld) {
+    if let Err(error) = set_cuss_fault(
+        world.client().unwrap(),
+        world.env().unwrap(),
+        "approve",
+        500,
+        3,
+    )
+    .await
+    {
         world.error = Some(error.to_string());
     }
 }
@@ -854,6 +918,44 @@ async fn approve_first_deposit(world: &mut FullE2eWorld) {
     }
 }
 
+#[when("I approve the pending first deposit admin step expecting flow failure")]
+async fn approve_first_deposit_expect_failure(world: &mut FullE2eWorld) {
+    let admin_step_id = match world.flow.admin_step_id.clone() {
+        Some(value) => value,
+        None => {
+            world.error = Some("admin step id missing".to_owned());
+            return;
+        }
+    };
+
+    match send_json(
+        world.client().unwrap(),
+        Method::POST,
+        &format!(
+            "{}/flow/steps/{}",
+            world.staff_base().unwrap(),
+            admin_step_id
+        ),
+        Some(world.token().unwrap()),
+        Some(json!({ "input": { "decision": "APPROVED" } })),
+    )
+    .await
+    {
+        Ok(response) => world.last_response = Some(response),
+        Err(error) => {
+            world.error = Some(error.to_string());
+            return;
+        }
+    }
+
+    if let Some(flow_id) = world.flow.deposit_flow_id.clone()
+        && let Err(error) =
+            wait_for_flow_status(world, &flow_id, "FAILED", Duration::from_secs(20)).await
+    {
+        world.error = Some(error.to_string());
+    }
+}
+
 #[when("I reject the pending first deposit admin step")]
 async fn reject_first_deposit(world: &mut FullE2eWorld) {
     let admin_step_id = match world.flow.admin_step_id.clone() {
@@ -1151,6 +1253,27 @@ async fn first_deposit_waiting_for_admin(world: &mut FullE2eWorld) {
             .and_then(Value::as_str),
         Some("WAITING")
     );
+}
+
+#[then(regex = r"^the first deposit step ([a-z_]+) is failed and retryable$")]
+async fn first_deposit_step_failed_retryable(world: &mut FullE2eWorld, step_type: String) {
+    let flow_id = world
+        .flow
+        .deposit_flow_id
+        .clone()
+        .expect("deposit flow id should be set");
+    let flow_detail = get_staff_flow_detail(world, &flow_id)
+        .await
+        .expect("staff flow should load");
+    let steps = flow_detail
+        .get("steps")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let step = find_step(&steps, &step_type).expect("step should exist");
+    assert_eq!(step.get("status").and_then(Value::as_str), Some("FAILED"));
+    assert_eq!(step.pointer("/error/retryable"), Some(&json!(true)));
 }
 
 #[then("the staff flow detail shows the completed deposit path")]

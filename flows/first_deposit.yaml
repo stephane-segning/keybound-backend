@@ -65,6 +65,7 @@ steps:
       url: ${CUSS_URL}/api/registration/register
       method: POST
       timeout_ms: 10000
+      retryable: true
       payload:
         fullName: "{{session.full_name}}"
         phone: "{{session.phone_number}}"
@@ -89,6 +90,7 @@ steps:
       url: ${CUSS_URL}/api/registration/approve-and-deposit
       method: POST
       timeout_ms: 10000
+      retryable: true
       payload:
         savingsAccountId: "{{flow.context.step_output.cuss_register_customer.savingsAccountId}}"
         depositAmount: "{{flow.context.step_output.init_first_deposit.amount}}"

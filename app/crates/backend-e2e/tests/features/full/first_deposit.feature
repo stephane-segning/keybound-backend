@@ -43,3 +43,25 @@ Feature: First Deposit Flow
     Then the response status is 200
     And firstDepositVerified is false
     And the first deposit metadata is not persisted
+
+  @serial
+  Scenario: CUSS register failure is marked retryable
+    Given the CUSS register endpoint fails with 500 for 3 attempts
+    And I start a first deposit flow for 5000 XAF
+    Then no error occurred
+    Then the first deposit flow is waiting for admin review
+    When I approve the pending first deposit admin step expecting flow failure
+    Then the response status is 200
+    And no error occurred
+    And the first deposit step cuss_register_customer is failed and retryable
+
+  @serial
+  Scenario: CUSS approve failure is marked retryable
+    Given the CUSS approve endpoint fails with 500 for 3 attempts
+    And I start a first deposit flow for 5000 XAF
+    Then no error occurred
+    Then the first deposit flow is waiting for admin review
+    When I approve the pending first deposit admin step expecting flow failure
+    Then the response status is 200
+    And no error occurred
+    And the first deposit step cuss_approve_and_deposit is failed and retryable

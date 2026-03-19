@@ -59,6 +59,8 @@ pub struct WebhookHttpConfig {
     pub behavior: WebhookBehavior,
     #[serde(default)]
     pub extraction_rules: Vec<WebhookExtractionRule>,
+    #[serde(default)]
+    pub retryable: Option<bool>,
     pub retry_policy: Option<WebhookRetryPolicy>,
     pub success_condition: Option<WebhookSuccessCondition>,
 }
@@ -85,6 +87,7 @@ impl Default for WebhookHttpConfig {
             timeout_ms: default_timeout(),
             behavior: default_behavior(),
             extraction_rules: Vec::new(),
+            retryable: None,
             retry_policy: None,
             success_condition: None,
         }
@@ -223,8 +226,10 @@ impl Step for WebhookStep {
                             }
                         }
 
-                        let retryable = status.is_server_error()
-                            || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+                        let retryable = config.retryable.unwrap_or(
+                            status.is_server_error()
+                                || status == reqwest::StatusCode::TOO_MANY_REQUESTS,
+                        );
 
                         if retryable && let Some(policy) = config.retry_policy {
                             return Ok(StepOutcome::Retry {
@@ -234,10 +239,11 @@ impl Step for WebhookStep {
 
                         Ok(StepOutcome::Failed {
                             error: format!("http_error_{}", status.as_u16()),
-                            retryable: false,
+                            retryable,
                         })
                     }
                     Err(e) => {
+                        let retryable = config.retryable.unwrap_or(true);
                         if let Some(policy) = config.retry_policy {
                             return Ok(StepOutcome::Retry {
                                 after: Duration::from_millis(policy.backoff_ms),
@@ -245,7 +251,7 @@ impl Step for WebhookStep {
                         }
                         Ok(StepOutcome::Failed {
                             error: format!("network_error: {}", e),
-                            retryable: false,
+                            retryable,
                         })
                     }
                 }

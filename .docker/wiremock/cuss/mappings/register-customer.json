@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/api/registration/register"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "success": true,
+      "status": "success",
+      "fineractClientId": 1001,
+      "savingsAccountId": 2002
+    }
+  }
+}

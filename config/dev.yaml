@@ -69,4 +69,4 @@ staff:
   base-path: /staff
 
 cuss:
-  api_url: http://cuss:8080
+  api_url: ${CUSS_URL:-http://cuss-wiremock:8080}
