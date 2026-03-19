@@ -68,6 +68,13 @@ impl UserContactService for RepoUserContact {
             .await
             .map_err(|error| error.to_string())
     }
+
+    async fn update_full_name(&self, user_id: &str, full_name: &str) -> Result<(), String> {
+        self.user_repo
+            .update_full_name(user_id, full_name)
+            .await
+            .map_err(|error| error.to_string())
+    }
 }
 
 pub fn step_services(user_repo: Arc<dyn UserRepo>) -> StepServices {

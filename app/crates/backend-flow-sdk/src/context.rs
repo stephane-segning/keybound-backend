@@ -57,6 +57,7 @@ pub trait UserLookupService: Send + Sync + std::fmt::Debug {
 #[async_trait::async_trait]
 pub trait UserContactService: Send + Sync + std::fmt::Debug {
     async fn update_phone_number(&self, user_id: &str, phone_number: &str) -> Result<(), String>;
+    async fn update_full_name(&self, user_id: &str, full_name: &str) -> Result<(), String>;
 }
 
 impl StepContext {

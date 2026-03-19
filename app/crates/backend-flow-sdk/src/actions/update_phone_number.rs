@@ -152,6 +152,10 @@ mod tests {
             calls.push((user_id.to_owned(), phone_number.to_owned()));
             Ok(())
         }
+
+        async fn update_full_name(&self, _user_id: &str, _full_name: &str) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     fn ctx(

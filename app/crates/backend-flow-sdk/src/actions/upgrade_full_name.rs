@@ -100,6 +100,7 @@ impl Step for UpgradeFullNameAction {
                 config.require_decision,
                 session_full_name(&ctx.session_context),
             )?;
+            persist_full_name(ctx, normalized.full_name.as_deref()).await?;
             return Ok(done_outcome(normalized));
         }
 
@@ -174,6 +175,24 @@ fn done_outcome(normalized: NormalizedInput) -> StepOutcome {
             ..Default::default()
         })),
     }
+}
+
+async fn persist_full_name(ctx: &StepContext, full_name: Option<&str>) -> Result<(), FlowError> {
+    let Some(full_name) = full_name else {
+        return Ok(());
+    };
+
+    let user_id = ctx.session_user_id.as_deref().ok_or_else(|| {
+        FlowError::InvalidDefinition("UPGRADE_FULL_NAME requires session user id".to_owned())
+    })?;
+    let service = ctx.services.user_contact.as_ref().ok_or_else(|| {
+        FlowError::InvalidDefinition("UPGRADE_FULL_NAME requires user contact service".to_owned())
+    })?;
+
+    service
+        .update_full_name(user_id, full_name)
+        .await
+        .map_err(FlowError::InvalidDefinition)
 }
 
 fn normalize_input(
@@ -257,11 +276,42 @@ fn trim_non_empty(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::StepServices;
+    use crate::{StepServices, UserContactService};
+    use async_trait::async_trait;
     use serde_json::json;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    fn make_ctx(config: HashMap<String, Value>, session_context: Value) -> StepContext {
+    #[derive(Debug, Default)]
+    struct TestContactService {
+        full_name_calls: Arc<Mutex<Vec<(String, String)>>>,
+    }
+
+    #[async_trait]
+    impl UserContactService for TestContactService {
+        async fn update_phone_number(
+            &self,
+            _user_id: &str,
+            _phone_number: &str,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn update_full_name(&self, user_id: &str, full_name: &str) -> Result<(), String> {
+            let mut calls = self
+                .full_name_calls
+                .lock()
+                .map_err(|_| "lock poisoned".to_owned())?;
+            calls.push((user_id.to_owned(), full_name.to_owned()));
+            Ok(())
+        }
+    }
+
+    fn make_ctx(
+        config: HashMap<String, Value>,
+        session_context: Value,
+        user_contact: Option<Arc<dyn UserContactService>>,
+    ) -> StepContext {
         StepContext {
             session_id: "sess-1".to_owned(),
             session_user_id: Some("usr-1".to_owned()),
@@ -272,6 +322,7 @@ mod tests {
             flow_context: json!({}),
             services: StepServices {
                 config: Some(config),
+                user_contact,
                 ..Default::default()
             },
         }
@@ -280,7 +331,7 @@ mod tests {
     #[tokio::test]
     async fn verifies_and_updates_full_name_and_whatsapp_flags() {
         let action = UpgradeFullNameAction;
-        let ctx = make_ctx(HashMap::new(), json!({ "full_name": "Old Name" }));
+        let ctx = make_ctx(HashMap::new(), json!({ "full_name": "Old Name" }), None);
         let input = json!({
             "decision": "APPROVED",
             "full_name": "  New Name  ",
@@ -314,7 +365,11 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_existing_session_full_name() {
         let action = UpgradeFullNameAction;
-        let ctx = make_ctx(HashMap::new(), json!({ "full_name": "Existing Name" }));
+        let ctx = make_ctx(
+            HashMap::new(),
+            json!({ "full_name": "Existing Name" }),
+            None,
+        );
         let input = json!({
             "decision": "APPROVED"
         });
@@ -353,6 +408,7 @@ mod tests {
     #[tokio::test]
     async fn execute_can_read_input_from_previous_step_output() {
         let action = UpgradeFullNameAction;
+        let tracker = Arc::new(TestContactService::default());
         let mut config = HashMap::new();
         config.insert(
             "source_step_output".to_owned(),
@@ -378,6 +434,7 @@ mod tests {
             }),
             services: StepServices {
                 config: Some(config),
+                user_contact: Some(tracker.clone()),
                 ..Default::default()
             },
         };
@@ -392,5 +449,10 @@ mod tests {
             }
             _ => panic!("expected done outcome"),
         }
+
+        let calls = tracker.full_name_calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "usr-1");
+        assert_eq!(calls[0].1, "Updated Name");
     }
 }

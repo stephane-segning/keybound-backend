@@ -484,6 +484,30 @@ impl UserRepo for UserRepository {
     }
 
     #[instrument(skip(self))]
+    async fn update_full_name(&self, user_id_val: &str, name: &str) -> RepoResult<()> {
+        debug!("Updating user full name: user_id={}", user_id_val);
+        use backend_model::schema::app_user::dsl::*;
+
+        let normalized = name.trim();
+        if normalized.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.get_conn().await?;
+
+        diesel::update(app_user.filter(user_id.eq(user_id_val)))
+            .set((
+                full_name.eq(Some(normalized.to_owned())),
+                updated_at.eq(chrono::Utc::now()),
+            ))
+            .execute(&mut conn)
+            .await
+            .map_err(Into::<backend_core::Error>::into)?;
+
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
     async fn update_metadata(
         &self,
         user_id_val: &str,

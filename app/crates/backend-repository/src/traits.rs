@@ -339,6 +339,7 @@ pub trait UserRepo: Send + Sync {
     ) -> RepoResult<Vec<backend_model::db::UserDataRow>>;
 
     async fn update_phone_number(&self, user_id: &str, phone_number: &str) -> RepoResult<()>;
+    async fn update_full_name(&self, user_id: &str, full_name: &str) -> RepoResult<()>;
 
     async fn update_metadata(&self, user_id: &str, metadata_patch: Value) -> RepoResult<()>;
 }
