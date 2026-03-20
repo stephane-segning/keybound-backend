@@ -173,17 +173,17 @@ test-e2e-full:
 	  done; \
 	  docker compose -p {{project_e2e}} -f {{compose_e2e}} up -d \
 	    user-storage-server-blank-base user-storage-server-auth-disabled user-storage-worker user-storage-worker-secondary; \
-	  BACKEND_BASE_URL=http://127.0.0.1:3002 \
-	  BACKEND_BLANK_BASE_URL=http://127.0.0.1:3003 \
-	  BACKEND_AUTH_DISABLED_URL=http://127.0.0.1:3004 \
-	  WORKER_PRIMARY_URL=http://127.0.0.1:3005 \
-	  WORKER_SECONDARY_URL=http://127.0.0.1:3006 \
-	  KEYCLOAK_URL=http://127.0.0.1:9026 \
-	  CUSS_URL=http://127.0.0.1:18080 \
-	  SMS_SINK_URL=http://127.0.0.1:18081 \
-	  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:15432/user-storage \
-	  KEYCLOAK_CLIENT_ID=test-client \
-	  KEYCLOAK_CLIENT_SECRET=some-secret \
+	  export BACKEND_BASE_URL=http://127.0.0.1:3002; \
+	  export BACKEND_BLANK_BASE_URL=http://127.0.0.1:3003; \
+	  export BACKEND_AUTH_DISABLED_URL=http://127.0.0.1:3004; \
+	  export WORKER_PRIMARY_URL=http://127.0.0.1:3005; \
+	  export WORKER_SECONDARY_URL=http://127.0.0.1:3006; \
+	  export KEYCLOAK_URL=http://127.0.0.1:9026; \
+	  export CUSS_URL=http://127.0.0.1:18080; \
+	  export SMS_SINK_URL=http://127.0.0.1:18081; \
+	  export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:15432/user-storage; \
+	  export KEYCLOAK_CLIENT_ID=test-client; \
+	  export KEYCLOAK_CLIENT_SECRET=some-secret; \
 	  cargo test -p backend-e2e --features e2e-tests --test flow_sdk -- --nocapture; \
 	  cargo test -p backend-e2e --features e2e-tests --test cucumber_full'
 

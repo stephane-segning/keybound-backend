@@ -26,9 +26,7 @@ use backend_auth::{jwks_auth_layer, kc_signature_layer};
 use backend_core::{Config, Result};
 use backend_migrate::connect_postgres_and_migrate;
 use hyper::StatusCode;
-use std::convert::Infallible;
 use std::sync::Arc;
-use tower::service_fn;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -236,13 +234,7 @@ fn build_router(
     router = router.merge(Into::<Router>::into(swagger::swagger_ui()));
 
     // 404 fallback for unmatched routes
-    router = router.fallback_service(service_fn(|_| async {
-        let res = Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
-            .unwrap();
-        Ok::<_, Infallible>(res)
-    }));
+    router = router.fallback(|| async { (StatusCode::NOT_FOUND, "Not Found") });
 
     // Apply JWKS auth layer
     let mut jwks_base_paths: Vec<String> = config

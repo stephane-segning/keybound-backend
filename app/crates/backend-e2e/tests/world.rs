@@ -63,21 +63,15 @@ impl BffTestFixture {
         &self,
         timestamp: i64,
         nonce: &str,
-        method: &str,
-        path: &str,
-        body: &str,
-        user_id_hint: Option<&str>,
+        _method: &str,
+        _path: &str,
+        _body: &str,
+        _user_id_hint: Option<&str>,
     ) -> String {
+        let escaped_public_key = self.public_jwk.replace('\\', "\\\\").replace('"', "\\\"");
         format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
-            timestamp,
-            nonce,
-            method.to_uppercase(),
-            path,
-            body,
-            self.public_jwk,
-            self.device_id,
-            user_id_hint.unwrap_or(""),
+            r#"{{"deviceId":"{}","publicKey":"{}","ts":"{}","nonce":"{}"}}"#,
+            self.device_id, escaped_public_key, timestamp, nonce
         )
     }
 

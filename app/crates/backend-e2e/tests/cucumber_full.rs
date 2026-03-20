@@ -429,14 +429,14 @@ async fn given_reset_cuss(world: &mut FullE2eWorld) {
     }
 }
 
-#[given("the CUSS register endpoint fails with 500 for 3 attempts")]
+#[given("the CUSS register endpoint fails with 500 for 4 attempts")]
 async fn given_cuss_register_fault(world: &mut FullE2eWorld) {
     if let Err(error) = set_cuss_fault(
         world.client().unwrap(),
         world.env().unwrap(),
         "register",
         500,
-        3,
+        4,
     )
     .await
     {
@@ -1371,9 +1371,14 @@ async fn cuss_payloads_match_first_deposit(world: &mut FullE2eWorld) {
         register_request.pointer("/payload/fullName"),
         Some(&json!(FIXTURE_FULL_NAME))
     );
+    let expected_phone = world
+        .flow
+        .phone_number
+        .clone()
+        .unwrap_or_else(|| FIXTURE_PHONE_NUMBER.to_owned());
     assert_eq!(
         register_request.pointer("/payload/phone"),
-        Some(&json!(FIXTURE_PHONE_NUMBER))
+        Some(&json!(expected_phone))
     );
     assert_eq!(
         approve_request.pointer("/payload/depositAmount"),

@@ -84,7 +84,7 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 diesel-async = { version = "0.7", features = ["postgres", "deadpool"] }
 deadpool-diesel = { version = "0.6", features = ["postgres"] }
 diesel_migrations = { version = "2.3", features = ["postgres"] }
-tower = "0"
+tower = { version = "0.5", features = ["util"] }
 http = "1"
 http-body-util = "0.1"
 hyper = "1"

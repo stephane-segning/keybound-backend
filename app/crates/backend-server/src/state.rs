@@ -162,7 +162,7 @@ mod tests {
     use axum::http::Request;
     use backend_core::Config;
     use diesel_async::pooled_connection::AsyncDieselConnectionManager;
-    use tower::ServiceExt;
+    use tower::util::ServiceExt;
 
     #[tokio::test]
     async fn test_app_state_from_config_minimal() {

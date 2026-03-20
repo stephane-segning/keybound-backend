@@ -45,7 +45,7 @@ Feature: First Deposit Flow
 
   @serial
   Scenario: CUSS register failure is marked retryable
-    Given the CUSS register endpoint fails with 500 for 3 attempts
+    Given the CUSS register endpoint fails with 500 for 4 attempts
     And I start a first deposit flow for 5000 XAF
     Then no error occurred
     Then the first deposit flow is waiting for admin review
