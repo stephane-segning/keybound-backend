@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "cdigital-test/glm-5",
+  "small_model": "cdigital-test/qwen3-8b",
+  "default_agent": "agent-orchestrator",
+  "instructions": [
+    "AGENTS.md",
+    ".opencode/ARCHITECTURE.md",
+    ".opencode/SOLID.md"
+  ],
+  "watcher": {
+    "ignore": [
+      "target/**",
+      "app/gen/**",
+      ".opencode/node_modules/**"
+    ]
+  },
+  "agent": {
+    "build": {
+      "model": "cdigital-test/glm-5"
+    },
+    "plan": {
+      "model": "cdigital-test/qwen3-8b",
+      "permission": {
+        "bash": "ask",
+        "edit": "deny",
+        "webfetch": "allow"
+      }
+    }
+  }
+}
