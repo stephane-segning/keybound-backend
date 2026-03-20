@@ -8,6 +8,7 @@ pub struct ContextUpdates {
     pub session_context_patch: Option<Value>,
     pub flow_context_patch: Option<Value>,
     pub user_metadata_patch: Option<Value>,
+    pub user_metadata_eager_patch: Option<Value>,
     pub notifications: Option<Vec<Value>>,
 }
 

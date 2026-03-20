@@ -169,8 +169,8 @@ impl From<backend_model::db::FlowStepRow> for StepResponse {
     }
 }
 
-impl From<backend_model::db::UserRow> for UserResponse {
-    fn from(row: backend_model::db::UserRow) -> Self {
+impl UserResponse {
+    pub fn from_row_with_metadata(row: backend_model::db::UserRow, metadata: Value) -> Self {
         Self {
             user_id: row.user_id,
             realm: row.realm,
@@ -180,7 +180,7 @@ impl From<backend_model::db::UserRow> for UserResponse {
             email_verified: row.email_verified,
             phone_number: row.phone_number,
             disabled: row.disabled,
-            metadata: row.metadata,
+            metadata,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

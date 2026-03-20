@@ -4,6 +4,8 @@ mod debug;
 mod error;
 mod get_user;
 mod kyc;
+mod map;
+mod mapping_utils;
 mod noop;
 mod otp;
 mod retry;
@@ -20,6 +22,7 @@ pub use debug::DebugLogAction;
 pub use error::ErrorAction;
 pub use get_user::GetUserAction;
 pub use kyc::{DocumentType, ReviewDocumentAction, UploadDocumentAction, ValidateDepositAction};
+pub use map::MapAction;
 pub use noop::NoopAction;
 pub use otp::{GenerateOtpAction, VerifyOtpAction};
 pub use retry::RetryAction;
@@ -31,7 +34,8 @@ pub use wait::WaitAction;
 
 pub use webhook::{
     ExtractionTarget, WebhookBehavior, WebhookExtractionRule, WebhookHttpConfig,
-    WebhookRetryPolicy, WebhookStep, WebhookSuccessCondition,
+    WebhookMappingSource, WebhookPayloadMapping, WebhookRetryPolicy, WebhookStep,
+    WebhookSuccessCondition,
 };
 
 use crate::FlowError;

@@ -1,3 +1,6 @@
+use super::mapping_utils::{
+    JsonPointerMapping, apply_json_pointer_patch, resolve_json_pointer_mapping_value,
+};
 use crate::step::ContextUpdates;
 use crate::{Actor, FlowError, Step, StepContext, StepOutcome};
 use async_trait::async_trait;
@@ -53,6 +56,8 @@ pub struct WebhookHttpConfig {
     #[serde(default)]
     pub headers: HashMap<String, String>,
     pub payload: Option<Value>,
+    #[serde(default)]
+    pub payload_mappings: Vec<WebhookPayloadMapping>,
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
     #[serde(default = "default_behavior")]
@@ -63,6 +68,29 @@ pub struct WebhookHttpConfig {
     pub retryable: Option<bool>,
     pub retry_policy: Option<WebhookRetryPolicy>,
     pub success_condition: Option<WebhookSuccessCondition>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WebhookPayloadMapping {
+    #[serde(default)]
+    pub source: Option<WebhookMappingSource>,
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub json_pointer: Option<String>,
+    pub target_path: String,
+    #[serde(default)]
+    pub value: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookMappingSource {
+    Session,
+    Flow,
+    Input,
+    Response,
+    Literal,
 }
 
 fn default_method() -> String {
@@ -84,6 +112,7 @@ impl Default for WebhookHttpConfig {
             method: default_method(),
             headers: HashMap::new(),
             payload: None,
+            payload_mappings: Vec::new(),
             timeout_ms: default_timeout(),
             behavior: default_behavior(),
             extraction_rules: Vec::new(),
@@ -147,7 +176,7 @@ impl Step for WebhookStep {
             }
         }
 
-        let payload = config.payload.map(|p| render_template_val(&p, ctx));
+        let payload = build_payload(&config, ctx)?;
 
         let mut req_builder = self
             .client
@@ -260,6 +289,36 @@ impl Step for WebhookStep {
     }
 }
 
+fn build_payload(
+    config: &WebhookHttpConfig,
+    ctx: &StepContext,
+) -> Result<Option<Value>, FlowError> {
+    if !config.payload_mappings.is_empty() {
+        let mut payload = Value::Object(Map::new());
+        for mapping in &config.payload_mappings {
+            let normalized = JsonPointerMapping {
+                source: mapping.source.clone().map(|source| match source {
+                    WebhookMappingSource::Session => super::mapping_utils::MappingSource::Session,
+                    WebhookMappingSource::Flow => super::mapping_utils::MappingSource::Flow,
+                    WebhookMappingSource::Input => super::mapping_utils::MappingSource::Input,
+                    WebhookMappingSource::Response => super::mapping_utils::MappingSource::Response,
+                    WebhookMappingSource::Literal => super::mapping_utils::MappingSource::Literal,
+                }),
+                source_path: mapping.source_path.clone(),
+                json_pointer: mapping.json_pointer.clone(),
+                target_path: mapping.target_path.clone(),
+                value: mapping.value.clone(),
+            };
+            if let Some(value) = resolve_json_pointer_mapping_value(ctx, None, &normalized)? {
+                apply_json_pointer_patch(&mut payload, &mapping.target_path, value);
+            }
+        }
+        return Ok(Some(payload));
+    }
+
+    Ok(config.payload.as_ref().map(|p| render_template_val(p, ctx)))
+}
+
 fn apply_extraction(
     updates: &mut ContextUpdates,
     step_output: &mut Map<String, Value>,
@@ -272,7 +331,7 @@ fn apply_extraction(
                 .session_context_patch
                 .take()
                 .unwrap_or_else(|| Value::Object(Map::new()));
-            apply_patch(&mut patch, &rule.target_path, value);
+            apply_json_pointer_patch(&mut patch, &rule.target_path, value);
             updates.session_context_patch = Some(patch);
         }
         ExtractionTarget::FlowContext => {
@@ -280,7 +339,7 @@ fn apply_extraction(
                 .flow_context_patch
                 .take()
                 .unwrap_or_else(|| Value::Object(Map::new()));
-            apply_patch(&mut patch, &rule.target_path, value);
+            apply_json_pointer_patch(&mut patch, &rule.target_path, value);
             updates.flow_context_patch = Some(patch);
         }
         ExtractionTarget::UserMetadata => {
@@ -288,38 +347,15 @@ fn apply_extraction(
                 .user_metadata_patch
                 .take()
                 .unwrap_or_else(|| Value::Object(Map::new()));
-            apply_patch(&mut patch, &rule.target_path, value);
+            apply_json_pointer_patch(&mut patch, &rule.target_path, value);
             updates.user_metadata_patch = Some(patch);
         }
         ExtractionTarget::StepOutput => {
             let mut patch = Value::Object(step_output.clone());
-            apply_patch(&mut patch, &rule.target_path, value);
+            apply_json_pointer_patch(&mut patch, &rule.target_path, value);
             if let Value::Object(m) = patch {
                 *step_output = m;
             }
-        }
-    }
-}
-
-fn apply_patch(target: &mut Value, path: &str, value: Value) {
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if parts.is_empty() {
-        return;
-    }
-
-    let mut current = target;
-    for (i, part) in parts.iter().enumerate() {
-        if i == parts.len() - 1 {
-            if let Value::Object(map) = current {
-                map.insert(part.to_string(), value.clone());
-            }
-        } else if let Value::Object(map) = current {
-            if !map.contains_key(*part) {
-                map.insert(part.to_string(), Value::Object(Map::new()));
-            }
-            current = map.get_mut(*part).unwrap();
-        } else {
-            return;
         }
     }
 }
@@ -424,4 +460,86 @@ fn render_template_exact_value(template: &str, ctx: &StepContext) -> Option<Valu
         .map(|m: regex::Match<'_>| m.as_str())
         .unwrap_or_default();
     resolve_template_raw(token, ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StepServices;
+    use serde_json::json;
+
+    fn make_ctx() -> StepContext {
+        StepContext {
+            session_id: "sess-1".to_owned(),
+            session_user_id: Some("usr-1".to_owned()),
+            flow_id: "flow-1".to_owned(),
+            step_id: "step-1".to_owned(),
+            input: json!({"amount": 1500}),
+            session_context: json!({"phone_number": "+237690000001"}),
+            flow_context: json!({
+                "full_name": "Mbarga Benn",
+                "step_output": {
+                    "register": {
+                        "savingsAccountId": "sav-1"
+                    }
+                }
+            }),
+            services: StepServices::default(),
+        }
+    }
+
+    #[test]
+    fn build_payload_from_pointer_mappings() {
+        let ctx = make_ctx();
+        let config = WebhookHttpConfig {
+            url: "http://localhost/hook".to_owned(),
+            payload: None,
+            payload_mappings: vec![
+                WebhookPayloadMapping {
+                    source: Some(WebhookMappingSource::Flow),
+                    source_path: Some("/full_name".to_owned()),
+                    json_pointer: None,
+                    target_path: "/fullName".to_owned(),
+                    value: None,
+                },
+                WebhookPayloadMapping {
+                    source: None,
+                    source_path: Some("/session_user_id".to_owned()),
+                    json_pointer: None,
+                    target_path: "/externalId".to_owned(),
+                    value: None,
+                },
+                WebhookPayloadMapping {
+                    source: Some(WebhookMappingSource::Input),
+                    source_path: Some("/amount".to_owned()),
+                    json_pointer: None,
+                    target_path: "/depositAmount".to_owned(),
+                    value: None,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let payload = build_payload(&config, &ctx).unwrap().unwrap();
+        assert_eq!(payload["fullName"], "Mbarga Benn");
+        assert_eq!(payload["externalId"], "usr-1");
+        assert_eq!(payload["depositAmount"], 1500);
+    }
+
+    #[test]
+    fn build_payload_falls_back_to_template_payload() {
+        let ctx = make_ctx();
+        let config = WebhookHttpConfig {
+            url: "http://localhost/hook".to_owned(),
+            payload: Some(json!({
+                "phone": "{{session.phone_number}}",
+                "client": "{{flow.context.full_name}}"
+            })),
+            ..Default::default()
+        };
+
+        let payload = build_payload(&config, &ctx).unwrap().unwrap();
+        assert_eq!(payload["phone"], "+237690000001");
+        assert_eq!(payload["client"], "Mbarga Benn");
+    }
 }

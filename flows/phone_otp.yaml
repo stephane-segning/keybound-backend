@@ -53,9 +53,13 @@ steps:
       url: ${SMS_SINK_URL}/otp
       method: POST
       timeout_ms: 5000
-      payload:
-        phone: "{{flow.context.phone_number}}"
-        otp: "{{flow.context.otp}}"
+      payload_mappings:
+      - source: flow
+        source_path: /phone_number
+        target_path: /phone
+      - source: flow
+        source_path: /otp
+        target_path: /otp
       success_condition:
         status_codes:
         - 200

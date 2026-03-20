@@ -437,10 +437,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/v1/sms"))
-            .and(wiremock::matchers::query_param(
-                "api_key",
-                "test_api_key",
-            ))
+            .and(wiremock::matchers::query_param("api_key", "test_api_key"))
             .and(wiremock::matchers::body_json(json!({
                 "sender": "AvlyText",
                 "recipient": "1234567890",

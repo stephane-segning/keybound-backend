@@ -18,7 +18,7 @@ steps:
           target_context: session_context
         - json_pointer: /score
           target_path: /kyc_score
-          target_context: user_metadata
+          target_context: step_output
       success_condition:
         status_codes: [200]
         json_pointer: /status
@@ -26,6 +26,24 @@ steps:
     retry:
       max: 5
       delay_ms: 2000
+    ok: persist_provider_score
+    fail: error
+
+  persist_provider_score:
+    action: MAP
+    actor: SYSTEM
+    config:
+      mappings:
+        - from:
+            root: flow
+            path: /step_output/call_provider/kyc_score
+          to:
+            root: user_metadata
+            path: /kyc_score
+          eager: false
+    retry:
+      max: 1
+      delay_ms: 0
     ok: complete
     fail: error
 

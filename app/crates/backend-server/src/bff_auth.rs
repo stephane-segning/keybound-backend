@@ -12,6 +12,7 @@ use axum::response::{IntoResponse, Response};
 use backend_auth::JwtToken;
 use backend_core::Error;
 use std::sync::Arc;
+use tracing::debug;
 
 const HEADER_SIGNATURE: &str = "x-auth-signature";
 const HEADER_TIMESTAMP: &str = "x-auth-signature-timestamp";
@@ -93,7 +94,7 @@ async fn authenticate_bearer(
     let user_id = jwt.user_id().to_owned();
     let device_id = "bff".to_owned();
 
-    tracing::info!(
+    debug!(
         user_id = %user_id,
         "Bearer token authentication successful"
     );

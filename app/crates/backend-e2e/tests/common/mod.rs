@@ -354,7 +354,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 full_name,
                 phone_number,
                 disabled,
-                metadata,
                 created_at,
                 updated_at
             ) VALUES (
@@ -364,7 +363,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 'E2E Subject',
                 '+237690123456',
                 false,
-                '{}'::jsonb,
                 NOW(),
                 NOW()
             )
@@ -375,7 +373,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 full_name = EXCLUDED.full_name,
                 phone_number = EXCLUDED.phone_number,
                 disabled = false,
-                metadata = '{}'::jsonb,
                 updated_at = NOW()
             "#,
             &[&normalized_user_id, &username],
@@ -393,7 +390,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 full_name,
                 phone_number,
                 disabled,
-                metadata,
                 created_at,
                 updated_at
             ) VALUES (
@@ -403,7 +399,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 'E2E Staff',
                 '+237690000001',
                 false,
-                '{}'::jsonb,
                 NOW(),
                 NOW()
             )
@@ -414,7 +409,6 @@ pub async fn ensure_bff_fixtures(database_url: &str, user_id: &str) -> Result<()
                 full_name = EXCLUDED.full_name,
                 phone_number = EXCLUDED.phone_number,
                 disabled = false,
-                metadata = '{}'::jsonb,
                 updated_at = NOW()
             "#,
             &[],

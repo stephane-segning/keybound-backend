@@ -340,8 +340,14 @@ pub trait UserRepo: Send + Sync {
 
     async fn update_phone_number(&self, user_id: &str, phone_number: &str) -> RepoResult<()>;
     async fn update_full_name(&self, user_id: &str, full_name: &str) -> RepoResult<()>;
+    async fn get_user_metadata(&self, user_id: &str) -> RepoResult<Value>;
 
-    async fn update_metadata(&self, user_id: &str, metadata_patch: Value) -> RepoResult<()>;
+    async fn update_metadata(
+        &self,
+        user_id: &str,
+        metadata_patch: Value,
+        eager_patch: Option<Value>,
+    ) -> RepoResult<()>;
 }
 
 #[backend_core::async_trait]

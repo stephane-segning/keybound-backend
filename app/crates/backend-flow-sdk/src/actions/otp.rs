@@ -119,12 +119,14 @@ impl Step for GenerateOtpAction {
                 flow_context_patch: Some(patch),
                 session_context_patch: None,
                 user_metadata_patch: None,
+                user_metadata_eager_patch: None,
                 notifications: None,
             },
             SaveTarget::Session => ContextUpdates {
                 flow_context_patch: None,
                 session_context_patch: Some(patch),
                 user_metadata_patch: None,
+                user_metadata_eager_patch: None,
                 notifications: None,
             },
         };

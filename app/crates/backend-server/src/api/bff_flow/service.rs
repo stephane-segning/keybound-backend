@@ -758,6 +758,7 @@ async fn write_completed_kyc_metadata(
                     }
                 }
             }),
+            Some(json!({ "kyc": false })),
         )
         .await
 }
@@ -919,7 +920,15 @@ pub(crate) async fn apply_context_updates(
     session: &FlowSessionRow,
     updates: Box<backend_flow_sdk::ContextUpdates>,
 ) -> Result<(), Error> {
-    if let Some(session_patch) = updates.session_context_patch.as_ref() {
+    let backend_flow_sdk::ContextUpdates {
+        session_context_patch,
+        user_metadata_patch,
+        user_metadata_eager_patch,
+        notifications,
+        ..
+    } = *updates;
+
+    if let Some(session_patch) = session_context_patch.as_ref() {
         let current_session = api
             .state
             .flow
@@ -933,16 +942,16 @@ pub(crate) async fn apply_context_updates(
             .await?;
     }
 
-    if let Some(metadata_patch) = updates.user_metadata_patch
+    if let Some(metadata_patch) = user_metadata_patch
         && let Some(user_id) = session.user_id.as_deref()
     {
         api.state
             .user
-            .update_metadata(user_id, metadata_patch)
+            .update_metadata(user_id, metadata_patch, user_metadata_eager_patch)
             .await?;
     }
 
-    if let Some(notifications) = updates.notifications {
+    if let Some(notifications) = notifications {
         for notification in notifications {
             match serde_json::from_value::<backend_core::NotificationJob>(notification.clone()) {
                 Ok(job) => {
@@ -1042,8 +1051,9 @@ pub async fn get_user(
         .get_user(&user_id)
         .await?
         .ok_or_else(|| Error::not_found("USER_NOT_FOUND", "User not found"))?;
+    let metadata = api.state.user.get_user_metadata(&user_id).await?;
 
-    Ok(user.into())
+    Ok(UserResponse::from_row_with_metadata(user, metadata))
 }
 
 #[instrument(skip(api))]
@@ -1057,15 +1067,14 @@ pub async fn get_completed_kyc(
         return Err(Error::unauthorized("Cannot access other users' data"));
     }
 
-    let user = api
-        .state
+    api.state
         .user
         .get_user(&user_id)
         .await?
         .ok_or_else(|| Error::not_found("USER_NOT_FOUND", "User not found"))?;
+    let metadata = api.state.user.get_user_metadata(&user_id).await?;
 
-    let completed_kyc = user
-        .metadata
+    let completed_kyc = metadata
         .get("kyc")
         .cloned()
         .filter(Value::is_object)

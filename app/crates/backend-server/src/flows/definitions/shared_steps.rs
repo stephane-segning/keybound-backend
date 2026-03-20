@@ -74,6 +74,7 @@ impl Step for ResolveRecipientStep {
                 "provider_matched": recipient_contact.is_some()
             })),
             user_metadata_patch: None,
+            user_metadata_eager_patch: None,
             notifications: None,
         };
 
@@ -256,6 +257,7 @@ impl Step for PersistDepositResultStep {
                 "deposit_result": deposit_result,
                 "deposit_confirmed_at": chrono::Utc::now().to_rfc3339()
             })),
+            user_metadata_eager_patch: None,
             session_context_patch: None,
             flow_context_patch: None,
             notifications: None,

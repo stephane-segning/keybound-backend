@@ -74,10 +74,15 @@ steps:
       method: POST
       timeout_ms: 10000
       retryable: true
-      payload:
-        fullName: "{{flow.context.full_name}}"
-        phone: "{{session.phone_number}}"
-        externalId: "{{session.user_id}}"
+      payload_mappings:
+        - source: flow
+          source_path: /full_name
+          target_path: /fullName
+        - source: session
+          source_path: /phone_number
+          target_path: /phone
+        - source_path: /session_user_id
+          target_path: /externalId
       success_condition:
         status_codes:
           - 201
@@ -99,9 +104,13 @@ steps:
       method: POST
       timeout_ms: 10000
       retryable: true
-      payload:
-        savingsAccountId: "{{flow.context.step_output.cuss_register_customer.savingsAccountId}}"
-        depositAmount: "{{flow.context.step_output.init_first_deposit.amount}}"
+      payload_mappings:
+        - source: flow
+          source_path: /step_output/cuss_register_customer/savingsAccountId
+          target_path: /savingsAccountId
+        - source: flow
+          source_path: /step_output/init_first_deposit/amount
+          target_path: /depositAmount
       success_condition:
         status_codes:
           - 200
@@ -123,9 +132,11 @@ steps:
         - target_path: /fineractId
           source: flow
           source_path: /step_output/cuss_register_customer/fineractClientId
+          eager: true
         - target_path: /savingsAccountId
           source: flow
           source_path: /step_output/cuss_register_customer/savingsAccountId
+          eager: true
         - target_path: /firstDeposit/transactionId
           source: flow
           source_path: /step_output/cuss_approve_and_deposit/transactionId

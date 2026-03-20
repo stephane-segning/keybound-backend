@@ -57,18 +57,21 @@ impl Step for SetAction {
                 session_context_patch: Some(values),
                 flow_context_patch: None,
                 user_metadata_patch: None,
+                user_metadata_eager_patch: None,
                 notifications: None,
             },
             SetTarget::Flow => ContextUpdates {
                 session_context_patch: None,
                 flow_context_patch: Some(values),
                 user_metadata_patch: None,
+                user_metadata_eager_patch: None,
                 notifications: None,
             },
             SetTarget::User => ContextUpdates {
                 session_context_patch: None,
                 flow_context_patch: None,
                 user_metadata_patch: Some(values),
+                user_metadata_eager_patch: None,
                 notifications: None,
             },
         };

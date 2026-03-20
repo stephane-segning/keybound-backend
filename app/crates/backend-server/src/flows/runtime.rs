@@ -42,21 +42,31 @@ impl std::fmt::Debug for RepoUserContact {
 #[backend_core::async_trait]
 impl UserLookupService for RepoUserLookup {
     async fn get_user(&self, user_id: &str) -> Result<Option<UserRecord>, String> {
-        self.user_repo
+        let user = self
+            .user_repo
             .get_user(user_id)
             .await
-            .map(|user| {
-                user.map(|row| UserRecord {
-                    user_id: row.user_id,
-                    realm: row.realm,
-                    username: row.username,
-                    full_name: row.full_name,
-                    email: row.email,
-                    phone_number: row.phone_number,
-                    metadata: row.metadata,
-                })
-            })
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+
+        let Some(row) = user else {
+            return Ok(None);
+        };
+
+        let metadata = self
+            .user_repo
+            .get_user_metadata(&row.user_id)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        Ok(Some(UserRecord {
+            user_id: row.user_id,
+            realm: row.realm,
+            username: row.username,
+            full_name: row.full_name,
+            email: row.email,
+            phone_number: row.phone_number,
+            metadata,
+        }))
     }
 }
 

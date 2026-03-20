@@ -12,6 +12,7 @@ use gen_oas_server_kc::apis::users::{
 use gen_oas_server_kc::models;
 use headers::Host;
 use http::Method;
+use tracing::info;
 
 #[backend_core::async_trait]
 impl Devices<Error> for BackendApi {
@@ -108,6 +109,8 @@ impl Users<Error> for BackendApi {
         match user {
             Some(row) => {
                 let user_data = self.state.user.list_user_data(&row.user_id, true).await?;
+                info!("row >> {:?}", row);
+                info!("user_data >> {:?}", user_data);
                 let dto = UserRecordDto::from_row_with_user_data(row, &user_data);
                 Ok(GetUserResponse::Status200_User(dto.into()))
             }

@@ -14,6 +14,8 @@ pub struct UserRepository {
     pub(crate) pool: Pool<AsyncPgConnection>,
 }
 
+const USER_METADATA_DATA_TYPE: &str = "metadata";
+
 impl UserRepository {
     pub fn new(pool: Pool<AsyncPgConnection>) -> Self {
         Self { pool }
@@ -99,10 +101,8 @@ impl UserRepo for UserRepository {
                 .attributes
                 .as_ref()
                 .and_then(|a| a.get("phone_number").cloned()),
-            fineract_customer_id: None,
             disabled: !req.enabled.unwrap_or(true),
             attributes: attributes_json,
-            metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -367,10 +367,8 @@ impl UserRepo for UserRepository {
             email_verified: false,
             phone_number: Some(phone.to_owned()),
             full_name: None,
-            fineract_customer_id: None,
             disabled: false,
             attributes: Some(attributes_json),
-            metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -508,29 +506,105 @@ impl UserRepo for UserRepository {
     }
 
     #[instrument(skip(self))]
+    async fn get_user_metadata(&self, user_id_val: &str) -> RepoResult<serde_json::Value> {
+        debug!("Getting user metadata: user_id={}", user_id_val);
+        use backend_model::schema::app_user_data::dsl::*;
+
+        let mut conn = self.get_conn().await?;
+
+        let rows = app_user_data
+            .filter(user_id.eq(user_id_val))
+            .filter(data_type.eq(USER_METADATA_DATA_TYPE))
+            .select((name, content))
+            .load::<(String, serde_json::Value)>(&mut conn)
+            .await
+            .map_err(Into::<backend_core::Error>::into)?;
+
+        let mut out = serde_json::Map::new();
+        for (key, value) in rows {
+            out.insert(key, value);
+        }
+
+        Ok(serde_json::Value::Object(out))
+    }
+
+    #[instrument(skip(self))]
     async fn update_metadata(
         &self,
         user_id_val: &str,
         metadata_patch: serde_json::Value,
+        eager_patch: Option<serde_json::Value>,
     ) -> RepoResult<()> {
         debug!("Updating user metadata: user_id={}", user_id_val);
-        use backend_model::schema::app_user::dsl::*;
-
+        use backend_model::schema::app_user::dsl as user_dsl;
+        use backend_model::schema::app_user_data::dsl::*;
         let mut conn = self.get_conn().await?;
 
-        // Note: Ideally we'd do a JSON merge update in SQL, but for simplicity we fetch and patch.
-        if let Some(mut user) = app_user
-            .filter(user_id.eq(user_id_val))
-            .first::<db::UserRow>(&mut conn)
-            .await
-            .optional()
-            .map_err(Into::<backend_core::Error>::into)?
-        {
-            merge_json_value(&mut user.metadata, &metadata_patch);
-            diesel::update(app_user.filter(user_id.eq(user_id_val)))
+        let Some(patch_obj) = metadata_patch.as_object() else {
+            return Ok(());
+        };
+        let eager_obj = eager_patch.as_ref().and_then(serde_json::Value::as_object);
+
+        let now = chrono::Utc::now();
+        let updated_users =
+            diesel::update(user_dsl::app_user.filter(user_dsl::user_id.eq(user_id_val)))
+                .set(user_dsl::updated_at.eq(now))
+                .execute(&mut conn)
+                .await
+                .map_err(Into::<backend_core::Error>::into)?;
+        if updated_users == 0 {
+            return Ok(());
+        }
+
+        for (key, patch_value) in patch_obj {
+            let key_name = key.clone();
+            if patch_value.is_null() {
+                diesel::delete(
+                    app_user_data
+                        .filter(user_id.eq(user_id_val))
+                        .filter(name.eq(&key_name))
+                        .filter(data_type.eq(USER_METADATA_DATA_TYPE)),
+                )
+                .execute(&mut conn)
+                .await
+                .map_err(Into::<backend_core::Error>::into)?;
+                continue;
+            }
+
+            let existing = app_user_data
+                .filter(user_id.eq(user_id_val))
+                .filter(name.eq(&key_name))
+                .filter(data_type.eq(USER_METADATA_DATA_TYPE))
+                .select((content, eager_fetch))
+                .first::<(serde_json::Value, bool)>(&mut conn)
+                .await
+                .optional()
+                .map_err(Into::<backend_core::Error>::into)?;
+            let (mut merged_value, existing_eager) =
+                existing.unwrap_or_else(|| (serde_json::json!({}), false));
+            let resolved_eager = eager_obj
+                .and_then(|map| map.get(&key_name))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(existing_eager);
+
+            merge_json_value(&mut merged_value, patch_value);
+
+            diesel::insert_into(app_user_data)
+                .values((
+                    user_id.eq(user_id_val),
+                    name.eq(&key_name),
+                    data_type.eq(USER_METADATA_DATA_TYPE),
+                    content.eq(merged_value),
+                    eager_fetch.eq(resolved_eager),
+                    created_at.eq(now),
+                    updated_at.eq(now),
+                ))
+                .on_conflict((user_id, name, data_type))
+                .do_update()
                 .set((
-                    metadata.eq(user.metadata),
-                    updated_at.eq(chrono::Utc::now()),
+                    content.eq(excluded(content)),
+                    eager_fetch.eq(resolved_eager),
+                    updated_at.eq(now),
                 ))
                 .execute(&mut conn)
                 .await

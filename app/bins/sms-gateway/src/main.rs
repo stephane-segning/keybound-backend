@@ -196,4 +196,3 @@ async fn send_otp(
         }
     }
 }
-

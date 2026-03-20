@@ -13,11 +13,11 @@ pub mod step;
 
 pub use actions::{
     CloseSessionAction, ConditionalAction, DebugLogAction, DocumentType, ErrorAction,
-    ExtractionTarget, GenerateOtpAction, GetUserAction, NoopAction, RetryAction,
+    ExtractionTarget, GenerateOtpAction, GetUserAction, MapAction, NoopAction, RetryAction,
     ReviewDocumentAction, SetAction, UpdatePhoneNumberAction, UpdateUserMetadataAction,
     UpgradeFullNameAction, UploadDocumentAction, ValidateDepositAction, VerifyOtpAction,
-    WaitAction, WebhookBehavior, WebhookExtractionRule, WebhookHttpConfig, WebhookRetryPolicy,
-    WebhookStep, WebhookSuccessCondition,
+    WaitAction, WebhookBehavior, WebhookExtractionRule, WebhookHttpConfig, WebhookMappingSource,
+    WebhookPayloadMapping, WebhookRetryPolicy, WebhookStep, WebhookSuccessCondition,
 };
 pub use actor::Actor;
 pub use context::{

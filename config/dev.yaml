@@ -8,7 +8,7 @@ server:
     key_path: "./config/tls/api.key"
 
 logging:
-  level: "debug"
+  level: "info"
   log_requests_enabled: false
 
 database:
@@ -47,7 +47,7 @@ sns:
   initial_backoff_seconds: 5
 
 sms:
-  provider: avlytext 
+  provider: console
   avlytext:
     base_url: "https://api.avlytext.com"
     api_key: ""

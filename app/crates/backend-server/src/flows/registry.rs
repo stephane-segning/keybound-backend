@@ -195,7 +195,7 @@ pub fn waiting_status(actor: Actor) -> &'static str {
 fn register_builtin_actions(registry: &mut FlowRegistry) {
     use backend_flow_sdk::{
         CloseSessionAction, ConditionalAction, DebugLogAction, ErrorAction, GenerateOtpAction,
-        GetUserAction, NoopAction, RetryAction, ReviewDocumentAction, SetAction,
+        GetUserAction, MapAction, NoopAction, RetryAction, ReviewDocumentAction, SetAction,
         UpdatePhoneNumberAction, UpdateUserMetadataAction, UpgradeFullNameAction,
         UploadDocumentAction, ValidateDepositAction, VerifyOtpAction, WaitAction, WebhookStep,
     };
@@ -207,6 +207,7 @@ fn register_builtin_actions(registry: &mut FlowRegistry) {
     registry.register_step(Arc::new(RetryAction));
     registry.register_step(Arc::new(WaitAction));
     registry.register_step(Arc::new(SetAction));
+    registry.register_step(Arc::new(MapAction));
     registry.register_step(Arc::new(GenerateOtpAction));
     registry.register_step(Arc::new(VerifyOtpAction));
     registry.register_step(Arc::new(GetUserAction));

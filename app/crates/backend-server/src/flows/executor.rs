@@ -187,11 +187,19 @@ impl FlowExecutor {
         next_flow_context: &mut Value,
         updates: backend_flow_sdk::ContextUpdates,
     ) -> Result<(), Error> {
-        if let Some(flow_patch) = updates.flow_context_patch {
+        let backend_flow_sdk::ContextUpdates {
+            flow_context_patch,
+            session_context_patch,
+            user_metadata_patch,
+            user_metadata_eager_patch,
+            notifications,
+        } = updates;
+
+        if let Some(flow_patch) = flow_context_patch {
             merge_json_value(next_flow_context, &flow_patch);
         }
 
-        if let Some(session_patch) = updates.session_context_patch {
+        if let Some(session_patch) = session_context_patch {
             let mut new_session_context = session.context.clone();
             merge_json_value(&mut new_session_context, &session_patch);
             self.state
@@ -200,16 +208,16 @@ impl FlowExecutor {
                 .await?;
         }
 
-        if let Some(metadata_patch) = updates.user_metadata_patch
+        if let Some(metadata_patch) = user_metadata_patch
             && let Some(user_id) = session.user_id.as_deref()
         {
             self.state
                 .user
-                .update_metadata(user_id, metadata_patch)
+                .update_metadata(user_id, metadata_patch, user_metadata_eager_patch)
                 .await?;
         }
 
-        if let Some(notifications) = updates.notifications {
+        if let Some(notifications) = notifications {
             for notification in notifications {
                 match serde_json::from_value::<backend_core::NotificationJob>(notification.clone())
                 {
@@ -512,6 +520,7 @@ impl FlowExecutor {
                         }
                     }
                 }),
+                Some(serde_json::json!({ "kyc": false })),
             )
             .await
     }

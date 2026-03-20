@@ -3,14 +3,14 @@
 //! These types use the o2o crate for automatic conversion from generated
 //! OpenAPI types (gen_oas_server_kc) to internal domain types.
 
+use crate::db;
 use chrono::{DateTime, Utc};
 use hex::encode;
+use log::{debug, info};
 use o2o::o2o;
 use serde_json::Value;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-
-use crate::db;
 
 pub const USER_DATA_NAME_REGISTRATION_OUTPUT: &str = "registration_output";
 pub const USER_DATA_TYPE_REGISTRATION_OUTPUT: &str = "cuss.registration_response";
@@ -219,6 +219,9 @@ impl UserRecordDto {
         };
 
         let attributes = Self::parse_attributes(row.attributes.clone());
+        info!("attributes >> {:?}", attributes.clone());
+        info!("user_data_rows >> {:?}", user_data_rows.clone());
+
         let custom = Self::build_custom(attributes.clone(), user_data_rows);
 
         Self {
@@ -288,10 +291,8 @@ mod tests {
             email: Some("alice@example.test".to_owned()),
             email_verified: true,
             phone_number: Some("+4912345678".to_owned()),
-            fineract_customer_id: None,
             disabled: false,
             attributes: Some(json!({ "tier": "gold" })),
-            metadata: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

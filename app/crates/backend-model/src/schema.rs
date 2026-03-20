@@ -34,10 +34,8 @@ diesel::table! {
         email -> Nullable<Text>,
         email_verified -> Bool,
         phone_number -> Nullable<Text>,
-        fineract_customer_id -> Nullable<Text>,
         disabled -> Bool,
         attributes -> Nullable<Jsonb>,
-        metadata -> Jsonb,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
     }

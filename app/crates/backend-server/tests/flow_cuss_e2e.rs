@@ -73,6 +73,7 @@ impl Step for CussRegisterStep {
                             "cuss_registration_status": "COMPLETED",
                             "cuss_registration_at": chrono::Utc::now().to_rfc3339()
                         })),
+                        user_metadata_eager_patch: None,
                         session_context_patch: Some(json!({
                             "fineractClientId": fineract_client_id
                         })),
@@ -166,6 +167,7 @@ impl Step for CussApproveStep {
                             "cuss_approval_status": "COMPLETED",
                             "cuss_approval_at": chrono::Utc::now().to_rfc3339()
                         })),
+                        user_metadata_eager_patch: None,
                         session_context_patch: None,
                         flow_context_patch: None,
                         notifications: None,
@@ -248,6 +250,7 @@ impl Step for CheckUserStep {
                 })),
                 session_context_patch: None,
                 user_metadata_patch: None,
+                user_metadata_eager_patch: None,
                 notifications: None,
             })),
         })
