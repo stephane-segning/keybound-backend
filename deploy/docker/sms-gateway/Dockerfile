@@ -52,8 +52,8 @@ RUN \
       exit 1; \
       ;; \
   esac; \
-  cargo build --locked --target "${RUST_TARGET}" -p backend \
-  && cp ./target/"${RUST_TARGET}"/debug/backend backend \
+  cargo build --locked --target "${RUST_TARGET}" -p sms-gateway \
+  && cp ./target/"${RUST_TARGET}"/debug/sms-gateway sms-gateway \
   && cp ./target/"${RUST_TARGET}"/debug/health healthcheck
 
 FROM builder-base as builder-prod
@@ -79,8 +79,8 @@ RUN \
       exit 1; \
       ;; \
   esac; \
-  cargo build --release --locked --target "${RUST_TARGET}" -p backend \
-  && cp ./target/"${RUST_TARGET}"/release/backend backend \
+  cargo build --release --locked --target "${RUST_TARGET}" -p sms-gateway \
+  && cp ./target/"${RUST_TARGET}"/release/sms-gateway sms-gateway \
   && cp ./target/"${RUST_TARGET}"/release/health healthcheck
 
 FROM gcr.io/distroless/static-debian12:nonroot as dev
@@ -90,13 +90,8 @@ ENV PORT=3000
 
 WORKDIR /app
 
-COPY --from=builder /app/backend /app/server
+COPY --from=builder /app/sms-gateway /app/sms-gateway
 COPY --from=builder /app/healthcheck /app/healthcheck
-
-COPY flows/ /app/flows/
-COPY sessions/ /app/sessions/
-
-VOLUME ["/app/flows", "/app/sessions"]
 
 USER nonroot:nonroot
 
@@ -104,7 +99,7 @@ EXPOSE $PORT
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=2s --retries=5 CMD ["/app/healthcheck"]
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/sms-gateway"]
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -117,13 +112,8 @@ ENV PORT=3000
 
 WORKDIR /app
 
-COPY --from=builder-prod /app/backend /app/server
+COPY --from=builder-prod /app/sms-gateway /app/sms-gateway
 COPY --from=builder-prod /app/healthcheck /app/healthcheck
-
-COPY flows/ /app/flows/
-COPY sessions/ /app/sessions/
-
-VOLUME ["/app/flows", "/app/sessions"]
 
 USER nonroot:nonroot
 
@@ -131,4 +121,4 @@ EXPOSE $PORT
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=2s --retries=5 CMD ["/app/healthcheck"]
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/sms-gateway"]

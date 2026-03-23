@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.5
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 LABEL maintainer="Stephane Segning Lambou <stephane.segning-lambou@adorsys>"
@@ -7,10 +9,12 @@ LABEL org.opencontainers.image.description="adorsys GIS Cameroon - SMS Gateway"
 ENV RUST_LOG=warn
 ENV PORT=3000
 
+ARG TARGETARCH
+
 WORKDIR /app
 
-COPY sms-gateway /app/sms-gateway
-COPY healthcheck /app/healthcheck
+COPY ${TARGETARCH}/sms-gateway /app/sms-gateway
+COPY ${TARGETARCH}/healthcheck /app/healthcheck
 
 USER nonroot:nonroot
 

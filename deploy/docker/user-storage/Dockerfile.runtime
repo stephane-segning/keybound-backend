@@ -9,11 +9,12 @@ LABEL org.opencontainers.image.description="adorsys GIS Cameroon"
 ENV RUST_LOG=warn
 ENV PORT=3000
 
+ARG TARGETARCH
+
 WORKDIR /app
 
-COPY backend /app/server
-COPY sms-gateway /app/sms-gateway
-COPY healthcheck /app/healthcheck
+COPY ${TARGETARCH}/backend /app/server
+COPY ${TARGETARCH}/healthcheck /app/healthcheck
 
 COPY flows/ /app/flows/
 COPY sessions/ /app/sessions/

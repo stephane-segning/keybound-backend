@@ -18,17 +18,17 @@ services:
       dockerfile: deploy/docker/user-storage/Dockerfile
       target: dev
     command:
-    - serve
-    - --config-path
-    - config/dev.yaml
-    - --mode
-    - server
+      - serve
+      - --config-path
+      - config/dev.yaml
+      - --mode
+      - server
     volumes:
-    - ../../config:/app/config/
-    - ../../flows:/app/flows/
-    - ../../sessions:/app/sessions/
+      - ../../config:/app/config/
+      - ../../flows:/app/flows/
+      - ../../sessions:/app/sessions/
     ports:
-    - "3001:3000"
+      - "3001:3000"
     environment:
       <<: *env
     depends_on:
@@ -53,15 +53,15 @@ services:
       dockerfile: deploy/docker/user-storage/Dockerfile
       target: dev
     command:
-    - serve
-    - --config-path
-    - config/dev.yaml
-    - --mode
-    - worker
+      - serve
+      - --config-path
+      - config/dev.yaml
+      - --mode
+      - worker
     volumes:
-    - ../../config:/app/config/
-    - ../../flows:/app/flows/
-    - ../../sessions:/app/sessions/
+      - ../../config:/app/config/
+      - ../../flows:/app/flows/
+      - ../../sessions:/app/sessions/
     environment:
       <<: *env
     depends_on:
@@ -79,14 +79,12 @@ services:
         condition: service_started
 
   sms-gateway:
-    image: user-storage-app
+    image: sms-gateway-app
     build:
       context: ../..
-      dockerfile: deploy/docker/user-storage/Dockerfile
+      dockerfile: deploy/docker/sms-gateway/Dockerfile
       target: dev
     restart: unless-stopped
-    entrypoint:
-      - /app/sms-gateway
     command:
       - --config
       - config/dev.yaml
@@ -111,7 +109,7 @@ services:
     volumes:
       - ../../.docker/wiremock/cuss/mappings:/home/wiremock/mappings:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/__admin/mappings >/dev/null 2>&1"]
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/__admin/mappings >/dev/null 2>&1" ]
       interval: 5s
       timeout: 3s
       retries: 20

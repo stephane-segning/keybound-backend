@@ -290,13 +290,8 @@ jobs:
             echo "- Duration: ${duration}s"
             echo "- Backend size: ${{ steps.sizes.outputs.backend_bytes }} bytes"
             echo "- Healthcheck size: ${{ steps.sizes.outputs.health_bytes }} bytes"
-            echo "- SMS Gateway size: ${{ steps.sizes.outputs.sms_bytes }} bytes"
-            echo "- Total MUSL payload: ${{ steps.sizes.outputs.total_bytes }} bytes"
-            echo "- Timestamp: ${timestamp} UTC"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  container-build-dev-arch:
-    name: Container Build Dev (${{ matrix.component }}, ${{ matrix.arch }}) 🐳
+  container-build-dev:
+    name: Container Build Dev 🐳
     permissions:
       contents: read
       packages: write
@@ -306,16 +301,6 @@ jobs:
       - test-oas
     if: github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [user-storage, sms-gateway]
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            platform: linux/amd64
-          - arch: arm64
-            platform: linux/arm64
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-docker
@@ -325,95 +310,43 @@ jobs:
           image-name: ${{ github.repository }}
       - uses: actions/download-artifact@v5
         with:
-          name: musl-binaries-${{ matrix.arch }}
+          pattern: musl-binaries-*
           path: image_ctx
       - name: Prepare image context
         run: |
-          chmod +x image_ctx/backend image_ctx/healthcheck image_ctx/sms-gateway
+          mv image_ctx/musl-binaries-amd64 image_ctx/amd64
+          mv image_ctx/musl-binaries-arm64 image_ctx/arm64
+          chmod +x image_ctx/amd64/* image_ctx/arm64/*
           cp -r flows image_ctx/
           cp -r sessions image_ctx/
-          cp deploy/docker/${{ matrix.component }}/Dockerfile.runtime image_ctx/Dockerfile
-      - name: Set image tags
+          cp deploy/docker/user-storage/Dockerfile.runtime image_ctx/Dockerfile
+      - name: Set image tag
         id: image
         run: |
-          tag="ghcr.io/${{ github.repository_owner }}/${{ matrix.component }}:dev-${{ github.sha }}-${{ matrix.arch }}"
+          tag="ghcr.io/${{ github.repository_owner }}/user-storage:dev-${{ github.sha }}"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: Build and push dev image
         id: build_image
         uses: docker/build-push-action@v6
         with:
           context: image_ctx
-          file: deploy/docker/${{ matrix.component }}/Dockerfile.runtime
+          file: image_ctx/Dockerfile
           push: true
           no-cache: false
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.image.outputs.tag }}
-      - name: Collect image metadata
-        id: image_meta
-        run: |
-          inspect_output="$(docker buildx imagetools inspect "${{ steps.image.outputs.tag }}")"
-          printf '%s\n' "$inspect_output"
-          size_line="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2; exit }')"
-          echo "size=${size_line:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Image report
         if: always()
         run: |
           {
-            echo "### 🐳 Container Report: Dev (${{ matrix.component }}, ${{ matrix.arch }})"
-            echo "- Platform: ${{ matrix.platform }}"
+            echo "### 🐳 Container Report: Dev"
+            echo "- Platforms: linux/amd64,linux/arm64"
             echo "- Tag: ${{ steps.image.outputs.tag }}"
             echo "- Digest: ${{ steps.build_image.outputs.digest }}"
-            echo "- Manifest size (imagetools): ${{ steps.image_meta.outputs.size }}"
-            echo "- Source artifact: musl-binaries-${{ matrix.arch }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  container-build-dev-manifest:
-    name: Container Build Dev (Manifest, ${{ matrix.component }}) 📦
-    permissions:
-      contents: read
-      packages: write
-    needs:
-      - container-build-dev-arch
-    if: github.ref != 'refs/heads/master'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [user-storage, sms-gateway]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-docker
-        id: setup
-        with:
-          app-version: dev-${{ github.sha }}
-          image-name: ${{ github.repository }}
-      - name: Create and push multi-arch manifest
-        id: manifest
-        run: |
-          base_tag="ghcr.io/${{ github.repository_owner }}/${{ matrix.component }}:dev-${{ github.sha }}"
-          docker buildx imagetools create \
-            -t "${base_tag}" \
-            "${base_tag}-amd64" \
-            "${base_tag}-arm64"
-          inspect_output="$(docker buildx imagetools inspect "${base_tag}")"
-          printf '%s\n' "$inspect_output"
-          total_sizes="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2 }' | paste -sd ', ' -)"
-          echo "tag=${base_tag}" >> "$GITHUB_OUTPUT"
-          echo "sizes=${total_sizes:-unknown}" >> "$GITHUB_OUTPUT"
-      - name: Manifest report
-        if: always()
-        run: |
-          {
-            timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-            echo "### 📦 Container Report: Dev Manifest (${{ matrix.component }})"
-            echo "- Tag: ${{ steps.manifest.outputs.tag }}"
-            echo "- Source slices: ${{ steps.manifest.outputs.tag }}-amd64, ${{ steps.manifest.outputs.tag }}-arm64"
-            echo "- Per-arch manifest sizes: ${{ steps.manifest.outputs.sizes }}"
-            echo "- Timestamp: ${timestamp} UTC"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  container-build-prod-prepare:
-    name: Container Build Prod (Prepare Tags) 📋
+  container-build-prod:
+    name: Container Build Prod 🐧
     permissions:
       contents: read
       packages: write
@@ -424,90 +357,36 @@ jobs:
       - test-oas
     if: github.ref == 'refs/heads/master' && needs.cargo-version.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      tags: ${{ steps.setup.outputs.tags }}
-      tags_sms: ${{ steps.setup_sms.outputs.tags }}
-      version: ${{ needs.cargo-version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-docker
         id: setup
         with:
           app-version: ${{ needs.cargo-version.outputs.version }}
-          image-name: ${{ github.repository }}
-      - uses: ./.github/actions/setup-docker
-        id: setup_sms
-        with:
-          app-version: ${{ needs.cargo-version.outputs.version }}
-          image-name: ${{ github.repository }}-sms-gateway
-      - name: Tags report
-        run: |
-          {
-            echo "### Container Report: Prod Tags"
-            echo "- Workspace version: ${{ needs.cargo-version.outputs.version }}"
-            echo "- Latest release/tag detected: ${{ needs.cargo-version.outputs.latest_tag }}"
-            echo "- New release required: **${{ needs.cargo-version.outputs.changed }}**"
-            echo "- Tags (user-storage):"
-            while IFS= read -r tag; do
-              [ -n "$tag" ] && echo "  - ${tag}"
-            done <<< "${{ steps.setup.outputs.tags }}"
-            echo "- Tags (sms-gateway):"
-            while IFS= read -r tag; do
-              [ -n "$tag" ] && echo "  - ${tag}"
-            done <<< "${{ steps.setup_sms.outputs.tags }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  container-build-prod-arch:
-    name: Container Build Prod (${{ matrix.component }}, ${{ matrix.arch }}) 🐧
-    permissions:
-      contents: read
-      packages: write
-    needs:
-      - container-build-prod-prepare
-      - build-musl
-    if: needs.container-build-prod-prepare.result == 'success'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [user-storage, sms-gateway]
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            platform: linux/amd64
-          - arch: arm64
-            platform: linux/arm64
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-docker
-        id: setup
-        with:
-          app-version: ${{ needs.container-build-prod-prepare.outputs.version }}
           image-name: ${{ github.repository }}
       - uses: actions/download-artifact@v5
         with:
-          name: musl-binaries-${{ matrix.arch }}
+          pattern: musl-binaries-*
           path: image_ctx
       - name: Prepare image context
         run: |
-          chmod +x image_ctx/backend image_ctx/healthcheck image_ctx/sms-gateway
+          mv image_ctx/musl-binaries-amd64 image_ctx/amd64
+          mv image_ctx/musl-binaries-arm64 image_ctx/arm64
+          chmod +x image_ctx/amd64/* image_ctx/arm64/*
           cp -r flows image_ctx/
           cp -r sessions image_ctx/
-          cp deploy/docker/${{ matrix.component }}/Dockerfile.runtime image_ctx/Dockerfile
-      - name: Derive architecture tags
+          cp deploy/docker/user-storage/Dockerfile.runtime image_ctx/Dockerfile
+      - name: Derive tags
         id: tags
-        env:
-          COMPONENT_TAGS: ${{ matrix.component == 'sms-gateway' && needs.container-build-prod-prepare.outputs.tags_sms || needs.container-build-prod-prepare.outputs.tags }}
         run: |
           first_tag=""
           {
             echo "arch_tags<<EOF"
             while IFS= read -r tag; do
               [ -z "$tag" ] && continue
-              arch_tag="${tag}-${{ matrix.arch }}"
-              [ -z "$first_tag" ] && first_tag="$arch_tag"
-              echo "$arch_tag"
-            done <<< "${COMPONENT_TAGS}"
+              [ -z "$first_tag" ] && first_tag="$tag"
+              echo "$tag"
+            done <<< "${{ steps.setup.outputs.tags }}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "first_tag=${first_tag}" >> "$GITHUB_OUTPUT"
@@ -516,87 +395,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: image_ctx
-          file: deploy/docker/${{ matrix.component }}/Dockerfile.runtime
+          file: image_ctx/Dockerfile
           push: true
           no-cache: true
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.tags.outputs.arch_tags }}
           provenance: true
           sbom: true
-      - name: Collect image metadata
-        id: image_meta
-        run: |
-          inspect_output="$(docker buildx imagetools inspect "${{ steps.tags.outputs.first_tag }}")"
-          printf '%s\n' "$inspect_output"
-          size_line="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2; exit }')"
-          echo "size=${size_line:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Image report
         if: always()
         run: |
           {
-            echo "### 🐧 Container Report: Prod (${{ matrix.component }}, ${{ matrix.arch }})"
-            echo "- Platform: ${{ matrix.platform }}"
+            echo "### 🐧 Container Report: Prod"
+            echo "- Platforms: linux/amd64,linux/arm64"
             echo "- Example tag: ${{ steps.tags.outputs.first_tag }}"
             echo "- Digest: ${{ steps.build_image.outputs.digest }}"
-            echo "- Manifest size (imagetools): ${{ steps.image_meta.outputs.size }}"
-            echo "- Source artifact: musl-binaries-${{ matrix.arch }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  container-build-prod-manifest:
-    name: Container Build Prod (Manifest, ${{ matrix.component }}) 🚀
-    permissions:
-      contents: read
-      packages: write
-    needs:
-      - container-build-prod-prepare
-      - container-build-prod-arch
-    if: needs.container-build-prod-prepare.result == 'success'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [user-storage, sms-gateway]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-docker
-        id: setup
-        with:
-          app-version: ${{ needs.container-build-prod-prepare.outputs.version }}
-          image-name: ${{ github.repository }}
-      - name: Create and push multi-arch manifests
-        id: manifests
-        env:
-          COMPONENT_TAGS: ${{ matrix.component == 'sms-gateway' && needs.container-build-prod-prepare.outputs.tags_sms || needs.container-build-prod-prepare.outputs.tags }}
-        run: |
-          first_tag=""
-          first_sizes=""
-          while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            [ -z "$first_tag" ] && first_tag="$tag"
-            docker buildx imagetools create \
-              -t "$tag" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
-            inspect_output="$(docker buildx imagetools inspect "$tag")"
-            printf '%s\n' "$inspect_output"
-            sizes="$(printf '%s\n' "$inspect_output" | awk '/^  Size:/ { print $2 }' | paste -sd ', ' -)"
-            if [ -z "$first_sizes" ]; then
-              first_sizes="${sizes:-unknown}"
-            fi
-          done <<< "${COMPONENT_TAGS}"
-          
-          echo "first_tag=${first_tag}" >> "$GITHUB_OUTPUT"
-          echo "first_sizes=${first_sizes}" >> "$GITHUB_OUTPUT"
-      - name: Manifest report
-        if: always()
-        env:
-          COMPONENT_TAGS: ${{ matrix.component == 'sms-gateway' && needs.container-build-prod-prepare.outputs.tags_sms || needs.container-build-prod-prepare.outputs.tags }}
-        run: |
-          {
-            timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-            echo "### 🚀 Container Report: Prod Manifest (${{ matrix.component }})"
-            echo "- Example tag: ${{ steps.manifests.outputs.first_tag }}"
-            echo "- Per-arch manifest sizes: ${{ steps.manifests.outputs.first_sizes }}"
-            echo "- Source tags: ${COMPONENT_TAGS}"
-            echo "- Timestamp: ${timestamp} UTC"
           } >> "$GITHUB_STEP_SUMMARY"
