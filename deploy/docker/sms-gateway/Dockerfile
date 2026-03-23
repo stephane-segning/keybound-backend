@@ -53,6 +53,7 @@ RUN \
       ;; \
   esac; \
   cargo build --locked --target "${RUST_TARGET}" -p sms-gateway \
+  && cargo build --locked --target "${RUST_TARGET}" -p backend --bin health \
   && cp ./target/"${RUST_TARGET}"/debug/sms-gateway sms-gateway \
   && cp ./target/"${RUST_TARGET}"/debug/health healthcheck
 
@@ -80,6 +81,7 @@ RUN \
       ;; \
   esac; \
   cargo build --release --locked --target "${RUST_TARGET}" -p sms-gateway \
+  && cargo build --release --locked --target "${RUST_TARGET}" -p backend --bin health \
   && cp ./target/"${RUST_TARGET}"/release/sms-gateway sms-gateway \
   && cp ./target/"${RUST_TARGET}"/release/health healthcheck
 
