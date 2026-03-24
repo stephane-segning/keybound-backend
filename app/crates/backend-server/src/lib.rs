@@ -207,7 +207,7 @@ fn build_router(
     let bff_base = config.bff.base_path.trim();
     if !bff_base.is_empty() && bff_base != "/" {
         let bff_router = Router::new()
-            .nest("/flow", api::bff_flow::router(api.clone()))
+            .merge(api::bff_flow::router(api.clone()))
             .merge(api::bff_uploads::router(api.clone()))
             .layer(axum::middleware::from_fn_with_state(
                 api.state.clone(),

@@ -316,7 +316,7 @@ jobs:
         id: setup
         with:
           app-version: dev-${{ github.sha }}
-          image-name: ${{ github.repository }}
+          image-name: ${{ github.repository_owner }}/${{ matrix.component }}
       - uses: actions/download-artifact@v5
         with:
           pattern: musl-binaries-*
@@ -329,11 +329,6 @@ jobs:
           cp -r flows image_ctx/ || true
           cp -r sessions image_ctx/ || true
           cp deploy/docker/${{ matrix.component }}/Dockerfile.runtime image_ctx/Dockerfile
-      - name: Set image tag
-        id: image
-        run: |
-          tag="ghcr.io/${{ github.repository_owner }}/${{ matrix.component }}:dev-${{ github.sha }}"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: Build and push dev image
         id: build_image
         uses: docker/build-push-action@v6
@@ -343,14 +338,15 @@ jobs:
           push: true
           no-cache: false
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.image.outputs.tag }}
+          tags: ${{ steps.setup.outputs.tags }}
       - name: Image report
         if: always()
         run: |
           {
             echo "### 🐳 Container Report: Dev (${{ matrix.component }})"
             echo "- Platforms: linux/amd64,linux/arm64"
-            echo "- Tag: ${{ steps.image.outputs.tag }}"
+            echo "- Tags: |"
+            echo "${{ steps.setup.outputs.tags }}"
             echo "- Digest: ${{ steps.build_image.outputs.digest }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -376,12 +372,7 @@ jobs:
         id: setup
         with:
           app-version: ${{ needs.cargo-version.outputs.version }}
-          image-name: ${{ github.repository }}
-      - uses: ./.github/actions/setup-docker
-        id: setup_sms
-        with:
-          app-version: ${{ needs.cargo-version.outputs.version }}
-          image-name: ${{ github.repository }}-sms-gateway
+          image-name: ${{ github.repository_owner }}/${{ matrix.component }}
       - uses: actions/download-artifact@v5
         with:
           pattern: musl-binaries-*
@@ -397,7 +388,7 @@ jobs:
       - name: Derive tags
         id: tags
         env:
-          COMPONENT_TAGS: ${{ matrix.component == 'sms-gateway' && steps.setup_sms.outputs.tags || steps.setup.outputs.tags }}
+          COMPONENT_TAGS: ${{ steps.setup.outputs.tags }}
         run: |
           first_tag=""
           {
