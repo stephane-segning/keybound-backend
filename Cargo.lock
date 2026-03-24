@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "backend"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "backend-core",
  "backend-flow-sdk",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "backend-auth"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "async-trait",
  "axum",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "backend-core"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "backend-e2e"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1022,11 +1022,11 @@ dependencies = [
 
 [[package]]
 name = "backend-env"
-version = "0.2.5"
+version = "0.2.6"
 
 [[package]]
 name = "backend-flow-sdk"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "async-trait",
  "backend-env",
@@ -1047,7 +1047,7 @@ dependencies = [
 
 [[package]]
 name = "backend-id"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "backend-core",
  "cuid",
@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "backend-migrate"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "async-trait",
  "backend-core",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "backend-model"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "chrono",
  "diesel",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "backend-repository"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "backend-core",
@@ -1111,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "backend-server"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "apalis",
  "apalis-redis",
