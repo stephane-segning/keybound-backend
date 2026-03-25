@@ -312,6 +312,7 @@ cuss:
 
         let oidc_state = Arc::new(OidcState::new(
             config.oauth2.issuer.clone(),
+            config.oauth2.jwks_uri.clone(),
             None,
             Duration::from_secs(3600),
             Duration::from_secs(3600),
