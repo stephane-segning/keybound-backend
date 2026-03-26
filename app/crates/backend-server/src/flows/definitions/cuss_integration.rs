@@ -70,6 +70,7 @@ impl Step for CussRegisterStep {
             full_name,
             external_id
         );
+        tracing::info!("[CUSS_REGISTER] cuss base_path: {}, request: {:?}", self.cuss_config.base_path, request);
 
         match register_customer(&self.cuss_config, request).await {
             Ok(response) => {
@@ -173,6 +174,7 @@ impl Step for CussApproveStep {
             savings_account_id,
             deposit_amount
         );
+        tracing::info!("[CUSS_APPROVE] cuss base_path: {}, request: {:?}", self.cuss_config.base_path, request);
 
         match approve_and_deposit(&self.cuss_config, request).await {
             Ok(response) => {
