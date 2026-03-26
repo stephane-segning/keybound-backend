@@ -63,7 +63,26 @@ steps:
     config:
       require_decision: true
       source_step_output: await_admin_decision
+    next: get_cuss_token
+
+  get_cuss_token:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${KEYCLOAK_INTERNAL_URL}/realms/fineract/protocol/openid-connect/token
+      method: POST
+      timeout_ms: 10000
+      retryable: true
+      form_body: "grant_type=client_credentials&client_id=${CUSS_CLIENT_ID}&client_secret=${CUSS_CLIENT_SECRET}"
+      success_condition:
+        status_codes:
+          - 200
+      extraction_rules:
+        - json_pointer: /access_token
+          target_path: /cuss_access_token
+          target_context: flow_context
     next: cuss_register_customer
+    fail: FAILED
 
   cuss_register_customer:
     action: WEBHOOK_HTTP
@@ -74,6 +93,8 @@ steps:
       method: POST
       timeout_ms: 10000
       retryable: true
+      headers:
+        Authorization: "Bearer {{flow.context.cuss_access_token}}"
       payload_mappings:
         - source: flow
           source_path: /full_name
@@ -104,6 +125,8 @@ steps:
       method: POST
       timeout_ms: 10000
       retryable: true
+      headers:
+        Authorization: "Bearer {{flow.context.cuss_access_token}}"
       payload_mappings:
         - source: flow
           source_path: /step_output/cuss_register_customer/savingsAccountId

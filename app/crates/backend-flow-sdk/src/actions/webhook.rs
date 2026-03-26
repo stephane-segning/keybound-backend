@@ -58,6 +58,10 @@ pub struct WebhookHttpConfig {
     pub payload: Option<Value>,
     #[serde(default)]
     pub payload_mappings: Vec<WebhookPayloadMapping>,
+    /// Raw form body string (application/x-www-form-urlencoded).
+    /// Supports `${ENV}` and `{{template}}` variable substitution.
+    /// When set, takes precedence over `payload` and `payload_mappings`.
+    pub form_body: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
     #[serde(default = "default_behavior")]
@@ -113,6 +117,7 @@ impl Default for WebhookHttpConfig {
             headers: HashMap::new(),
             payload: None,
             payload_mappings: Vec::new(),
+            form_body: None,
             timeout_ms: default_timeout(),
             behavior: default_behavior(),
             extraction_rules: Vec::new(),
@@ -176,16 +181,22 @@ impl Step for WebhookStep {
             }
         }
 
-        let payload = build_payload(&config, ctx)?;
-
         let mut req_builder = self
             .client
             .request(method, &url)
             .headers(headers)
             .timeout(Duration::from_millis(config.timeout_ms));
 
-        if let Some(p) = payload {
-            req_builder = req_builder.json(&p);
+        if let Some(form) = &config.form_body {
+            let rendered = render_template_str(form, ctx);
+            req_builder = req_builder
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(rendered);
+        } else {
+            let payload = build_payload(&config, ctx)?;
+            if let Some(p) = payload {
+                req_builder = req_builder.json(&p);
+            }
         }
 
         match config.behavior {
