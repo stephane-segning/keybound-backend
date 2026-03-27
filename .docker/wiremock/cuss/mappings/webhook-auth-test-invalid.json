@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/api/webhook-auth-test-invalid",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer invalid-token"
+      }
+    }
+  },
+  "response": {
+    "status": 401,
+    "jsonBody": {
+      "error": "Unauthorized",
+      "message": "Invalid bearer token"
+    }
+  }
+}

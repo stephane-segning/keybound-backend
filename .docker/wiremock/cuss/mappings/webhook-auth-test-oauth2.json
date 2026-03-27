@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/api/webhook-auth-test-oauth2",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer oauth2-test-access-token"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "status": "success",
+      "authType": "oauth2"
+    }
+  }
+}

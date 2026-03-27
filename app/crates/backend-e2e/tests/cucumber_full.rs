@@ -149,7 +149,7 @@ async fn list_flow_steps(world: &FullE2eWorld, flow_id: &str) -> Result<Vec<Valu
     let response = send_json(
         world.client()?,
         Method::GET,
-        &format!("{}/flow/flows/{}", world.bff_base()?, flow_id),
+        &format!("{}/flows/{}", world.bff_base()?, flow_id),
         Some(world.token()?),
         None,
     )
@@ -189,7 +189,7 @@ async fn wait_for_flow_status(
     timeout: Duration,
 ) -> Result<()> {
     let deadline = Instant::now() + timeout;
-    let url = format!("{}/flow/flows/{}", world.bff_base()?, flow_id);
+    let url = format!("{}/flows/{}", world.bff_base()?, flow_id);
     let mut last_status: Option<String> = None;
 
     while Instant::now() < deadline {
@@ -234,7 +234,7 @@ async fn wait_for_session_close_reason(
     timeout: Duration,
 ) -> Result<()> {
     let deadline = Instant::now() + timeout;
-    let url = format!("{}/flow/sessions/{}", world.bff_base()?, session_id);
+    let url = format!("{}/sessions/{}", world.bff_base()?, session_id);
 
     while Instant::now() < deadline {
         let response = send_json(
@@ -596,7 +596,7 @@ async fn complete_phone_otp(world: &mut FullE2eWorld) {
     let session = send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/sessions", bff_base),
+        &format!("{}/sessions", bff_base),
         Some(world.token().unwrap()),
         Some(json!({ "sessionType": "kyc_full" })),
     )
@@ -632,7 +632,7 @@ async fn complete_phone_otp(world: &mut FullE2eWorld) {
     let flow = send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/sessions/{}/flows", bff_base, session_id),
+        &format!("{}/sessions/{}/flows", bff_base, session_id),
         Some(world.token().unwrap()),
         Some(json!({ "flowType": "phone_otp" })),
     )
@@ -683,7 +683,7 @@ async fn complete_phone_otp(world: &mut FullE2eWorld) {
     if let Err(error) = send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/steps/{}", bff_base, init_step_id),
+        &format!("{}/steps/{}", bff_base, init_step_id),
         Some(world.token().unwrap()),
         Some(json!({ "input": { "phone_number": phone_number } })),
     )
@@ -726,7 +726,7 @@ async fn complete_phone_otp(world: &mut FullE2eWorld) {
     match send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/steps/{}", bff_base, verify_step_id),
+        &format!("{}/steps/{}", bff_base, verify_step_id),
         Some(world.token().unwrap()),
         Some(json!({ "input": { "code": otp } })),
     )
@@ -772,7 +772,7 @@ async fn start_first_deposit(world: &mut FullE2eWorld, amount: i64) {
         match send_json(
             world.client().unwrap(),
             Method::POST,
-            &format!("{}/flow/sessions", bff_base),
+            &format!("{}/sessions", bff_base),
             Some(world.token().unwrap()),
             Some(json!({ "sessionType": "kyc_full" })),
         )
@@ -807,7 +807,7 @@ async fn start_first_deposit(world: &mut FullE2eWorld, amount: i64) {
     let flow = match send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/sessions/{}/flows", bff_base, session_id),
+        &format!("{}/sessions/{}/flows", bff_base, session_id),
         Some(world.token().unwrap()),
         Some(json!({ "flowType": "first_deposit" })),
     )
@@ -856,7 +856,7 @@ async fn start_first_deposit(world: &mut FullE2eWorld, amount: i64) {
     match send_json(
         world.client().unwrap(),
         Method::POST,
-        &format!("{}/flow/steps/{}", bff_base, init_step_id),
+        &format!("{}/steps/{}", bff_base, init_step_id),
         Some(world.token().unwrap()),
         Some(json!({ "input": { "amount": amount, "currency": "XAF" } })),
     )
@@ -993,13 +993,216 @@ async fn reject_first_deposit(world: &mut FullE2eWorld) {
     }
 }
 
+#[given("the OAuth2 token endpoint is configured")]
+async fn given_oauth2_token_endpoint(world: &mut FullE2eWorld) {
+    let client = world.client().unwrap();
+    let env = world.env().unwrap();
+
+    let stub = json!({
+        "request": {
+            "method": "POST",
+            "url": "/oauth2/token"
+        },
+        "response": {
+            "status": 200,
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "jsonBody": {
+                "access_token": "oauth2-test-access-token",
+                "token_type": "Bearer",
+                "expires_in": 3600
+            }
+        }
+    });
+
+    let result = send_json(
+        client,
+        Method::POST,
+        &format!("{}/__admin/mappings", env.cuss_url),
+        None,
+        Some(stub),
+    )
+    .await;
+
+    if let Err(error) = result {
+        world.error = Some(format!(
+            "Failed to configure OAuth2 token endpoint: {}",
+            error
+        ));
+    }
+}
+
+#[when("I create a session and start a webhook auth test flow with valid Bearer token")]
+async fn start_webhook_auth_test_flow_valid(world: &mut FullE2eWorld) {
+    start_webhook_auth_test_flow(world, "webhook_auth_test").await;
+}
+
+#[when("I create a session and start a webhook auth test flow with invalid Bearer token")]
+async fn start_webhook_auth_test_flow_invalid(world: &mut FullE2eWorld) {
+    start_webhook_auth_test_flow(world, "webhook_auth_test_invalid").await;
+}
+
+#[when("I create a session and start a webhook basic auth test flow")]
+async fn start_webhook_basic_auth_test_flow(world: &mut FullE2eWorld) {
+    start_webhook_auth_test_flow(world, "webhook_auth_test_basic").await;
+}
+
+#[when("I create a session and start a webhook OAuth2 auth test flow")]
+async fn start_webhook_oauth2_auth_test_flow(world: &mut FullE2eWorld) {
+    start_webhook_auth_test_flow(world, "webhook_auth_test_oauth2").await;
+}
+
+async fn start_webhook_auth_test_flow(world: &mut FullE2eWorld, flow_type: &str) {
+    let bff_base = world.bff_base().unwrap();
+
+    let session = match send_json(
+        world.client().unwrap(),
+        Method::POST,
+        &format!("{}/sessions", bff_base),
+        Some(world.token().unwrap()),
+        Some(json!({ "sessionType": "webhook_test" })),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            world.error = Some(error.to_string());
+            return;
+        }
+    };
+
+    if session.status != 201 {
+        world.error = Some(format!(
+            "create session failed ({}): {}",
+            session.status, session.text
+        ));
+        return;
+    }
+
+    let session_id = match require_id(&session.body, "id") {
+        Ok(value) => value,
+        Err(error) => {
+            world.error = Some(format!(
+                "create session missing id: {} | body={}",
+                error, session.text
+            ));
+            return;
+        }
+    };
+
+    let flow = match send_json(
+        world.client().unwrap(),
+        Method::POST,
+        &format!("{}/sessions/{}/flows", bff_base, session_id),
+        Some(world.token().unwrap()),
+        Some(json!({ "flowType": flow_type })),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            world.error = Some(error.to_string());
+            return;
+        }
+    };
+
+    if flow.status != 201 {
+        world.error = Some(format!(
+            "create {} flow failed ({}): {}",
+            flow_type, flow.status, flow.text
+        ));
+        return;
+    }
+
+    let flow_id = match require_id(&flow.body, "id") {
+        Ok(value) => value,
+        Err(error) => {
+            world.error = Some(format!(
+                "create {} flow missing id: {} | body={}",
+                flow_type, error, flow.text
+            ));
+            return;
+        }
+    };
+
+    world.flow.session_id = Some(session_id);
+    world.flow.deposit_flow_id = Some(flow_id);
+}
+
+#[then("the webhook auth test flow completes successfully")]
+async fn webhook_auth_flow_completes(world: &mut FullE2eWorld) {
+    let flow_id = match world.flow.deposit_flow_id.clone() {
+        Some(value) => value,
+        None => {
+            world.error = Some("flow id missing".to_owned());
+            return;
+        }
+    };
+
+    if let Err(error) =
+        wait_for_flow_status(world, &flow_id, "COMPLETED", Duration::from_secs(10)).await
+    {
+        world.error = Some(error.to_string());
+    }
+}
+
+#[then("the webhook auth test flow fails with authentication error")]
+async fn webhook_auth_flow_fails(world: &mut FullE2eWorld) {
+    let flow_id = match world.flow.deposit_flow_id.clone() {
+        Some(value) => value,
+        None => {
+            world.error = Some("flow id missing".to_owned());
+            return;
+        }
+    };
+
+    if let Err(error) =
+        wait_for_flow_status(world, &flow_id, "FAILED", Duration::from_secs(10)).await
+    {
+        world.error = Some(error.to_string());
+        return;
+    }
+
+    let flow_detail = match get_staff_flow_detail(world, &flow_id).await {
+        Ok(value) => value,
+        Err(error) => {
+            world.error = Some(error.to_string());
+            return;
+        }
+    };
+
+    let steps = flow_detail
+        .get("steps")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    if let Ok(webhook_step) = find_step(&steps, "webhook_step") {
+        let status = webhook_step.get("status").and_then(Value::as_str);
+        assert_eq!(status, Some("FAILED"), "webhook_step should be FAILED");
+    } else {
+        world.error = Some("webhook_step not found".to_owned());
+    }
+}
+
+#[then("the webhook basic auth test flow completes successfully")]
+async fn webhook_basic_auth_flow_completes(world: &mut FullE2eWorld) {
+    webhook_auth_flow_completes(world).await;
+}
+
+#[then("the webhook OAuth2 auth test flow completes successfully")]
+async fn webhook_oauth2_auth_flow_completes(world: &mut FullE2eWorld) {
+    webhook_auth_flow_completes(world).await;
+}
+
 #[when("I get the current user")]
 async fn get_current_user(world: &mut FullE2eWorld) {
     match send_json(
         world.client().unwrap(),
         Method::GET,
         &format!(
-            "{}/flow/users/{}",
+            "{}/users/{}",
             world.bff_base().unwrap(),
             world.subject().unwrap()
         ),
@@ -1019,7 +1222,7 @@ async fn get_completed_kyc(world: &mut FullE2eWorld) {
         world.client().unwrap(),
         Method::GET,
         &format!(
-            "{}/flow/users/{}/completed-kyc",
+            "{}/users/{}/completed-kyc",
             world.bff_base().unwrap(),
             world.subject().unwrap()
         ),
@@ -1117,7 +1320,7 @@ async fn first_deposit_metadata_persisted(world: &mut FullE2eWorld) {
         world.client().unwrap(),
         Method::GET,
         &format!(
-            "{}/flow/users/{}",
+            "{}/users/{}",
             world.bff_base().unwrap(),
             world.subject().unwrap()
         ),
@@ -1152,7 +1355,7 @@ async fn first_deposit_metadata_not_persisted(world: &mut FullE2eWorld) {
         world.client().unwrap(),
         Method::GET,
         &format!(
-            "{}/flow/users/{}",
+            "{}/users/{}",
             world.bff_base().unwrap(),
             world.subject().unwrap()
         ),
@@ -1386,6 +1589,24 @@ async fn cuss_payloads_match_first_deposit(world: &mut FullE2eWorld) {
     assert_eq!(
         approve_request.pointer("/payload/savingsAccountId"),
         Some(&json!(2))
+    );
+
+    let register_auth_header = register_request
+        .pointer("/payload/authHeader")
+        .and_then(Value::as_str)
+        .expect("missing authHeader in register payload");
+    assert!(
+        register_auth_header.starts_with("Bearer "),
+        "expected authHeader to start with 'Bearer ', got '{register_auth_header}'"
+    );
+
+    let approve_auth_header = approve_request
+        .pointer("/payload/authHeader")
+        .and_then(Value::as_str)
+        .expect("missing authHeader in approve payload");
+    assert!(
+        approve_auth_header.starts_with("Bearer "),
+        "expected authHeader to start with 'Bearer ', got '{approve_auth_header}'"
     );
 }
 

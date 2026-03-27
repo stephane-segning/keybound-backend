@@ -1,0 +1,34 @@
+flow_type: webhook_auth_test_oauth2
+human_id_prefix: wha_oauth
+feature: flow-webhook-auth-test-oauth2
+initial_step: webhook_step
+
+steps:
+  webhook_step:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${CUSS_URL}/api/webhook-auth-test-oauth2
+      method: POST
+      auth:
+        type: oauth2
+        token_url: ${CUSS_URL}/oauth2/token
+        client_id: "test-client"
+        client_secret: "test-secret"
+        scope: "api:write"
+      success_condition:
+        status_codes:
+        - 200
+    next: COMPLETE
+    fail: ERROR_STEP
+
+  ERROR_STEP:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Webhook authentication failed"
+      retryable: false
+
+  COMPLETE:
+    action: NOOP
+    actor: SYSTEM

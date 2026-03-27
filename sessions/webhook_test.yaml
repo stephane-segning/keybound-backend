@@ -1,0 +1,8 @@
+session_type: webhook_test
+human_id_prefix: wht
+
+allowed_flows:
+  - webhook_auth_test
+  - webhook_auth_test_invalid
+  - webhook_auth_test_basic
+  - webhook_auth_test_oauth2

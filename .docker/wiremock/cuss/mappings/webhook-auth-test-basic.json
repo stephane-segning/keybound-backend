@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/api/webhook-auth-test-basic",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Basic dGVzdHVzZXI6dGVzdHBhc3N3b3Jk"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "status": "success",
+      "authType": "basic"
+    }
+  }
+}

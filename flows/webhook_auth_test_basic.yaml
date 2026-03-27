@@ -1,0 +1,32 @@
+flow_type: webhook_auth_test_basic
+human_id_prefix: wha_bas
+feature: flow-webhook-auth-test-basic
+initial_step: webhook_step
+
+steps:
+  webhook_step:
+    action: WEBHOOK_HTTP
+    actor: SYSTEM
+    config:
+      url: ${CUSS_URL}/api/webhook-auth-test-basic
+      method: POST
+      auth:
+        type: basic
+        username: "testuser"
+        password: "testpassword"
+      success_condition:
+        status_codes:
+        - 200
+    next: COMPLETE
+    fail: ERROR_STEP
+
+  ERROR_STEP:
+    action: ERROR
+    actor: SYSTEM
+    config:
+      message: "Webhook authentication failed"
+      retryable: false
+
+  COMPLETE:
+    action: NOOP
+    actor: SYSTEM

@@ -1,0 +1,17 @@
+{
+    "request": {
+      "method": "POST",
+      "url": "/api/webhook-auth-test",
+      "headers": {
+        "Authorization": {
+          "equalTo": "Bearer e2e-secret-token"
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "jsonBody": {
+        "status": "success"
+      }
+    }
+  }

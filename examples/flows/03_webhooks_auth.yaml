@@ -1,0 +1,45 @@
+name: webhooks_auth_example
+version: "1"
+description: "Demonstrate Webhook authentication variants: Basic, Bearer, Oauth2"
+tags: [ "example", "webhook" ]
+trigger:
+  type: event
+  event_name: start_webhook_auth_test
+
+steps:
+- id: basic_auth_step
+  type: WEBHOOK_HTTP
+  config:
+    url: "http://localhost:8080/basic"
+    method: "POST"
+    auth:
+      type: basic
+      username: "testuser"
+      password: "testpassword"
+    payload:
+      message: "Hello with Basic Auth"
+
+- id: bearer_auth_step
+  type: WEBHOOK_HTTP
+  config:
+    url: "http://localhost:8080/bearer"
+    method: "POST"
+    auth:
+      type: bearer
+      token: "super-secret-token"
+    payload:
+      message: "Hello with Bearer Auth"
+
+- id: oauth2_auth_step
+  type: WEBHOOK_HTTP
+  config:
+    url: "http://localhost:8080/oauth2"
+    method: "POST"
+    auth:
+      type: oauth2
+      token_url: "http://localhost:8080/token"
+      client_id: "test-client"
+      client_secret: "test-secret"
+      scope: "api:write"
+    payload:
+      message: "Hello with OAuth2 Auth"
