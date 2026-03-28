@@ -113,7 +113,7 @@ pub async fn run_worker(
         .await
         .map_err(|error| backend_core::Error::DieselPool(error.to_string()))?;
     worker::ensure_redis_ready(&core_config.redis.url).await?;
-    let worker_lock = worker::acquire_worker_consumer_lock(
+    let worker_lock = worker::acquire_worker_consumer_lock_with_retry(
         &core_config.redis.url,
         core_config.redis.worker_lock_ttl_seconds,
         core_config.redis.worker_lock_renew_seconds,

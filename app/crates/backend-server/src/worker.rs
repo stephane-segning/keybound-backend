@@ -288,6 +288,42 @@ impl NotificationQueue for RedisNotificationQueue {
     }
 }
 
+/// Acquires the worker consumer lock with retry and exponential backoff.
+///
+/// During rolling deployments, the old pod may still hold the lock. Instead of
+/// crashing immediately, this retries up to 10 times with exponential backoff
+/// (2s, 4s, 8s, ..., capped at 30s) to allow the old pod to terminate and
+/// release the lock.
+pub async fn acquire_worker_consumer_lock_with_retry(
+    redis_url: &str,
+    lock_ttl_seconds: i64,
+    lock_renew_seconds: u64,
+) -> backend_core::Result<WorkerConsumerLock> {
+    const MAX_RETRIES: u32 = 10;
+    const INITIAL_BACKOFF_SECS: u64 = 2;
+    const MAX_BACKOFF_SECS: u64 = 30;
+
+    for attempt in 0..MAX_RETRIES {
+        match acquire_worker_consumer_lock(redis_url, lock_ttl_seconds, lock_renew_seconds).await {
+            Ok(lock) => return Ok(lock),
+            Err(e) if attempt < MAX_RETRIES - 1 => {
+                let backoff = INITIAL_BACKOFF_SECS.pow(attempt + 1).min(MAX_BACKOFF_SECS);
+                warn!(
+                    attempt = attempt + 1,
+                    max_retries = MAX_RETRIES,
+                    backoff_secs = backoff,
+                    "worker lock held by another instance, retrying: {}",
+                    e
+                );
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    unreachable!()
+}
+
 #[instrument(skip(state))]
 pub async fn run(state: Arc<AppState>) -> backend_core::Result<()> {
     info!("starting flow sdk system worker");
