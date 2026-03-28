@@ -1,11 +1,11 @@
 {
-    "backendUrl": "http://bff:8082/api/v1/api",
+    "backendUrl": "http://localhost:8082/api/v1/api",
     "powDifficulty": "4",
     "otlpEndpoint": "http://localhost:4378",
     "keycloak": {
         "realm": "e2e-testing",
-        "kcUrl": "http://keycloak:9026",
-        "issuer": "http://keycloak:9026/realms/e2e-testing",
+        "kcUrl": "http://localhost:9026",
+        "issuer": "http://localhost:9026/realms/e2e-testing",
         "clientId": "web-mobile",
         "scheme": "azamra"
     }

@@ -1,4 +1,48 @@
 services:
+  download-core-tools:
+    image: alpine/curl
+    environment:
+      KEYCLOAK_PLUGIN_VERSION: "0.2.3"
+      OPENAPI_GENERATOR_VERSION: "7.19.0"
+    command:
+    - /bin/sh
+    - -c
+    - |
+      set -ex;
+      rm -rf /data/*
+      mkdir -p /data/bin
+      mkdir -p /data/kc-plugins
+
+      download() {
+        output="$$1"
+        url="$$2"
+        curl -fL \
+          --retry 8 \
+          --retry-delay 2 \
+          --retry-all-errors \
+          --connect-timeout 10 \
+          --max-time 300 \
+          -o "$$output" "$$url"
+      }
+
+      echo "Download OpenAPI generator (we're using it to generate code from OpenAPI specs...";
+      download /data/bin/openapi-generator-cli.jar "https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/$$OPENAPI_GENERATOR_VERSION/openapi-generator-cli-$$OPENAPI_GENERATOR_VERSION.jar"
+
+      echo "Download OpenAPI for Keycloak...";
+      download /data/keycloak-interface.openapi.yaml "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/backend.open-api.yml"
+      echo "Downloaded OpenAPI for Keycloak";
+
+      echo "Download keybound...";
+      download /data/kc-plugins/keycloak-keybound-all.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-all-$$KEYCLOAK_PLUGIN_VERSION-all.jar"
+      download /data/kc-plugins/keycloak-keybound-api-gateway-http.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-api-gateway-http-$$KEYCLOAK_PLUGIN_VERSION.jar"
+      download /data/kc-plugins/keycloak-keybound-custom-endpoint.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-custom-endpoint-$$KEYCLOAK_PLUGIN_VERSION.jar"
+      download /data/kc-plugins/keycloak-keybound-grant-device-key.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-grant-device-key-$$KEYCLOAK_PLUGIN_VERSION.jar"
+      download /data/kc-plugins/keycloak-keybound-user-storage-backend.jar "https://github.com/stephane-segning/keycloak-keybound/releases/download/v$$KEYCLOAK_PLUGIN_VERSION/keycloak-keybound-user-storage-backend-$$KEYCLOAK_PLUGIN_VERSION.jar"
+      echo "Downloaded keybound";
+
+    volumes:
+    - ./.docker/downloaded:/data
+
 
   postgres:
     image: pgvector/pgvector:pg18
@@ -100,8 +144,16 @@ services:
     volumes:
       - ./.docker/keycloak-config/realm.e2e.json:/opt/keycloak/data/import/realm.json:ro
       - ./.docker/downloaded/kc-plugins:/opt/keycloak/providers:ro
-      - ./.docker/downloaded/keycloak-interface.openapi.yaml:/opt/keycloak/keycloak-interface.openapi.yaml:ro
+      - type: bind
+        source: ./.docker/downloaded/keycloak-interface.openapi.yaml
+        target: /opt/keycloak/keycloak-interface.openapi.yaml
+        read_only: true
+        bind:
+          # Prevent Docker from auto-creating a directory if the file is missing.
+          create_host_path: false
     depends_on:
+      download-core-tools:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -117,7 +169,7 @@ services:
       retries: 5
 
   user-storage:
-    image: ghcr.io/adorsys-gis/user-storage:masterd361bd9bf9c7370b47382b30110fdf88b0f4284f
+    image: ghcr.io/adorsys-gis/user-storage:masterdd94de130f78273eafcc2e6250a5cee8851d54e2
     container_name: user-storage
     restart: unless-stopped
     command:
@@ -233,26 +285,36 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        /app/config/kyc-mgr-patch.sh
+        npm run start
+    volumes:
+      - ./config:/app/config:ro
 
   bff:
-    image: ghcr.io/skyengpro/azamra-tokenization-bff:develop-amd
+    image: ghcr.io/skyengpro/azamra-tokenization-bff:sha-dca828a9b9ff-amd
     container_name: azamra-bff
     restart: unless-stopped
     ports:
       - "8082:8082"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_APPLICATION_NAME: azamra-tokenization-bff
       SPRING_CACHE_TYPE: redis
       SPRING_CACHE_REDIS_TIME_TO_LIVE: 10m
       SPRING_CACHE_REDIS_CACHE_NULL_VALUES: "false"
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:9026/realms/e2e-testing
+      LOGGING_LEVEL_ROOT: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB: DEBUG
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:9026/realms/e2e-testing
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:9026/realms/e2e-testing/protocol/openid-connect/certs
-      APP_SECURITY_SIGNATURE_ENABLED: "false"
       APP_SECURITY_SIGNATURE_MAX_CLOCK_SKEW_SECONDS: "60"
       APP_OAUTH2_CLIENT_ID: web-mobile
-      APP_SECURITY_VALIDATE_ISSUER: "false"
       APP_OAUTH2_TOKEN_ENDPOINT_URL: http://keycloak:9026/realms/e2e-testing/protocol/openid-connect/token
       APP_ASSET_SERVICE_BASE_URL: http://cuss-wiremock:8080/api
       APP_CUSS_BASE_URL: http://cuss-wiremock:8080
@@ -260,10 +322,9 @@ services:
       APP_PAYMENT_GATEWAY_BASE_URL: http://cuss-wiremock:8080
       APP_KYC_FIRST_DEPOSIT_AMOUNT: "15000"
       APP_KYC_FIRST_DEPOSIT_CURRENCY: XAF
-      APP_AZAMRA_FRONTEND_SERVER_API_BASE_PATH: "api/v1/api"
+      APP_AZAMRA_FRONTEND_SERVER_API_BASE_PATH: "/api/v1/api"
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "*"
       SERVER_PORT: "8082"
-      LOGGING_LEVEL_ROOT: DEBUG
     extra_hosts:
       - "localhost:host-gateway"
     depends_on:
