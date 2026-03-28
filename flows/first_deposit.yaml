@@ -121,8 +121,10 @@ steps:
           source_path: /step_output/cuss_register_customer/savingsAccountId
           target_path: /savingsAccountId
         - source: flow
-          source_path: /step_output/init_first_deposit/amount
+          source_path: /amount
           target_path: /depositAmount
+        - value: "CASH"
+          target_path: /paymentType
       success_condition:
         status_codes:
           - 200
